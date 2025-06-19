@@ -124,13 +124,13 @@ install(TARGETS ${PROJECT_NAME}
 ## Shader Script
 ########################################################################################################################
 set(compute_shader_sources 
-    ${CMAKE_CURRENT_SOURCE_DIR}/shader/BakeObjectNormalMap.hlsl
+
 )
 set(vertex_shader_sources 
-    #${CMAKE_CURRENT_SOURCE_DIR}/shader/BakeObjectNormalMap.hlsl
+
 )
 set(pixel_shader_sources 
-    #${CMAKE_CURRENT_SOURCE_DIR}/shader/BakeObjectNormalMap.hlsl
+
 )
 
 add_custom_target(ValidateShaders ALL 
