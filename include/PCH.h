@@ -138,6 +138,7 @@ namespace util {
 #include "RGBA.h"
 
 #include "Store.h"
+#include "Common.h"
 #include "nifUtil.h"
 #include "Utility.hpp"
 
@@ -147,6 +148,8 @@ namespace util {
 #include "HookEvent.h"
 
 #include "ShaderManager.h"
-#include "TextureManager.h"
+
+#include "ObjectNormalMapBaker.h"
+#include "TaskManager.h"
 #include "PapyrusScripts.h"
 

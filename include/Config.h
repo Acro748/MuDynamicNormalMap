@@ -27,17 +27,43 @@ namespace Mus {
 		[[nodiscard]] inline std::uint32_t GetDefaultTextureWidth() const noexcept {
 			return DefaultTextureWidth;
 		}
-        [[nodiscard]] inline std::int32_t GetBakeCoreLimit() const noexcept {
-            return BakeCoreLimit;
-        }
 		[[nodiscard]] inline float GetTextureResize() const noexcept {
 			return TextureResize;
 		}
         [[nodiscard]] inline bool GetIgnoreTextureSize() const noexcept {
             return IgnoreTextureSize;
         }
+
+        //NormalmapBake
+        [[nodiscard]] inline bool GetBakeEnable() const noexcept {
+            return BakeEnable;
+        }
+        [[nodiscard]] inline bool GetPlayerEnable() const noexcept {
+            return PlayerEnable;
+        }
+        [[nodiscard]] inline bool GetNPCEnable() const noexcept {
+            return NPCEnable;
+        }
+        [[nodiscard]] inline bool GetHeadEnable() const noexcept {
+            return HeadEnable;
+        }
+        [[nodiscard]] inline unsigned long GetPriorityCores() const noexcept {
+            return PriorityCores;
+        }
         [[nodiscard]] inline std::uint8_t GetNormalmapBakeDelayTick() const noexcept {
             return NormalmapBakeDelayTick;
+        }
+        [[nodiscard]] inline float GetNormalSmoothDegree() const noexcept {
+            return NormalSmoothDegree;
+        }
+        [[nodiscard]] inline std::uint8_t GetSubdivision() const noexcept {
+            return Subdivision;
+        }
+        [[nodiscard]] inline std::uint8_t GetVertexSmooth() const noexcept {
+            return VertexSmooth;
+        }
+        [[nodiscard]] inline float GetVertexSmoothStrength() const noexcept {
+            return VertexSmoothStrength;
         }
 
     protected:
@@ -48,10 +74,20 @@ namespace Mus {
         //General
         std::uint32_t DefaultTextureHeight = 2048.0f;
         std::uint32_t DefaultTextureWidth = 2048.0f;
-		std::int32_t BakeCoreLimit = -1; //if -1, half cores, if 0, all cores, if > 0, use that many cores
 		float TextureResize = 1.0f;
 		bool IgnoreTextureSize = false;
+
+        //NormalmapBake
+        bool BakeEnable = true;
+        bool PlayerEnable = true;
+        bool NPCEnable = true;
+        bool HeadEnable = false;
+        unsigned long PriorityCores = -1;
         std::uint8_t NormalmapBakeDelayTick = 2;
+        float NormalSmoothDegree = 60.0f;
+        std::uint8_t Subdivision = 1;
+        std::uint8_t VertexSmooth = 1;
+        float VertexSmoothStrength = 0.5f;
 
     public:
         inline std::string getCurrentSettingValue(std::string s)
@@ -155,7 +191,7 @@ namespace Mus {
 
     class MultipleConfig : public Config {
     public:
-        
+        bool LoadBakeNormalMapMaskTexture();
 
         static inline std::vector<std::filesystem::path> GetAllFiles(std::string folder)
         {

@@ -133,8 +133,8 @@ namespace Mus {
 		DetourRestoreAfterWith();
 		DetourTransactionBegin();
 		DetourUpdateThread(GetCurrentThread());
-		//hookFacegen();
-		//hookActorChangeHeadPart();
+		hookFacegen();
+		hookActorChangeHeadPart();
 		hookArmorAttach();
 		DetourTransactionCommit();
 

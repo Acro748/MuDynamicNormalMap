@@ -367,6 +367,12 @@ namespace Mus {
         textures,
         none 
     };
+    inline bool IsExistDirectoy(std::string path)
+    {
+        if (!stringStartsWith(path, GetRuntimeDataDirectory()))
+            path = GetRuntimeDataDirectory() + path;
+        return std::filesystem::exists(path) && std::filesystem::is_directory(path);
+    }
     inline bool IsExistFileInFileSystem(std::string path)
     {
         return _access_s((GetRuntimeDataDirectory() + path).c_str(), 0) == 0;
@@ -744,5 +750,12 @@ namespace Mus {
             DeepScanNode(deepCount + 1, child.get(), func);
         }
         return;
+    }
+
+    inline std::string GetBipedName(std::uint32_t bipedSlot)
+    {
+        if (bipedSlot >= RE::BIPED_OBJECT::kEditorTotal)
+            return "";
+        return magic_enum::enum_name(RE::BIPED_OBJECT(bipedSlot)).data();
     }
 }

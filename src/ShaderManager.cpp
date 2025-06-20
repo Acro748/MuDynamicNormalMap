@@ -504,7 +504,7 @@ namespace Mus {
 		{
 			RE::NiPointer<RE::NiSourceTexture> newTexture;
 			auto result = TextureLoadManager::CreateSourceTexture(name, newTexture);
-			if (result == -1)
+			if (result == -1 || !newTexture)
 			{
 				logger::critical("Failed to create NiTexture");
 				return;

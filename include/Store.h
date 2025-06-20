@@ -3,6 +3,7 @@
 namespace Mus {
 	const RE::NiPoint3 emptyPoint = RE::NiPoint3(0, 0, 0);
 	const RE::NiMatrix3 emptyRotate = RE::NiMatrix3();
+	const DirectX::XMVECTOR emptyVector = DirectX::XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
 
 	extern std::atomic<bool> IsRaceSexMenu;
 	extern std::atomic<bool> IsMainMenu;
@@ -11,6 +12,8 @@ namespace Mus {
 	extern bool PerformanceCheck;
 	extern bool PerformanceCheckAverage;
 	extern bool PerformanceCheckConsolePrint;
+
+	const std::string tempTexture = "Textures\\TextureManager\\Temp.dds";
 
 	#define MATH_PI       3.14159265358979323846
 	constexpr float toDegree = 180 / MATH_PI;
@@ -22,4 +25,6 @@ namespace Mus {
 
 	constexpr float TimeTick60 = 1.0f / 60.0f;
 	constexpr float TimeTick60msec = TimeTick60 * 1000;
+
+	constexpr float floatPrecision = 1e-4f;
 }

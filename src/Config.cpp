@@ -76,6 +76,9 @@ namespace Mus {
 
     bool Config::LoadConfig(std::ifstream& configfile)
     {
+        std::int32_t detectPriorityCores = 0;
+        std::unordered_set<std::int32_t> priorityCores;
+
         std::string line;
         std::string currentSetting;
         while (std::getline(configfile, line))
@@ -107,10 +110,6 @@ namespace Mus {
                 {
                     DefaultTextureHeight = GetUIntValue(variableValue);
                 }
-				else if (variableName == "BakeCoreLimit")
-				{
-					BakeCoreLimit = GetIntValue(variableValue);
-				}
 				else if (variableName == "TextureResize")
 				{
 					TextureResize = GetFloatValue(variableValue);
@@ -119,33 +118,110 @@ namespace Mus {
 				{
 					IgnoreTextureSize = GetBoolValue(variableValue);
 				}
+			}
+            else if (currentSetting == "[NormalmapBake]")
+            {
+                if (variableName == "BakeEnable")
+				{
+                    BakeEnable = GetBoolValue(variableValue);
+				}
+                else if (variableName == "NPCEnable")
+				{
+                    PlayerEnable = GetBoolValue(variableValue);
+				}
+                else if (variableName == "NPCEnable")
+				{
+                    NPCEnable = GetBoolValue(variableValue);
+				}
+                else if (variableName == "HeadEnable")
+				{
+                    HeadEnable = GetBoolValue(variableValue);
+				}
+                else if (variableName == "PriorityCores")
+				{
+                    auto list = split(variableValue, ',');
+                    for (auto& c : list) {
+                        priorityCores.insert(GetUIntValue(c));
+                    }
+				}
+                else if (variableName == "DetectPriorityCores")
+                {
+                    detectPriorityCores = GetIntValue(variableValue);
+                }
 				else if (variableName == "NormalmapBakeDelayTick")
 				{
                     NormalmapBakeDelayTick = GetUIntValue(variableValue);
+				}
+				else if (variableName == "NormalSmoothDegree")
+				{
+                    NormalSmoothDegree = GetFloatValue(variableValue);
+				}
+				else if (variableName == "Subdivision")
+				{
+                    Subdivision = GetUIntValue(variableValue);
+				}
+				else if (variableName == "VertexSmooth")
+				{
+                    VertexSmooth = GetUIntValue(variableValue);
+				}
+				else if (variableName == "VertexSmoothStrength")
+				{
+                    VertexSmoothStrength = GetFloatValue(variableValue);
 				}
 			}
         }
 
         std::uint32_t cores = std::thread::hardware_concurrency();
         logger::info("Detected cores : {}", cores);
-        auto orgBakeCoreLimit = BakeCoreLimit;
-		if (BakeCoreLimit < 0)
-		{
-			BakeCoreLimit = (std::max)(1, static_cast<std::int32_t>(cores / (1 - BakeCoreLimit)));
-            logger::info("BakeCoreLimit is {}. so set core limit {} / {} = {}", orgBakeCoreLimit, cores, (1 - orgBakeCoreLimit), BakeCoreLimit);
-		}
-		else if (BakeCoreLimit == 0)
-		{
-			BakeCoreLimit = static_cast<std::int32_t>(cores);
-            logger::info("BakeCoreLimit is {}. so set core limit max {}", orgBakeCoreLimit, BakeCoreLimit);
-		}
-		else //if (BakeCoreLimit > 0)
-        {
-            BakeCoreLimit = (std::min)(BakeCoreLimit, static_cast<std::int32_t>(cores));
-            logger::info("BakeCoreLimit is {}. so set core limit {}", orgBakeCoreLimit, BakeCoreLimit);
+        auto priorityCores_ = priorityCores;
+        priorityCores.clear();
+        for (auto& core : priorityCores_) {
+            if (core < 0 || core >= cores)
+                continue;
+            priorityCores.insert(core);
         }
+        if (priorityCores.empty() && detectPriorityCores == 0)
+            detectPriorityCores = 1;
+        if (detectPriorityCores > 0)
+        {
+            detectPriorityCores = cores / (std::pow(2, detectPriorityCores));
+            detectPriorityCores = (std::max)(std::int32_t(1), detectPriorityCores);
+            detectPriorityCores -= priorityCores.size();
+            if (detectPriorityCores > 0)
+            {
+                for (std::int32_t i = cores; i > 1; i--) { //excluding first core
+                    std::int32_t coreNum = i - 1;
+                    if (priorityCores.find(coreNum) != priorityCores.end())
+                        continue;
+                    priorityCores.insert(coreNum);
+                    detectPriorityCores--;
+                    if (detectPriorityCores == 0)
+                        break;
+                }
+            }
+        }
+        std::string coreList = "";
+        for (auto core : priorityCores) {
+            if (!coreList.empty())
+                coreList += ", ";
+            coreList += std::to_string(core);
+            PriorityCores |= 1 << core;
+        }
+        logger::info("Enable cores for baking normalmap : {}", coreList);
 
         return true;
+    }
+
+    bool MultipleConfig::LoadBakeNormalMapMaskTexture()
+    {
+        std::string configPath = GetRuntimeSKSEDirectory();
+        configPath += "MuDynamicTextureTool\\BakeObjectNormalMap";
+
+        for (auto& file : GetAllFiles(configPath))
+        {
+
+        }
+        return false;
     }
 }
 

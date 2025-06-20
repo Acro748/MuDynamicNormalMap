@@ -149,8 +149,10 @@ namespace {
     }
     void kDataloadedFunction()
     {
-		Mus::g_frameEventDispatcher.addListener(&Mus::TextureManager::GetSingleton());
-		Mus::g_armorAttachEventEventDispatcher.addListener(&Mus::TextureManager::GetSingleton());
+		Mus::g_frameEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
+		Mus::g_armorAttachEventEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
+		Mus::g_facegenNiNodeEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
+		Mus::g_actorChangeHeadPartEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
     }
 
     void kNewGameFunction()

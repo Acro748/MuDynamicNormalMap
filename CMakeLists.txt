@@ -6,7 +6,7 @@ message("Using toolchain file ${CMAKE_TOOLCHAIN_FILE}.")
 ########################################################################################################################
 project(
         MuDynamicTextureTool
-        VERSION 0.0.1
+        VERSION 0.0.2
         DESCRIPTION "MuDynamicTextureTool by Acro."
         LANGUAGES CXX
 )
@@ -28,10 +28,12 @@ set(headers
         include/Config.h
         include/PapyrusScripts.h
         include/ShaderManager.h
-        include/TextureManager.h
+        include/ObjectNormalMapBaker.h
+        include/TaskManager.h
         include/Hook.h
         include/HookEvent.h
         include/Store.h
+        include/Common.h
         include/RGBA.h
 )
 
@@ -40,10 +42,12 @@ set(sources
         src/Config.cpp
         src/PapyrusScripts.cpp
         src/ShaderManager.cpp
-        src/TextureManager.cpp
+        src/ObjectNormalMapBaker.cpp
+        src/TaskManager.cpp
         src/Hook.cpp
         src/HookEvent.cpp
         src/Store.cpp
+        src/Common.cpp
         src/Main.cpp
 
         ${CMAKE_CURRENT_BINARY_DIR}/version.rc
