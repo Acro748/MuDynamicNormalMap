@@ -690,6 +690,7 @@ namespace Mus {
         {
             auto end = high_resolution_clock::now();
             auto duration_ns = duration_cast<nanoseconds>(end - funcTime[funcStr]).count();
+            double tick = PerformanceCheckTick ? (double)(RE::GetSecondsSinceLastFrame() * 1000000000) : (double)(TimeTick60 * 1000000000);
             if (isAverage)
             {
 				funcAverageTime[funcStr] += duration_ns;
@@ -700,7 +701,7 @@ namespace Mus {
 					auto average = funcAverageTime[funcStr] / funcAverageCount[funcStr];
 					logger::info("{} average time: {}ns{}=> {:.6f}%", funcStr, average, 
                                  funcAverageArgs[funcStr] > 0 ? (std::string(" with average count ") + std::to_string(funcAverageArgs[funcStr] / funcAverageCount[funcStr]) + " ") : " ",
-                                 (double)average / (double)(RE::GetSecondsSinceLastFrame() * 1000000000) * 100
+                                 (double)average / tick * 100
                     );
                     if (PerformanceCheckConsolePrint)
                     {
@@ -708,7 +709,7 @@ namespace Mus {
                         if (Console)
                             Console->Print("%s average time: %lldns%s=> %.6f%%", funcStr.c_str(), average,
                                            funcAverageArgs[funcStr] > 0 ? (std::string(" with average count ") + std::to_string(funcAverageArgs[funcStr] / funcAverageCount[funcStr]) + " ").c_str() : " ",
-                                           (double)average / (double)(RE::GetSecondsSinceLastFrame() * 1000000000) * 100
+                                           (double)average / tick * 100
                             );
                     }
                     funcAverageTime[funcStr] = 0;
@@ -720,7 +721,7 @@ namespace Mus {
             {
                 logger::info("{} time: {}ns{}=> {:.6f}%", funcStr, duration_ns, 
                              args > 0 ? (std::string(" with count ") + std::to_string(args) + " ") : " ",
-                             (double)duration_ns / double(RE::GetSecondsSinceLastFrame() * 1000000000) * 100
+                             (double)duration_ns / tick * 100
                 ); 
                 if (PerformanceCheckConsolePrint)
                 {
@@ -728,7 +729,7 @@ namespace Mus {
                     if (Console)
                         Console->Print("%s time: %lld ns%s=> %.6f%%", funcStr.c_str(), duration_ns,
                                        args > 0 ? (std::string(" with count ") + std::to_string(args) + " ").c_str() : " ",
-                                       (double)duration_ns / double(RE::GetSecondsSinceLastFrame() * 1000000000) * 100
+                                       (double)duration_ns / tick * 100
                         );
                 }
             }

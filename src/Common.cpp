@@ -11,6 +11,8 @@ namespace Mus {
 		if (!a_geo || a_geo->name.empty())
 			return;
 
+		//PerformanceLog(std::string(__func__) + "::" + a_geo->name.c_str(), false, false);
+
 		RE::BSDynamicTriShape* dynamicTriShape = a_geo->AsDynamicTriShape();
 		RE::BSTriShape* triShape = a_geo->AsTriShape();
 		if (!triShape)
@@ -46,8 +48,7 @@ namespace Mus {
 		std::uint32_t vertexSize = this->desc.GetSize();
 		std::uint8_t* vertexBlock = skinPartition->partitions[0].buffData->rawVertexData;
 
-		for (std::uint32_t i = 0; i < vertexCount; i++)
-		{
+		for (std::uint32_t i = 0; i < vertexCount; i++) {
 			std::uint8_t* block = &vertexBlock[i * vertexSize];
 			if (this->hasVertices)
 			{
@@ -101,15 +102,23 @@ namespace Mus {
 			}
 		}
 
-		for (std::uint32_t p = 0; p < skinPartition->numPartitions; p++)
+		std::size_t indexOffset = 0;
+		for (auto& partition : skinPartition->partitions)
 		{
-			for (std::uint32_t t = 0; t < skinPartition->partitions[p].triangles * 3; t++)
+			indexOffset += partition.triangles * 3;
+		}
+		this->indices.resize(indexOffset);
+		indexOffset = 0;
+		for (auto& partition : skinPartition->partitions)
+		{
+			for (std::uint32_t t = 0; t < partition.triangles * 3; t++)
 			{
-				this->indices.push_back(skinPartition->partitions[p].triList[t]);
+				this->indices[indexOffset + t] = partition.triList[t];
 			}
+			indexOffset += partition.triangles * 3;
 		}
 
-		this->UpdateVertexMapAndFaceNormals();
+		//PerformanceLog(std::string(__func__) + "::" + a_geo->name.c_str(), true, false);
 
 		logger::debug("{} {} : get geometry data done => vertices {} / uvs {} / normals {} / tangents {} / tris {}", __func__, a_geo->name.c_str(),
 					  this->vertices.size(), this->uvs.size(), this->normals.size(), this->tangents.size(), this->indices.size() / 3);
@@ -121,23 +130,28 @@ namespace Mus {
 			return;
 		this->vertexMap.clear();
 		this->faceNormals.clear();
-		for (std::size_t i = 0; i < this->indices.size(); i += 3)
-		{
-			std::uint32_t v0 = this->indices[i + 0];
-			std::uint32_t v1 = this->indices[i + 1];
-			std::uint32_t v2 = this->indices[i + 2];
+
+		this->faceNormals.resize(this->indices.size() / 3);
+
+		//PerformanceLog(std::string(__func__) + "::" + std::to_string(this->indices.size()), false, false);
+		concurrency::parallel_for(std::size_t(0), this->indices.size() / 3, [&](std::size_t i) {
+			std::size_t offset = i * 3;
+			std::uint32_t v0 = this->indices[offset + 0];
+			std::uint32_t v1 = this->indices[offset + 1];
+			std::uint32_t v2 = this->indices[offset + 2];
 
 			DirectX::XMVECTOR p0 = DirectX::XMLoadFloat3(&this->vertices[v0]);
 			DirectX::XMVECTOR p1 = DirectX::XMLoadFloat3(&this->vertices[v1]);
 			DirectX::XMVECTOR p2 = DirectX::XMLoadFloat3(&this->vertices[v2]);
 
 			DirectX::XMVECTOR normal = DirectX::XMVector3Normalize(DirectX::XMVector3Cross(DirectX::XMVectorSubtract(p1, p0), DirectX::XMVectorSubtract(p2, p0)));
-			this->faceNormals.push_back({ v0, v1, v2, normal });
+			this->faceNormals[i] = { v0, v1, v2, normal };
 
-			this->vertexMap[this->vertices[v0]].push_back(this->faceNormals.size() - 1);
-			this->vertexMap[this->vertices[v1]].push_back(this->faceNormals.size() - 1);
-			this->vertexMap[this->vertices[v2]].push_back(this->faceNormals.size() - 1);
-		}
+			this->vertexMap[this->vertices[v0]].push_back(i);
+			this->vertexMap[this->vertices[v1]].push_back(i);
+			this->vertexMap[this->vertices[v2]].push_back(i);
+		});
+		//PerformanceLog(std::string(__func__) + "::" + std::to_string(this->indices.size()), true, false);
 	}
 
 	void GeometryData::RecalculateNormals(float a_smooth)
@@ -154,16 +168,17 @@ namespace Mus {
 			return;
 
 		logger::debug("{} : normals {} re-calculate...", __func__, this->normals.size());
+
+		//PerformanceLog(std::string(__func__) + "::" + std::to_string(this->normals.size()), false, false);
 		const float smoothCos = cosf(DirectX::XMConvertToRadians(a_smooth));
 
-		for (std::uint32_t i = 0; i < this->vertices.size(); ++i)
-		{
+		concurrency::parallel_for(std::size_t(0), this->vertices.size(), [&](std::size_t i) {
 			const DirectX::XMFLOAT3& pos = this->vertices[i];
 
 			DirectX::XMVECTOR nSum = DirectX::XMVectorZero();
 			DirectX::XMVECTOR nSelf = DirectX::XMVectorZero();
 
-			std::vector<size_t> faceIndices = this->vertexMap[pos];
+			const auto& faceIndices = this->vertexMap[pos];
 			for (size_t fi : faceIndices) {
 				const GeometryData::FaceNormal& f = this->faceNormals[fi];
 				if (f.v0 == i || f.v1 == i || f.v2 == i) {
@@ -181,7 +196,8 @@ namespace Mus {
 			}
 
 			DirectX::XMStoreFloat3(&this->normals[i], DirectX::XMVector3Normalize(nSum));
-		}
+		});
+		//PerformanceLog(std::string(__func__) + "::" + std::to_string(this->normals.size()), true, false);
 		logger::debug("{} : normals {} re-calculated", __func__, this->normals.size());
 		return;
 	}
@@ -191,134 +207,150 @@ namespace Mus {
 			return;
 
 		logger::debug("{} : {} subdivition({})...", __func__, this->vertices.size(), a_subCount);
-		GeometryData subdividedData;
-		if (subdividedData.hasVertices = this->hasVertices; subdividedData.hasVertices)
-			subdividedData.vertices = this->vertices;
-		if (subdividedData.hasUV = this->hasUV; subdividedData.hasUV)
-			subdividedData.uvs = this->uvs;
-		if (subdividedData.hasNormals = this->hasNormals; subdividedData.hasNormals)
-			subdividedData.normals = this->normals;
-		if (subdividedData.hasTangents = this->hasTangents; subdividedData.hasTangents)
-			subdividedData.tangents = this->tangents;
-		if (subdividedData.hasBitangents = this->hasBitangents; subdividedData.hasBitangents)
-			subdividedData.bitangents = this->bitangents;
 
-		std::map<std::pair<uint32_t, uint32_t>, uint32_t> midpointMap;
-		auto getMidpointIndex = [&](uint32_t i0, uint32_t i1) -> uint32_t {
-			auto key = std::minmax(i0, i1);
-			if (auto it = midpointMap.find(key); it != midpointMap.end())
-				return it->second;
+		for (std::uint32_t doSubdivision = 0; doSubdivision < a_subCount; doSubdivision++)
+		{
+			//PerformanceLog(std::string(__func__) + "::" + std::to_string(this->vertices.size()), false, false);
 
-			auto normalize = [&](const DirectX::XMFLOAT3& v) -> DirectX::XMFLOAT3 {
-				DirectX::XMVECTOR vec = DirectX::XMLoadFloat3(&v);
-				vec = DirectX::XMVector3Normalize(vec);
-				DirectX::XMFLOAT3 result;
-				DirectX::XMStoreFloat3(&result, vec);
-				return result;
+			GeometryData subdividedData;
+			if (subdividedData.hasVertices = this->hasVertices; subdividedData.hasVertices)
+				subdividedData.vertices = this->vertices;
+			if (subdividedData.hasUV = this->hasUV; subdividedData.hasUV)
+				subdividedData.uvs = this->uvs;
+			if (subdividedData.hasNormals = this->hasNormals; subdividedData.hasNormals)
+				subdividedData.normals = this->normals;
+			if (subdividedData.hasTangents = this->hasTangents; subdividedData.hasTangents)
+				subdividedData.tangents = this->tangents;
+			if (subdividedData.hasBitangents = this->hasBitangents; subdividedData.hasBitangents)
+				subdividedData.bitangents = this->bitangents;
+
+			std::unordered_map<uint64_t, uint32_t> midpointMap;
+			auto getMidpointIndex = [&](uint32_t i0, uint32_t i1) -> uint32_t {
+				auto minmax = [](uint32_t i0, uint32_t i1) -> uint64_t {
+					uint32_t a = (std::min)(i0, i1);
+					uint32_t b = (std::max)(i0, i1);
+					return (static_cast<uint64_t>(a) << 32) | b;
 				};
 
-			uint32_t index = subdividedData.vertices.size();
+				auto key = minmax(i0, i1);
+				if (auto it = midpointMap.find(key); it != midpointMap.end())
+					return it->second;
 
-			if (this->hasVertices)
-			{
-				const auto& v0 = subdividedData.vertices[i0];
-				const auto& v1 = subdividedData.vertices[i1];
-				DirectX::XMFLOAT3 midVertex;
-				midVertex = {
-					(v0.x + v1.x) * 0.5f,
-					(v0.y + v1.y) * 0.5f,
-					(v0.z + v1.z) * 0.5f
-				};
-				subdividedData.vertices.push_back(midVertex);
-			}
+				auto normalize = [&](const DirectX::XMFLOAT3& v) -> DirectX::XMFLOAT3 {
+					DirectX::XMVECTOR vec = DirectX::XMLoadFloat3(&v);
+					vec = DirectX::XMVector3Normalize(vec);
+					DirectX::XMFLOAT3 result;
+					DirectX::XMStoreFloat3(&result, vec);
+					return result;
+					};
 
-			if (this->hasUV)
-			{
-				const auto& u0 = subdividedData.uvs[i0];
-				const auto& u1 = subdividedData.uvs[i1];
-				DirectX::XMFLOAT2 midUV;
-				midUV = {
-					(u0.x + u1.x) * 0.5f,
-					(u0.y + u1.y) * 0.5f
-				};
-				subdividedData.uvs.push_back(midUV);
-			}
+				uint32_t index = subdividedData.vertices.size();
 
-			if (this->hasNormals)
-			{
-				const auto& n0 = subdividedData.normals[i0];
-				const auto& n1 = subdividedData.normals[i1];
-				DirectX::XMFLOAT3 midNormal;
-				midNormal = {
-					(n0.x + n1.x) * 0.5f,
-					(n0.y + n1.y) * 0.5f,
-					(n0.z + n1.z) * 0.5f
-				};
-				normalize(midNormal);
-				subdividedData.normals.push_back(midNormal);
-			}
+				if (this->hasVertices)
+				{
+					const auto& v0 = subdividedData.vertices[i0];
+					const auto& v1 = subdividedData.vertices[i1];
+					DirectX::XMFLOAT3 midVertex;
+					midVertex = {
+						(v0.x + v1.x) * 0.5f,
+						(v0.y + v1.y) * 0.5f,
+						(v0.z + v1.z) * 0.5f
+					};
+					subdividedData.vertices.push_back(midVertex);
+				}
 
-			if (this->hasTangents)
-			{
-				const auto& t0 = subdividedData.tangents[i0];
-				const auto& t1 = subdividedData.tangents[i1];
-				DirectX::XMFLOAT3 midTangent;
-				midTangent = {
-					(t0.x + t1.x) * 0.5f,
-					(t0.y + t1.y) * 0.5f,
-					(t0.z + t1.z) * 0.5f
-				};
-				normalize(midTangent);
-				subdividedData.tangents.push_back(midTangent);
-			}
+				if (this->hasUV)
+				{
+					const auto& u0 = subdividedData.uvs[i0];
+					const auto& u1 = subdividedData.uvs[i1];
+					DirectX::XMFLOAT2 midUV;
+					midUV = {
+						(u0.x + u1.x) * 0.5f,
+						(u0.y + u1.y) * 0.5f
+					};
+					subdividedData.uvs.push_back(midUV);
+				}
 
-			if (this->hasBitangents)
-			{
-				const auto& b0 = subdividedData.bitangents[i0];
-				const auto& b1 = subdividedData.bitangents[i1];
-				DirectX::XMFLOAT3 midBitTangent;
-				midBitTangent = {
-					(b0.x + b1.x) * 0.5f,
-					(b0.y + b1.y) * 0.5f,
-					(b0.z + b1.z) * 0.5f
-				};
-				normalize(midBitTangent);
-				subdividedData.bitangents.push_back(midBitTangent);
-			}
+				if (this->hasNormals)
+				{
+					const auto& n0 = subdividedData.normals[i0];
+					const auto& n1 = subdividedData.normals[i1];
+					DirectX::XMFLOAT3 midNormal;
+					midNormal = {
+						(n0.x + n1.x) * 0.5f,
+						(n0.y + n1.y) * 0.5f,
+						(n0.z + n1.z) * 0.5f
+					};
+					normalize(midNormal);
+					subdividedData.normals.push_back(midNormal);
+				}
 
-			midpointMap[key] = index;
-			return index;
+				if (this->hasTangents)
+				{
+					const auto& t0 = subdividedData.tangents[i0];
+					const auto& t1 = subdividedData.tangents[i1];
+					DirectX::XMFLOAT3 midTangent;
+					midTangent = {
+						(t0.x + t1.x) * 0.5f,
+						(t0.y + t1.y) * 0.5f,
+						(t0.z + t1.z) * 0.5f
+					};
+					normalize(midTangent);
+					subdividedData.tangents.push_back(midTangent);
+				}
+
+				if (this->hasBitangents)
+				{
+					const auto& b0 = subdividedData.bitangents[i0];
+					const auto& b1 = subdividedData.bitangents[i1];
+					DirectX::XMFLOAT3 midBitTangent;
+					midBitTangent = {
+						(b0.x + b1.x) * 0.5f,
+						(b0.y + b1.y) * 0.5f,
+						(b0.z + b1.z) * 0.5f
+					};
+					normalize(midBitTangent);
+					subdividedData.bitangents.push_back(midBitTangent);
+				}
+
+				midpointMap[key] = index;
+				return index;
 			};
 
-		for (std::uint32_t i = 0; i < this->indices.size(); i += 3)
-		{
-			uint32_t v0 = this->indices[i + 0];
-			uint32_t v1 = this->indices[i + 1];
-			uint32_t v2 = this->indices[i + 2];
+			subdividedData.indices.resize(this->indices.size() * 4);
+			for (std::size_t i = 0; i < this->indices.size() / 3; i++)
+			{
+				std::size_t offset = i * 3;
+				uint32_t v0 = this->indices[offset + 0];
+				uint32_t v1 = this->indices[offset + 1];
+				uint32_t v2 = this->indices[offset + 2];
 
-			uint32_t m01 = getMidpointIndex(v0, v1);
-			uint32_t m12 = getMidpointIndex(v1, v2);
-			uint32_t m20 = getMidpointIndex(v2, v0);
+				uint32_t m01 = getMidpointIndex(v0, v1);
+				uint32_t m12 = getMidpointIndex(v1, v2);
+				uint32_t m20 = getMidpointIndex(v2, v0);
 
-			subdividedData.indices.push_back(v0);
-			subdividedData.indices.push_back(m01);
-			subdividedData.indices.push_back(m20);
+				std::size_t triOffset = offset * 4;
+				subdividedData.indices[triOffset + 0] = v0;
+				subdividedData.indices[triOffset + 1] = m01;
+				subdividedData.indices[triOffset + 2] = m20;
 
-			subdividedData.indices.push_back(v1);
-			subdividedData.indices.push_back(m12);
-			subdividedData.indices.push_back(m01);
+				subdividedData.indices[triOffset + 3] = v1;
+				subdividedData.indices[triOffset + 4] = m12;
+				subdividedData.indices[triOffset + 5] = m01;
 
-			subdividedData.indices.push_back(v2);
-			subdividedData.indices.push_back(m20);
-			subdividedData.indices.push_back(m12);
+				subdividedData.indices[triOffset + 6] = v2;
+				subdividedData.indices[triOffset + 7] = m20;
+				subdividedData.indices[triOffset + 8] = m12;
 
-			subdividedData.indices.push_back(m01);
-			subdividedData.indices.push_back(m12);
-			subdividedData.indices.push_back(m20);
+				subdividedData.indices[triOffset + 9] = m01;
+				subdividedData.indices[triOffset + 10] = m12;
+				subdividedData.indices[triOffset + 11] = m20;
+			}
+
+			//PerformanceLog(std::string(__func__) + "::" + std::to_string(this->vertices.size()), true, false);
+
+			*this = subdividedData;
 		}
-
-		*this = subdividedData;
-		Subdivision(--a_subCount);
 
 		this->UpdateVertexMapAndFaceNormals();
 
@@ -329,41 +361,47 @@ namespace Mus {
 	{
 		if (!this->hasVertices || this->vertices.empty() || a_smoothCount == 0)
 			return;
+
 		logger::debug("{} : {} vertex smooth({})...", __func__, this->vertices.size(), a_smoothCount);
 
-		for (size_t i = 0; i < this->vertices.size(); ++i)
+		for (std::uint32_t doSmooth = 0; doSmooth < a_smoothCount; doSmooth++)
 		{
-			const DirectX::XMFLOAT3& v = this->vertices[i];
-			auto it = this->vertexMap.find(v);
-			if (it == this->vertexMap.end())
-				continue;
+			//PerformanceLog(std::string(__func__) + "::" + std::to_string(this->vertices.size()), false, false);
 
-			DirectX::XMVECTOR avgPos = DirectX::XMVectorZero();
-			int totalCount = 0;
+			concurrency::parallel_for(std::size_t(0), this->vertices.size(), [&](std::size_t i) {
+				const DirectX::XMFLOAT3& v = this->vertices[i];
+				auto it = this->vertexMap.find(v);
+				if (it == this->vertexMap.end())
+					return;
 
-			for (size_t faceIdx : it->second)
-			{
-				const GeometryData::FaceNormal& face = this->faceNormals[faceIdx];
-				for (auto vi : { face.v0, face.v1, face.v2 })
+				DirectX::XMVECTOR avgPos = DirectX::XMVectorZero();
+				int totalCount = 0;
+
+				for (size_t faceIdx : it->second)
 				{
-					DirectX::XMVECTOR vp = DirectX::XMLoadFloat3(&this->vertices[vi]);
-					avgPos = DirectX::XMVectorAdd(avgPos, vp);
-					totalCount++;
+					const GeometryData::FaceNormal& face = this->faceNormals[faceIdx];
+					for (auto vi : { face.v0, face.v1, face.v2 })
+					{
+						DirectX::XMVECTOR vp = DirectX::XMLoadFloat3(&this->vertices[vi]);
+						avgPos = DirectX::XMVectorAdd(avgPos, vp);
+						totalCount++;
+					}
 				}
-			}
 
-			if (totalCount == 0)
-				continue;
+				if (totalCount == 0)
+					return;
 
-			avgPos = DirectX::XMVectorScale(avgPos, 1.0f / totalCount);
-			DirectX::XMVECTOR original = DirectX::XMLoadFloat3(&v);
-			DirectX::XMVECTOR smoothed = DirectX::XMVectorLerp(original, avgPos, a_strength);
+				avgPos = DirectX::XMVectorScale(avgPos, 1.0f / totalCount);
+				DirectX::XMVECTOR original = DirectX::XMLoadFloat3(&v);
+				DirectX::XMVECTOR smoothed = DirectX::XMVectorLerp(original, avgPos, a_strength);
 
-			XMStoreFloat3(&this->vertices[i], smoothed);
+				XMStoreFloat3(&this->vertices[i], smoothed);
+			});
+
+			//PerformanceLog(std::string(__func__) + "::" + std::to_string(this->vertices.size()), true, false);
+
+			this->UpdateVertexMapAndFaceNormals();
 		}
-
-		this->UpdateVertexMapAndFaceNormals();
-		VertexSmooth(a_strength, --a_smoothCount);
 		logger::debug("{} : {} vertex smooth done", __func__, this->vertices.size());
 		return;
 	}

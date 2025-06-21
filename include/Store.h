@@ -12,6 +12,7 @@ namespace Mus {
 	extern bool PerformanceCheck;
 	extern bool PerformanceCheckAverage;
 	extern bool PerformanceCheckConsolePrint;
+	extern bool PerformanceCheckTick;
 
 	const std::string tempTexture = "Textures\\TextureManager\\Temp.dds";
 

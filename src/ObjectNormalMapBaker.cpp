@@ -13,20 +13,32 @@ namespace Mus {
 			return nullptr;
 		}
 
+		a_data.UpdateVertexMapAndFaceNormals();
 		if (TaskManager::GetSingleton().GetCurrentBakeObjectNormalMapTaskID(taskID) != taskID.taskID)
+		{
+			logger::error("{} : Invalid taskID", __func__);
 			return nullptr;
+		}
 
 		a_data.Subdivision(Config::GetSingleton().GetSubdivision());
 		if (TaskManager::GetSingleton().GetCurrentBakeObjectNormalMapTaskID(taskID) != taskID.taskID)
+		{
+			logger::error("{} : Invalid taskID", __func__);
 			return nullptr;
+		}
 
 		a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
 		if (TaskManager::GetSingleton().GetCurrentBakeObjectNormalMapTaskID(taskID) != taskID.taskID)
+		{
+			logger::error("{} : Invalid taskID", __func__);
 			return nullptr;
-
+		}
 		a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree());
 		if (TaskManager::GetSingleton().GetCurrentBakeObjectNormalMapTaskID(taskID) != taskID.taskID)
+		{
+			logger::error("{} : Invalid taskID", __func__);
 			return nullptr;
+		}
 
 		HRESULT hr;
 		auto device = Shader::ShaderManager::GetSingleton().GetDevice();
@@ -149,13 +161,16 @@ namespace Mus {
 		}
 
 		if (TaskManager::GetSingleton().GetCurrentBakeObjectNormalMapTaskID(taskID) != taskID.taskID)
+		{
+			logger::error("{} : Invalid taskID", __func__);
 			return nullptr;
+		}
 
-		concurrency::SchedulerPolicy policy = concurrency::CurrentScheduler::GetPolicy();
-		policy.SetPolicyValue(
-			concurrency::ContextPriority, THREAD_PRIORITY_BELOW_NORMAL
-		);
-		concurrency::CurrentScheduler::Create(policy);
+		//concurrency::SchedulerPolicy policy = concurrency::CurrentScheduler::GetPolicy();
+		//policy.SetPolicyValue(
+		//	concurrency::ContextPriority, THREAD_PRIORITY_BELOW_NORMAL
+		//);
+		//concurrency::CurrentScheduler::Create(policy);
 
 		logger::info("{} : {} {} {} {} baking normalmap...", __func__, a_data.vertices.size(), a_data.uvs.size(), a_data.normals.size(), a_data.indices.size());
 
@@ -174,6 +189,8 @@ namespace Mus {
 		{
 			parallelMips.push_back(std::thread([&, mip]() {
 				TaskManager::SetDeferredWorker();
+				//PerformanceLog(std::string("BakeObjectNormalMap") + "::" + textureName + "::" + std::to_string(mip), false, false);
+
 				D3D11_MAPPED_SUBRESOURCE mappedResource;
 				UINT subresourceIndex = D3D11CalcSubresource(mip, 0, dstStagingDesc.MipLevels);
 				Shader::ShaderManager::GetSingleton().ShaderContextLock();
@@ -190,7 +207,7 @@ namespace Mus {
 				uint8_t* data = reinterpret_cast<uint8_t*>(mappedResource.pData);
 				uint8_t* maskData = reinterpret_cast<uint8_t*>(maskMappedResource.pData);
 
-				std::size_t chunkSize = 16;
+				std::size_t chunkSize = 8;
 				if (mip > 0)
 					chunkSize *= std::pow(2, mip + 1);
 				std::size_t chunkCount = (totalTaskCount + chunkSize - 1) / chunkSize;
@@ -324,15 +341,20 @@ namespace Mus {
 				Shader::ShaderManager::GetSingleton().ShaderContextLock();
 				context->Unmap(dstStagingTexture2D.Get(), subresourceIndex);
 				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+
+				//PerformanceLog(std::string("BakeObjectNormalMap") + "::" + textureName + "::" + std::to_string(mip), true, false);
 			}));
 		}
 		for (auto& parallelMip : parallelMips) {
 			parallelMip.join();
 		}
-		concurrency::CurrentScheduler::Detach();
+		//concurrency::CurrentScheduler::Detach();
 
 		if (TaskManager::GetSingleton().GetCurrentBakeObjectNormalMapTaskID(taskID) != taskID.taskID)
+		{
+			logger::error("{} : Invalid taskID", __func__);
 			return nullptr;
+		}
 
 		if (maskStagingTexture2D)
 		{

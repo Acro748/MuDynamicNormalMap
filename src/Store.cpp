@@ -5,7 +5,8 @@ namespace Mus {
 	std::atomic<bool> IsMainMenu = false;
 	std::atomic<bool> IsGamePaused = false;
 
-	bool PerformanceCheck = false;
+	bool PerformanceCheck = true;
 	bool PerformanceCheckAverage = false;
 	bool PerformanceCheckConsolePrint = false;
+	bool PerformanceCheckTick = false;
 }

@@ -46,13 +46,13 @@ namespace Mus {
 				return fabs(a.x - b.x) < eps && fabs(a.y - b.y) < eps && fabs(a.z - b.z) < eps;
 			}
 		};
-		std::unordered_map<DirectX::XMFLOAT3, std::vector<size_t>, Vec3Hash, Vec3Equal> vertexMap;
+		concurrency::concurrent_unordered_map<DirectX::XMFLOAT3, concurrency::concurrent_vector<size_t>, Vec3Hash, Vec3Equal> vertexMap;
 
 		struct FaceNormal {
 			size_t v0, v1, v2;
 			DirectX::XMVECTOR normal;
 		};
-		std::vector<FaceNormal> faceNormals;
+		concurrency::concurrent_vector<FaceNormal> faceNormals;
 	};
 
 	struct BakeData {
