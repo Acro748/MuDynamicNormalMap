@@ -6,7 +6,7 @@ message("Using toolchain file ${CMAKE_TOOLCHAIN_FILE}.")
 ########################################################################################################################
 project(
         MuDynamicTextureTool
-        VERSION 0.0.2
+        VERSION 0.0.3
         DESCRIPTION "MuDynamicTextureTool by Acro."
         LANGUAGES CXX
 )
@@ -128,7 +128,7 @@ install(TARGETS ${PROJECT_NAME}
 ## Shader Script
 ########################################################################################################################
 set(compute_shader_sources 
-
+   ${CMAKE_CURRENT_SOURCE_DIR}/shader/ObjectNormalMapBaker.hlsl
 )
 set(vertex_shader_sources 
 

@@ -11,12 +11,25 @@ namespace Mus {
 			return instance;
 		}
 
-		RE::NiPointer<RE::NiSourceTexture> BakeObjectNormalMap(TaskID taskIDsrc, std::string textureName, GeometryData a_data, std::string a_srcTexturePath, std::string a_maskTexturePath);
+		RE::NiPointer<RE::NiSourceTexture> BakeObjectNormalMap(TaskID taskID, std::string textureName, GeometryData a_data, std::string a_srcTexturePath, std::string a_maskTexturePath);
+		RE::NiPointer<RE::NiSourceTexture> BakeObjectNormalMapGPU(TaskID taskID, std::string textureName, GeometryData a_data, std::string a_srcTexturePath, std::string a_maskTexturePath);
 
 	private:
-		void RecalculateNormals(GeometryData& a_data, float a_smooth = 60.0f);
-		void Subdivision(GeometryData& a_data, std::uint32_t a_subCount = 1);
-		void VertexSmooth(GeometryData& a_data, float a_strength = 0.5f, std::uint32_t a_smoothCount = 1);
+		struct TileTriangleRange {
+			std::uint32_t startOffset;
+			std::uint32_t count;
+		};
+		struct TileInfo {
+			std::uint32_t TILE_SIZE;
+			std::uint32_t TEX_WIDTH;
+			std::uint32_t TEX_HEIGHT;
+			std::uint32_t TILE_COUNT_X() { return this->TEX_WIDTH / this->TILE_SIZE; };
+			std::uint32_t TILE_COUNT_Y() { return this->TEX_HEIGHT / this->TILE_SIZE; };
+			std::uint32_t TILE_COUNT() { return this->TILE_COUNT_X() * this->TILE_COUNT_Y(); };
+		};
+
 		bool ComputeBarycentric(float px, float py, DirectX::XMINT2 a, DirectX::XMINT2 b, DirectX::XMINT2 c, DirectX::XMFLOAT3& out);
+		void GenerateTileTriangleRanges(TileInfo tileInfo, const GeometryData& a_data, std::vector<uint32_t>& outPackedTriangleIndices, std::vector<TileTriangleRange>& outTileRanges);
+		bool CreateStructuredBuffer(const void* data, UINT size, UINT stride, Microsoft::WRL::ComPtr<ID3D11Buffer>& bufferOut, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvOut);
 	};
 }

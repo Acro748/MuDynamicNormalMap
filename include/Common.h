@@ -14,7 +14,7 @@ namespace Mus {
 		~GeometryData() {};
 
 		void GetGeometryData(RE::BSGeometry* a_geo);
-		void UpdateVertexMapAndFaceNormals();
+		void UpdateVertexMap_FaceNormals_FaceTangents();
 		void RecalculateNormals(float a_smooth);
 		void Subdivision(std::uint32_t a_subCount);
 		void VertexSmooth(float a_strength, std::uint32_t a_smoothCount);
@@ -45,14 +45,69 @@ namespace Mus {
 				const float eps = floatPrecision;
 				return fabs(a.x - b.x) < eps && fabs(a.y - b.y) < eps && fabs(a.z - b.z) < eps;
 			}
+		}; 
+		struct VertexKey {
+			DirectX::XMFLOAT3 pos;
+			DirectX::XMFLOAT2 uv;
+			bool operator==(const VertexKey& other) const {
+				const float eps = floatPrecision;
+				return fabs(pos.x - other.pos.x) < eps &&
+					fabs(pos.y - other.pos.y) < eps &&
+					fabs(pos.z - other.pos.z) < eps &&
+					fabs(uv.x - other.uv.x) < eps &&
+					fabs(uv.y - other.uv.y) < eps;
+			}
 		};
-		concurrency::concurrent_unordered_map<DirectX::XMFLOAT3, concurrency::concurrent_vector<size_t>, Vec3Hash, Vec3Equal> vertexMap;
+		struct VertexKeyHash {
+			size_t operator()(const VertexKey& k) const {
+				size_t hx = std::hash<int>()(int(k.pos.x * 10000));
+				size_t hy = std::hash<int>()(int(k.pos.y * 10000));
+				size_t hz = std::hash<int>()(int(k.pos.z * 10000));
+				size_t hu = std::hash<int>()(int(k.uv.x * 10000));
+				size_t hv = std::hash<int>()(int(k.uv.y * 10000));
+				return (((((hx ^ (hy << 1)) >> 1) ^ (hz << 1)) ^ (hu << 2)) >> 2) ^ (hv << 3);
+			}
+		};
+		
+		// UV seam 처리를 위한 position 기반 맵 추가
+		struct PositionKey {
+			DirectX::XMFLOAT3 pos;
+			bool operator==(const PositionKey& other) const {
+				const float eps = floatPrecision;
+				return fabs(pos.x - other.pos.x) < eps &&
+					fabs(pos.y - other.pos.y) < eps &&
+					fabs(pos.z - other.pos.z) < eps;
+			}
+		};
+		struct PositionKeyHash {
+			size_t operator()(const PositionKey& k) const {
+				return std::hash<int>()(int(k.pos.x * 10000)) ^
+					(std::hash<int>()(int(k.pos.y * 10000)) << 1) ^
+					(std::hash<int>()(int(k.pos.z * 10000)) << 2);
+			}
+		};
+		
+		concurrency::concurrent_unordered_map<VertexKey, concurrency::concurrent_vector<size_t>, VertexKeyHash> vertexMap;
+		concurrency::concurrent_unordered_map<PositionKey, concurrency::concurrent_vector<size_t>, PositionKeyHash> positionMap;
+
+		struct FaceUV {
+			DirectX::XMFLOAT2 uv0, uv1, uv2;
+		};
+		concurrency::concurrent_vector<FaceUV> faceUVs;
 
 		struct FaceNormal {
 			size_t v0, v1, v2;
-			DirectX::XMVECTOR normal;
+			DirectX::XMFLOAT3 normal;
 		};
 		concurrency::concurrent_vector<FaceNormal> faceNormals;
+		concurrency::concurrent_vector<concurrency::concurrent_vector<size_t>> vertexToFaceMap;
+
+		struct FaceTangent {
+			size_t v0, v1, v2;
+			DirectX::XMFLOAT3 tangent;
+			DirectX::XMFLOAT3 bitangent;
+		};
+		concurrency::concurrent_vector<FaceTangent> faceTangents;
 	};
 
 	struct BakeData {

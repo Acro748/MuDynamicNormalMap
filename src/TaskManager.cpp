@@ -190,6 +190,8 @@ namespace Mus {
 		{
 			if (!arma)
 				continue;
+			if (!arma->bipedModelData.bipedObjectSlots.any(RE::BIPED_MODEL::BipedObjectSlot(1 << bipedSlot)))
+				continue;
 			char addonString[MAX_PATH]{ '\0' };
 			arma->GetNodeName(addonString, a_actor, armo, -1);
 			auto root = a_actor->loadedData->data3D->GetObjectByName(addonString);
