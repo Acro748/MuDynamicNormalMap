@@ -231,7 +231,7 @@ namespace Mus {
 			DirectX::XMFLOAT2 duv2 = { uv2.x - uv0.x, uv2.y - uv0.y };
 
 			float r = duv1.x * duv2.y - duv2.x * duv1.y;
-			r = (fabs(r) < 1e-6f) ? 1.0f : 1.0f / r;
+			r = (fabs(r) < floatPrecision) ? 1.0f : 1.0f / r;
 
 			DirectX::XMVECTOR tangentVec = DirectX::XMVectorScale(
 				DirectX::XMVectorSubtract(
@@ -367,8 +367,8 @@ namespace Mus {
 				return;
 
 			DirectX::XMVECTOR n = DirectX::XMVector3Normalize(nSum);
-			DirectX::XMVECTOR t = DirectX::XMVector3Length(tSum).m128_f32[0] > 1e-6f ? DirectX::XMVector3Normalize(tSum) : DirectX::XMVectorZero();
-			DirectX::XMVECTOR b = DirectX::XMVector3Length(bSum).m128_f32[0] > 1e-6f ? DirectX::XMVector3Normalize(bSum) : DirectX::XMVectorZero();
+			DirectX::XMVECTOR t = DirectX::XMVector3Length(tSum).m128_f32[0] > floatPrecision ? DirectX::XMVector3Normalize(tSum) : DirectX::XMVectorZero();
+			DirectX::XMVECTOR b = DirectX::XMVector3Length(bSum).m128_f32[0] > floatPrecision ? DirectX::XMVector3Normalize(bSum) : DirectX::XMVectorZero();
 
 			if (!DirectX::XMVector3Equal(t, DirectX::XMVectorZero())) {
 				t = DirectX::XMVector3Normalize(DirectX::XMVectorSubtract(t, DirectX::XMVectorScale(n, DirectX::XMVectorGetX(DirectX::XMVector3Dot(n, t)))));

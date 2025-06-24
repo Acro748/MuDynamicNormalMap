@@ -63,20 +63,18 @@ namespace Mus {
 		};
 		struct Vec3Equal {
 			bool operator()(const DirectX::XMFLOAT3& a, const DirectX::XMFLOAT3& b) const {
-				const float eps = weldDistance;
-				return fabs(a.x - b.x) < eps && fabs(a.y - b.y) < eps && fabs(a.z - b.z) < eps;
+				return fabs(a.x - b.x) < weldDistance && fabs(a.y - b.y) < weldDistance && fabs(a.z - b.z) < weldDistance;
 			}
 		};
 		struct VertexKey {
 			DirectX::XMFLOAT3 pos;
 			DirectX::XMFLOAT2 uv;
 			bool operator==(const VertexKey& other) const {
-				const float eps = weldDistance;
-				return fabs(pos.x - other.pos.x) < eps &&
-					fabs(pos.y - other.pos.y) < eps &&
-					fabs(pos.z - other.pos.z) < eps &&
-					fabs(uv.x - other.uv.x) < eps &&
-					fabs(uv.y - other.uv.y) < eps;
+				return fabs(pos.x - other.pos.x) < weldDistance &&
+					fabs(pos.y - other.pos.y) < weldDistance &&
+					fabs(pos.z - other.pos.z) < weldDistance &&
+					fabs(uv.x - other.uv.x) < weldDistance &&
+					fabs(uv.y - other.uv.y) < weldDistance;
 			}
 		};
 		struct VertexKeyHash {
@@ -90,14 +88,12 @@ namespace Mus {
 			}
 		};
 
-		// UV seam 처리를 위한 position 기반 맵 추가
 		struct PositionKey {
 			DirectX::XMFLOAT3 pos;
 			bool operator==(const PositionKey& other) const {
-				const float eps = weldDistance;
-				return fabs(pos.x - other.pos.x) < eps &&
-					fabs(pos.y - other.pos.y) < eps &&
-					fabs(pos.z - other.pos.z) < eps;
+				return fabs(pos.x - other.pos.x) < weldDistance &&
+					fabs(pos.y - other.pos.y) < weldDistance &&
+					fabs(pos.z - other.pos.z) < weldDistance;
 			}
 		};
 		struct PositionKeyHash {
