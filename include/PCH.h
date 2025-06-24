@@ -138,6 +138,7 @@ namespace util {
 #include "RGBA.h"
 
 #include "Store.h"
+#include "Geometry.h"
 #include "Common.h"
 #include "nifUtil.h"
 #include "Utility.hpp"

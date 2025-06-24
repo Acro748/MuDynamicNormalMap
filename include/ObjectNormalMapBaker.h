@@ -11,7 +11,14 @@ namespace Mus {
 			return instance;
 		}
 
-		RE::NiPointer<RE::NiSourceTexture> BakeObjectNormalMap(TaskID taskID, std::string textureName, GeometryData a_data, std::string a_srcTexturePath, std::string a_maskTexturePath);
+		struct NormalMapResult {
+			std::size_t index;
+			std::string geoName;
+			std::string textureName;
+			std::size_t vertexCount;
+			RE::NiPointer<RE::NiSourceTexture> normalmap;
+		};
+		std::vector<NormalMapResult> BakeObjectNormalMap(TaskID taskID, GeometryData a_data, std::unordered_map<std::size_t, BakeTextureSet> a_bakeSet);
 		RE::NiPointer<RE::NiSourceTexture> BakeObjectNormalMapGPU(TaskID taskID, std::string textureName, GeometryData a_data, std::string a_srcTexturePath, std::string a_maskTexturePath);
 
 	private:

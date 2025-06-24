@@ -149,6 +149,8 @@ namespace {
     }
     void kDataloadedFunction()
     {
+        Mus::weldDistance = Mus::Config::GetSingleton().GetWeldDistance();
+
 		Mus::g_frameEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_armorAttachEventEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_facegenNiNodeEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());

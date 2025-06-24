@@ -53,6 +53,9 @@ namespace Mus {
         [[nodiscard]] inline std::uint8_t GetNormalmapBakeDelayTick() const noexcept {
             return NormalmapBakeDelayTick;
         }
+        [[nodiscard]] inline float GetWeldDistance() const noexcept {
+            return WeldDistance;
+        }
         [[nodiscard]] inline float GetNormalSmoothDegree() const noexcept {
             return NormalSmoothDegree;
         }
@@ -82,11 +85,12 @@ namespace Mus {
         bool PlayerEnable = true;
         bool NPCEnable = true;
         bool HeadEnable = false;
-        unsigned long PriorityCores = -1;
+        unsigned long PriorityCores = 0;
         std::uint8_t NormalmapBakeDelayTick = 2;
+        float WeldDistance = 0.0001f;
         float NormalSmoothDegree = 60.0f;
-        std::uint8_t Subdivision = 1;
-        std::uint8_t VertexSmooth = 1;
+        std::uint8_t Subdivision = 0;
+        std::uint8_t VertexSmooth = 0;
         float VertexSmoothStrength = 0.5f;
 
     public:

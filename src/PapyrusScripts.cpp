@@ -27,7 +27,7 @@ namespace Mus {
 			{
 				if (!a_actor || !a_actor->loadedData || !a_actor->loadedData->data3D)
 					return;
-				TaskManager::GetSingleton().QBakeObjectNormalMap(a_actor, TaskManager::GetSingleton().GetGeometries(a_actor->loadedData->data3D.get(), [](RE::BSGeometry*) -> bool { return true; }), RE::BIPED_OBJECT::kBody);
+				TaskManager::GetSingleton().QBakeObjectNormalMap(a_actor, TaskManager::GetSingleton().GetGeometries(a_actor->loadedData->data3D.get(), [](RE::BSGeometry*) -> bool { return true; }), bipedSlot);
 			}
 			else
 			{

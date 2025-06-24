@@ -125,7 +125,7 @@ namespace Mus {
 				{
                     BakeEnable = GetBoolValue(variableValue);
 				}
-                else if (variableName == "NPCEnable")
+                else if (variableName == "PlayerEnable")
 				{
                     PlayerEnable = GetBoolValue(variableValue);
 				}
@@ -152,6 +152,10 @@ namespace Mus {
 				{
                     NormalmapBakeDelayTick = GetUIntValue(variableValue);
 				}
+				else if (variableName == "WeldDistance")
+				{
+                    WeldDistance = GetFloatValue(variableValue);
+				}
 				else if (variableName == "NormalSmoothDegree")
 				{
                     NormalSmoothDegree = GetFloatValue(variableValue);
@@ -171,6 +175,7 @@ namespace Mus {
 			}
         }
 
+        PriorityCores = 0;
         std::uint32_t cores = std::thread::hardware_concurrency();
         logger::info("Detected cores : {}", cores);
         auto priorityCores_ = priorityCores;
@@ -207,7 +212,7 @@ namespace Mus {
             coreList += std::to_string(core);
             PriorityCores |= 1 << core;
         }
-        logger::info("Enable cores for baking normalmap : {}", coreList);
+        logger::info("Enable cores for baking normalmap : {} / {:x}", coreList, PriorityCores);
 
         return true;
     }

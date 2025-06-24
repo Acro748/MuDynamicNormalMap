@@ -9,4 +9,6 @@ namespace Mus {
 	bool PerformanceCheckAverage = false;
 	bool PerformanceCheckConsolePrint = false;
 	bool PerformanceCheckTick = false;
+
+	float weldDistance = 0.0001f;
 }

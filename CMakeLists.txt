@@ -6,7 +6,7 @@ message("Using toolchain file ${CMAKE_TOOLCHAIN_FILE}.")
 ########################################################################################################################
 project(
         MuDynamicTextureTool
-        VERSION 0.0.3
+        VERSION 0.1.0
         DESCRIPTION "MuDynamicTextureTool by Acro."
         LANGUAGES CXX
 )
@@ -34,6 +34,7 @@ set(headers
         include/HookEvent.h
         include/Store.h
         include/Common.h
+        include/Geometry.h
         include/RGBA.h
 )
 
@@ -47,7 +48,7 @@ set(sources
         src/Hook.cpp
         src/HookEvent.cpp
         src/Store.cpp
-        src/Common.cpp
+        src/Geometry.cpp
         src/Main.cpp
 
         ${CMAKE_CURRENT_BINARY_DIR}/version.rc

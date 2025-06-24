@@ -24,8 +24,10 @@ namespace Mus {
 
 		std::unordered_set<RE::BSGeometry*> GetGeometries(RE::NiAVObject* a_root, std::function<bool(RE::BSGeometry*)> func);
 		std::unordered_set<RE::BSGeometry*> GetGeometries(RE::Actor* a_actor, std::uint32_t bipedSlot);
+		std::unordered_set<RE::BSGeometry*> GetSkinGeometries(RE::Actor* a_actor, std::uint32_t bipedSlot);
 		std::unordered_set<RE::BSGeometry*> GetGeometries(std::string a_fileName);
 
+		void BakeSkinObjectsNormalMap(RE::Actor* a_actor, std::uint32_t bipedSlot);
 		bool QBakeObjectNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::uint32_t bipedSlot);
 
 		std::int64_t GenerateUniqueID();
