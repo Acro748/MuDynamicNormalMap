@@ -18,7 +18,8 @@ namespace Mus {
 			std::size_t vertexCount;
 			RE::NiPointer<RE::NiSourceTexture> normalmap;
 		};
-		std::vector<NormalMapResult> BakeObjectNormalMap(TaskID taskID, GeometryData a_data, std::unordered_map<std::size_t, BakeTextureSet> a_bakeSet);
+		typedef concurrency::concurrent_vector<NormalMapResult> BakeResult;
+		BakeResult BakeObjectNormalMap(TaskID taskID, GeometryData a_data, std::unordered_map<std::size_t, BakeTextureSet> a_bakeSet);
 		RE::NiPointer<RE::NiSourceTexture> BakeObjectNormalMapGPU(TaskID taskID, std::string textureName, GeometryData a_data, std::string a_srcTexturePath, std::string a_maskTexturePath);
 
 	private:
@@ -38,5 +39,9 @@ namespace Mus {
 		bool ComputeBarycentric(float px, float py, DirectX::XMINT2 a, DirectX::XMINT2 b, DirectX::XMINT2 c, DirectX::XMFLOAT3& out);
 		void GenerateTileTriangleRanges(TileInfo tileInfo, const GeometryData& a_data, std::vector<uint32_t>& outPackedTriangleIndices, std::vector<TileTriangleRange>& outTileRanges);
 		bool CreateStructuredBuffer(const void* data, UINT size, UINT stride, Microsoft::WRL::ComPtr<ID3D11Buffer>& bufferOut, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvOut);
+		std::string GetTangentNormalMapPath(std::string a_normalMapPath);
+		std::string GetOverlayNormalMapPath(std::string a_normalMapPath);
+		bool IsInvalidPixel(const std::uint32_t a_pixel);
+		void BleedTexture(std::uint32_t* pixels, UINT width, UINT height, std::int32_t margin);
 	};
 }

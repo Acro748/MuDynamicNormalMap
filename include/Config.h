@@ -53,8 +53,17 @@ namespace Mus {
         [[nodiscard]] inline std::uint8_t GetNormalmapBakeDelayTick() const noexcept {
             return NormalmapBakeDelayTick;
         }
+        [[nodiscard]] inline std::uint32_t GetBakeKey1() const noexcept {
+            return BakeKey1;
+        }
+        [[nodiscard]] inline std::uint32_t GetBakeKey2() const noexcept {
+            return BakeKey2;
+        }
         [[nodiscard]] inline float GetWeldDistance() const noexcept {
             return WeldDistance;
+        }
+        [[nodiscard]] inline std::int32_t GetTextureMargin() const noexcept {
+            return TextureMargin;
         }
         [[nodiscard]] inline float GetNormalSmoothDegree() const noexcept {
             return NormalSmoothDegree;
@@ -87,7 +96,10 @@ namespace Mus {
         bool HeadEnable = false;
         unsigned long PriorityCores = 0;
         std::uint8_t NormalmapBakeDelayTick = 2;
+        std::uint32_t BakeKey1 = 0;
+        std::uint32_t BakeKey2 = 43;
         float WeldDistance = 0.0001f;
+        std::int32_t TextureMargin = 2;
         float NormalSmoothDegree = 60.0f;
         std::uint8_t Subdivision = 0;
         std::uint8_t VertexSmooth = 0;

@@ -129,6 +129,7 @@ namespace {
         logger::trace("Building hook...");
 
         Mus::hook();
+        Mus::EventHandler::GetSingleton().Register(false);
     }
 
     void InitializeInterface()
@@ -150,11 +151,12 @@ namespace {
     void kDataloadedFunction()
     {
         Mus::weldDistance = Mus::Config::GetSingleton().GetWeldDistance();
-
+        Mus::weldDistanceMult = 1.0f / Mus::weldDistance;
 		Mus::g_frameEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_armorAttachEventEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_facegenNiNodeEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_actorChangeHeadPartEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
+        Mus::EventHandler::GetSingleton().Register(true);
     }
 
     void kNewGameFunction()

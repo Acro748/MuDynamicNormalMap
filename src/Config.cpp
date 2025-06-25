@@ -152,9 +152,21 @@ namespace Mus {
 				{
                     NormalmapBakeDelayTick = GetUIntValue(variableValue);
 				}
+				else if (variableName == "BakeKey1")
+				{
+                    BakeKey1 = GetUIntValue(variableValue);
+				}
+				else if (variableName == "BakeKey2")
+				{
+                    BakeKey2 = GetUIntValue(variableValue);
+				}
 				else if (variableName == "WeldDistance")
 				{
                     WeldDistance = GetFloatValue(variableValue);
+				}
+				else if (variableName == "TextureMargin")
+				{
+                    TextureMargin = GetIntValue(variableValue);
 				}
 				else if (variableName == "NormalSmoothDegree")
 				{

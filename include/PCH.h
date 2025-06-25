@@ -40,6 +40,7 @@
 #include <concepts>
 #include <concurrent_vector.h>
 #include <concurrent_unordered_map.h>
+#include <concurrent_queue.h>
 #include <condition_variable>
 #include <cstring>
 #include <d3d11.h>
@@ -140,6 +141,7 @@ namespace util {
 #include "Store.h"
 #include "Geometry.h"
 #include "Common.h"
+#include "InputManager.h"
 #include "nifUtil.h"
 #include "Utility.hpp"
 

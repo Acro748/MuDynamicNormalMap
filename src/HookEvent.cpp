@@ -1,78 +1,91 @@
 #include "HookEvent.h"
 
 namespace Mus {
-	void EventHandler::Register()
+	void EventHandler::Register(bool dataLoaded)
 	{
-		if (const auto Menu = RE::UI::GetSingleton(); Menu) {
-			logger::info("Sinking menu events...");
-			Menu->AddEventSink<RE::MenuOpenCloseEvent>(this);
-		}
-
-		if (const auto EventHolder = RE::ScriptEventSourceHolder::GetSingleton(); EventHolder) {
-			logger::info("Sinking load/switch events...");
-			EventHolder->AddEventSink<RE::TESLoadGameEvent>(this);
-		}
-
-		if (const auto NiNodeEvent = SKSE::GetNiNodeUpdateEventSource(); NiNodeEvent)
+		if (!dataLoaded)
 		{
-			NiNodeEvent->AddEventSink<SKSE::NiNodeUpdateEvent>(this);
+
 		}
-	}
-
-	EventResult EventHandler::ProcessEvent(const RE::MenuOpenCloseEvent* evn, RE::BSTEventSource<RE::MenuOpenCloseEvent>*)
-	{
-		if (!evn || !evn->menuName.c_str())
-			return EventResult::kContinue;
-
-		if (evn->opening)
-			MenuOpened(evn->menuName.c_str());
 		else
-			MenuClosed(evn->menuName.c_str());
-
-		return EventResult::kContinue;
-	}
-
-	void EventHandler::MenuOpened(std::string name)
-	{
-		if (name == "Main Menu")
 		{
-			logger::info("Detected Main Menu"); 
-			IsMainMenu.store(true);
-		}
-		else if (name == "RaceSex Menu")
-		{
-			logger::info("Detected RaceSex Menu");
-			IsRaceSexMenu.store(true);
+			if (auto inputManager = RE::BSInputDeviceManager::GetSingleton(); inputManager)
+			{
+				inputManager->AddEventSink<RE::InputEvent*>(this);
+			}
 		}
 	}
 
-	void EventHandler::MenuClosed(std::string name)
+	EventResult EventHandler::ProcessEvent(RE::InputEvent* const* evn, RE::BSTEventSource<RE::InputEvent*>*)
 	{
-		if (name == "Main Menu")
-		{
-			IsMainMenu.store(false);
-		}
-		else if (name == "RaceSex Menu")
-		{
-			IsRaceSexMenu.store(false);
-		}
-	}
-
-	EventResult EventHandler::ProcessEvent(const RE::TESLoadGameEvent* evn, RE::BSTEventSource<RE::TESLoadGameEvent>*) 
-	{
-		logger::info("Detected Load Game Event");
-		return EventResult::kContinue;
-	}
-
-	EventResult EventHandler::ProcessEvent(const SKSE::NiNodeUpdateEvent* evn, RE::BSTEventSource<SKSE::NiNodeUpdateEvent>*)
-	{
-		if (!evn)
+		if (!evn || !*evn)
 			return EventResult::kContinue;
 
-		auto actor = skyrim_cast<RE::Actor*>(evn->reference);
-		if (!actor)
-			return EventResult::kContinue;
+		for (RE::InputEvent* input = *evn; input != nullptr; input = input->next)
+		{
+			if (input->eventType.all(RE::INPUT_EVENT_TYPE::kButton))
+			{
+				RE::ButtonEvent* button = input->AsButtonEvent();
+				if (!button)
+					continue;
 
+				using namespace InputManager;
+				std::uint32_t keyCode = 0;
+				std::uint32_t keyMask = button->idCode;
+				//logger::info("{}", keyMask);
+				if (button->device.all(RE::INPUT_DEVICE::kMouse))
+					keyCode = InputMap::kMacro_MouseButtonOffset + keyMask;
+				else if (//isUsingMotionControllers() &&
+						 REL::Module::IsVR() &&
+						 button->device.underlying() >= INPUT_DEVICE_CROSS_VR::kVirtualKeyboard &&
+						 button->device.underlying() <= INPUT_DEVICE_CROSS_VR::kDeviceType_WindowsMRSecondary) {
+					keyCode = GetDeviceOffsetForDevice(button->device.underlying()) + keyMask;
+				}
+				else if (button->device.all(RE::INPUT_DEVICE::kGamepad))
+					keyCode = InputMap::GamepadMaskToKeycode(keyMask);
+				else
+					keyCode = keyMask;
+
+				if (!REL::Module::IsVR())
+				{
+					if (keyCode >= InputMap::kMaxMacros)
+						continue;
+				}
+				else
+				{
+					if (keyCode >= InputMap::kMaxMacrosVR)
+						continue;
+				}
+
+				if (keyCode == Config::GetSingleton().GetBakeKey1())
+				{
+					isPressedBakeKey1 = button->IsPressed();
+				}
+				else if (keyCode == Config::GetSingleton().GetBakeKey2())
+				{
+					if (isPressedBakeKey1 || Config::GetSingleton().GetBakeKey1() == 0)
+					{
+						RE::Actor* target = nullptr;
+						if (auto crossHair = RE::CrosshairPickData::GetSingleton(); crossHair && crossHair->targetActor)
+						{
+#ifndef ENABLE_SKYRIM_VR
+							target = skyrim_cast<RE::Actor*>(crossHair->targetActor.get().get());
+#else
+							for (std::uint32_t i = 0; i < RE::VRControls::VR_DEVICE::kTotal; i++)
+							{
+								target = skyrim_cast<RE::Actor*>(crossHair->targetActor[i].get().get());
+								if (target)
+									break;
+							}
+#endif
+						}
+						if (!target)
+							target = RE::PlayerCharacter::GetSingleton();
+						TaskManager::GetSingleton().QBakeSkinObjectsNormalMap(target, RE::BIPED_OBJECT::kBody);
+					}
+				}
+			}
+		}
 		return EventResult::kContinue;
 	}
 }

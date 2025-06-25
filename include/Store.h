@@ -14,7 +14,7 @@ namespace Mus {
 	extern bool PerformanceCheckConsolePrint;
 	extern bool PerformanceCheckTick;
 
-	const std::string tempTexture = "Textures\\TextureManager\\Temp.dds";
+	constexpr std::string_view tempTexture = "Textures\\TextureManager\\Temp.dds";
 
 	#define MATH_PI       3.14159265358979323846
 	constexpr float toDegree = 180 / MATH_PI;
@@ -29,4 +29,5 @@ namespace Mus {
 
 	constexpr float floatPrecision = 1e-6f;
 	extern float weldDistance;
+	extern std::uint32_t weldDistanceMult;
 }

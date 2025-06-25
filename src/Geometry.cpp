@@ -1,7 +1,7 @@
 #include "Geometry.h"
 
 namespace Mus {
-#define GEOMETRY_TEST
+//#define GEOMETRY_TEST
 
 	GeometryData::GeometryData(RE::BSGeometry* a_geo)
 	{
@@ -74,6 +74,7 @@ namespace Mus {
 		std::uint32_t vertexSize = desc.GetSize();
 		std::uint8_t* vertexBlock = skinPartition->partitions[0].buffData->rawVertexData;
 		DirectX::XMVECTOR* dynamicVertex = dynamicTriShape ? reinterpret_cast<DirectX::XMVECTOR*>(dynamicTriShape->GetDynamicTrishapeRuntimeData().dynamicData) : nullptr;
+		float colorConvert = 1.0f / 255.0f;
 		for (std::uint32_t i = 0; i < vertexCount; i++) {
 			std::uint8_t* block = &vertexBlock[i * vertexSize];
 			std::uint32_t vi = beforeVertexCount + i;
@@ -103,9 +104,9 @@ namespace Mus {
 
 			if (info.hasNormals)
 			{
-				normals[ni].x = static_cast<float>(*block) / 255.0f;
-				normals[ni].y = static_cast<float>(*(block + 1)) / 255.0f;
-				normals[ni].z = static_cast<float>(*(block + 2)) / 255.0f;
+				normals[ni].x = static_cast<float>(*block) * colorConvert;
+				normals[ni].y = static_cast<float>(*(block + 1)) * colorConvert;
+				normals[ni].z = static_cast<float>(*(block + 2)) * colorConvert;
 				block += 3;
 
 				if (info.hasBitangents)
@@ -114,9 +115,9 @@ namespace Mus {
 
 				if (info.hasTangents)
 				{
-					tangents[ti].x = static_cast<float>(*block) / 255.0f;
-					tangents[ti].y = static_cast<float>(*(block + 1)) / 255.0f;
-					tangents[ti].z = static_cast<float>(*(block + 2)) / 255.0f;
+					tangents[ti].x = static_cast<float>(*block) * colorConvert;
+					tangents[ti].y = static_cast<float>(*(block + 1)) * colorConvert;
+					tangents[ti].z = static_cast<float>(*(block + 2)) * colorConvert;
 					block += 3;
 
 					if (info.hasBitangents)
@@ -125,7 +126,7 @@ namespace Mus {
 			}
 		}
 
-		std::size_t indexOffset = 0;
+		std::uint32_t indexOffset = 0;
 		for (auto& partition : skinPartition->partitions)
 		{
 			indexOffset += partition.triangles * 3;
@@ -164,6 +165,11 @@ namespace Mus {
 		mainInfo.hasTangents |= info.hasTangents;
 		mainInfo.hasBitangents |= info.hasBitangents;
 
+		if (geometries.size() > 1) {
+			if (geometries[mainGeometryIndex].second.indicesCount() < geometries[geometries.size() - 1].second.indicesCount())
+				mainGeometryIndex = geometries.size() - 1;
+		}
+
 #ifdef GEOMETRY_TEST
 		PerformanceLog(std::string(__func__) + "::" + a_geo->name.c_str(), true, false);
 #endif // GEOMETRY_TEST
@@ -181,7 +187,7 @@ namespace Mus {
 		faceNormals.clear();
 		faceTangents.clear();
 
-		size_t triCount = indices.size() / 3;
+		std::size_t triCount = indices.size() / 3;
 		faceNormals.resize(triCount);
 		faceTangents.resize(triCount);
 		vertexToFaceMap.resize(vertices.size());
@@ -326,7 +332,7 @@ namespace Mus {
 
 			DirectX::XMVECTOR nSelf = DirectX::XMVectorZero();
 			bool foundSelf = false;
-			for (size_t fi : exactFaceIndices) {
+			for (auto fi : exactFaceIndices) {
 				const auto& fn = faceNormals[fi];
 				if (fn.v0 == i || fn.v1 == i || fn.v2 == i) {
 					nSelf = DirectX::XMLoadFloat3(&fn.normal);
@@ -346,15 +352,14 @@ namespace Mus {
 			DirectX::XMVECTOR tSum = DirectX::XMVectorZero();
 			DirectX::XMVECTOR bSum = DirectX::XMVectorZero();
 
-			for (size_t vi : posIt->second) {
-				for (size_t fi : vertexToFaceMap[vi]) {
+			for (auto vi : posIt->second) {
+				for (auto fi : vertexToFaceMap[vi]) {
 					const auto& fn = faceNormals[fi];
 					if (fn.v0 == vi || fn.v1 == vi || fn.v2 == vi) {
 						DirectX::XMVECTOR fnVec = DirectX::XMLoadFloat3(&fn.normal);
 						float dot = DirectX::XMVectorGetX(DirectX::XMVector3Dot(fnVec, nSelf));
 						if (dot < smoothCos)
 							continue;
-
 						const auto& ft = faceTangents[fi];
 						nSum = DirectX::XMVectorAdd(nSum, fnVec);
 						tSum = DirectX::XMVectorAdd(tSum, DirectX::XMLoadFloat3(&ft.tangent));
@@ -429,11 +434,11 @@ namespace Mus {
 					std::vector<std::uint32_t>(indices.begin() + geometry.second.indicesStart, indices.begin() + geometry.second.indicesEnd)
 				);
 
-				std::unordered_map<uint64_t, uint32_t> midpointMap;
-				auto getMidpointIndex = [&](uint32_t i0, uint32_t i1) -> uint32_t {
-					auto createKey = [](uint32_t i0, uint32_t i1) -> uint64_t {
-						uint32_t a = (std::min)(i0, i1);
-						uint32_t b = (std::max)(i0, i1);
+				std::unordered_map<std::uint64_t, std::uint32_t> midpointMap;
+				auto getMidpointIndex = [&](std::uint32_t i0, std::uint32_t i1) -> std::uint32_t {
+					auto createKey = [](std::uint32_t i0, std::uint32_t i1) -> uint64_t {
+						std::uint32_t a = (std::min)(i0, i1);
+						std::uint32_t b = (std::max)(i0, i1);
 						return (static_cast<uint64_t>(a) << 32) | b;
 					};
 
@@ -449,7 +454,7 @@ namespace Mus {
 						return result;
 						};
 
-					uint32_t index = data.vertices.size();
+					std::size_t index = data.vertices.size();
 
 					if (geometry.second.info.hasVertices)
 					{
@@ -522,13 +527,13 @@ namespace Mus {
 				for (std::size_t i = 0; i < oldIndices.size() / 3; i++)
 				{
 					std::size_t offset = i * 3;
-					uint32_t v0 = oldIndices[offset + 0] - geometry.second.vertexStart;
-					uint32_t v1 = oldIndices[offset + 1] - geometry.second.vertexStart;
-					uint32_t v2 = oldIndices[offset + 2] - geometry.second.vertexStart;
+					std::uint32_t v0 = oldIndices[offset + 0] - geometry.second.vertexStart;
+					std::uint32_t v1 = oldIndices[offset + 1] - geometry.second.vertexStart;
+					std::uint32_t v2 = oldIndices[offset + 2] - geometry.second.vertexStart;
 
-					uint32_t m01 = getMidpointIndex(v0, v1);
-					uint32_t m12 = getMidpointIndex(v1, v2);
-					uint32_t m20 = getMidpointIndex(v2, v0);
+					std::uint32_t m01 = getMidpointIndex(v0, v1);
+					std::uint32_t m12 = getMidpointIndex(v1, v2);
+					std::uint32_t m20 = getMidpointIndex(v2, v0);
 
 					std::size_t triOffset = offset * 4;
 					data.indices[triOffset + 0] = v0 + geometry.second.vertexStart;
@@ -622,9 +627,9 @@ namespace Mus {
 				DirectX::XMVECTOR avgPos = DirectX::XMVectorZero();
 				int totalCount = 0;
 
-				std::unordered_set<size_t> connectedVertices;
-				for (size_t vi : posIt->second) {
-					for (size_t fi : vertexToFaceMap[vi]) {
+				std::unordered_set<std::uint32_t> connectedVertices;
+				for (auto vi : posIt->second) {
+					for (auto fi : vertexToFaceMap[vi]) {
 						const auto& fn = faceNormals[fi];
 						if (fn.v0 == vi || fn.v1 == vi || fn.v2 == vi) {
 							connectedVertices.insert(fn.v0);
@@ -634,7 +639,7 @@ namespace Mus {
 					}
 				}
 
-				for (size_t vi : connectedVertices) {
+				for (auto vi : connectedVertices) {
 					if (std::abs(uvs[vi].x - uv.x) <= weldDistance &&
 						std::abs(uvs[vi].y - uv.y) <= weldDistance) {
 						avgPos = DirectX::XMVectorAdd(avgPos, DirectX::XMLoadFloat3(&vertices[vi]));
@@ -649,7 +654,7 @@ namespace Mus {
 				DirectX::XMVECTOR original = DirectX::XMLoadFloat3(&pos);
 				DirectX::XMVECTOR smoothed = DirectX::XMVectorLerp(original, avgPos, a_strength);
 				DirectX::XMStoreFloat3(&tempVertices[i], smoothed);
-									  });
+			});
 
 			vertices = tempVertices;
 #ifdef GEOMETRY_TEST

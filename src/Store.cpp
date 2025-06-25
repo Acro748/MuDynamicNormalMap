@@ -11,4 +11,5 @@ namespace Mus {
 	bool PerformanceCheckTick = false;
 
 	float weldDistance = 0.0001f;
+	std::uint32_t weldDistanceMult = 10000;
 }

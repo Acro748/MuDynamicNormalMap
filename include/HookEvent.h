@@ -4,9 +4,7 @@ namespace Mus {
 	using EventResult = RE::BSEventNotifyControl;
 
 	class EventHandler final : 
-		public RE::BSTEventSink<RE::MenuOpenCloseEvent>,
-		public RE::BSTEventSink<RE::TESLoadGameEvent>, 
-		public RE::BSTEventSink<SKSE::NiNodeUpdateEvent> {
+		public RE::BSTEventSink<RE::InputEvent*> {
 
 	public:
 		static EventHandler& GetSingleton() {
@@ -14,15 +12,11 @@ namespace Mus {
 			return instance;
 		}
 
-		void Register();
+		void Register(bool dataLoaded);
 	protected:
-		EventResult ProcessEvent(const RE::MenuOpenCloseEvent* evn, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override;
-		EventResult ProcessEvent(const RE::TESLoadGameEvent* evn, RE::BSTEventSource<RE::TESLoadGameEvent>*) override;
-		EventResult ProcessEvent(const SKSE::NiNodeUpdateEvent* evn, RE::BSTEventSource<SKSE::NiNodeUpdateEvent>*) override;
+		EventResult ProcessEvent(RE::InputEvent* const* evn, RE::BSTEventSource<RE::InputEvent*>*) override;
 
 	private:
-		void MenuOpened(std::string name);
-		void MenuClosed(std::string name);
-
+		bool isPressedBakeKey1 = false;
 	};
 }

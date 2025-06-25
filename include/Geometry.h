@@ -52,20 +52,8 @@ namespace Mus {
 		concurrency::concurrent_vector<std::uint32_t> indices;
 
 		concurrency::concurrent_vector<std::pair<std::string, ObjectInfo>> geometries; //geometry name, ObjectInfo
+		std::uint32_t mainGeometryIndex = 0;
 
-		struct Vec3Hash {
-			size_t operator()(const DirectX::XMFLOAT3& v) const {
-				size_t hx = std::hash<int>()(int(v.x * 10000));
-				size_t hy = std::hash<int>()(int(v.y * 10000));
-				size_t hz = std::hash<int>()(int(v.z * 10000));
-				return ((hx ^ (hy << 1)) >> 1) ^ (hz << 1);
-			}
-		};
-		struct Vec3Equal {
-			bool operator()(const DirectX::XMFLOAT3& a, const DirectX::XMFLOAT3& b) const {
-				return fabs(a.x - b.x) < weldDistance && fabs(a.y - b.y) < weldDistance && fabs(a.z - b.z) < weldDistance;
-			}
-		};
 		struct VertexKey {
 			DirectX::XMFLOAT3 pos;
 			DirectX::XMFLOAT2 uv;
@@ -78,15 +66,17 @@ namespace Mus {
 			}
 		};
 		struct VertexKeyHash {
-			size_t operator()(const VertexKey& k) const {
-				size_t hx = std::hash<int>()(int(k.pos.x * 10000));
-				size_t hy = std::hash<int>()(int(k.pos.y * 10000));
-				size_t hz = std::hash<int>()(int(k.pos.z * 10000));
-				size_t hu = std::hash<int>()(int(k.uv.x * 10000));
-				size_t hv = std::hash<int>()(int(k.uv.y * 10000));
+			std::size_t operator()(const VertexKey& k) const {
+				std::size_t hx = std::hash<std::int32_t>()(std::int32_t(k.pos.x * weldDistanceMult));
+				std::size_t hy = std::hash<std::int32_t>()(std::int32_t(k.pos.y * weldDistanceMult));
+				std::size_t hz = std::hash<std::int32_t>()(std::int32_t(k.pos.z * weldDistanceMult));
+				std::size_t hu = std::hash<std::int32_t>()(std::int32_t(k.uv.x * weldDistanceMult));
+				std::size_t hv = std::hash<std::int32_t>()(std::int32_t(k.uv.y * weldDistanceMult));
 				return (((((hx ^ (hy << 1)) >> 1) ^ (hz << 1)) ^ (hu << 2)) >> 2) ^ (hv << 3);
 			}
 		};
+		//including uv seam
+		concurrency::concurrent_unordered_map<VertexKey, concurrency::concurrent_vector<std::uint32_t>, VertexKeyHash> vertexMap;
 
 		struct PositionKey {
 			DirectX::XMFLOAT3 pos;
@@ -97,30 +87,24 @@ namespace Mus {
 			}
 		};
 		struct PositionKeyHash {
-			size_t operator()(const PositionKey& k) const {
-				return std::hash<int>()(int(k.pos.x * 10000)) ^
-					(std::hash<int>()(int(k.pos.y * 10000)) << 1) ^
-					(std::hash<int>()(int(k.pos.z * 10000)) << 2);
+			std::size_t operator()(const PositionKey& k) const {
+				return std::hash<std::int32_t>()(std::int32_t(k.pos.x * weldDistanceMult)) ^
+					(std::hash<std::int32_t>()(std::int32_t(k.pos.y * weldDistanceMult)) << 1) ^
+					(std::hash<std::int32_t>()(std::int32_t(k.pos.z * weldDistanceMult)) << 2);
 			}
 		};
-
-		concurrency::concurrent_unordered_map<VertexKey, concurrency::concurrent_vector<size_t>, VertexKeyHash> vertexMap;
-		concurrency::concurrent_unordered_map<PositionKey, concurrency::concurrent_vector<size_t>, PositionKeyHash> positionMap;
-
-		struct FaceUV {
-			DirectX::XMFLOAT2 uv0, uv1, uv2;
-		};
-		concurrency::concurrent_vector<FaceUV> faceUVs;
+		//without uv seam
+		concurrency::concurrent_unordered_map<PositionKey, concurrency::concurrent_vector<std::uint32_t>, PositionKeyHash> positionMap;
 
 		struct FaceNormal {
-			size_t v0, v1, v2;
+			std::uint32_t v0, v1, v2;
 			DirectX::XMFLOAT3 normal;
 		};
 		concurrency::concurrent_vector<FaceNormal> faceNormals;
-		concurrency::concurrent_vector<concurrency::concurrent_vector<size_t>> vertexToFaceMap;
+		concurrency::concurrent_vector<concurrency::concurrent_vector<std::uint32_t>> vertexToFaceMap;
 
 		struct FaceTangent {
-			size_t v0, v1, v2;
+			std::uint32_t v0, v1, v2;
 			DirectX::XMFLOAT3 tangent;
 			DirectX::XMFLOAT3 bitangent;
 		};

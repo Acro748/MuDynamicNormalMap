@@ -395,6 +395,8 @@ namespace Mus {
     }
     inline bool IsExistFile(std::string path, ExistType type = ExistType::none, bool inFileSystem = false)
     {
+        if (path.empty())
+            return false;
         path = stringRemoveStarts(path, "Data\\");
         if (!inFileSystem)
         {
@@ -753,10 +755,15 @@ namespace Mus {
         return;
     }
 
-    inline std::string GetBipedName(std::uint32_t bipedSlot)
+    inline RE::NiPointer<RE::NiSkinPartition> GetSkinPartition(RE::BSGeometry* a_geo)
     {
-        if (bipedSlot >= RE::BIPED_OBJECT::kEditorTotal)
-            return "";
-        return magic_enum::enum_name(RE::BIPED_OBJECT(bipedSlot)).data();
+        if (!a_geo)
+            return nullptr;
+        if (!a_geo->GetGeometryRuntimeData().skinInstance)
+            return nullptr;
+        RE::NiSkinInstance* skinInstance = a_geo->GetGeometryRuntimeData().skinInstance.get();
+        if (!skinInstance->skinPartition)
+            return nullptr;
+        return skinInstance->skinPartition;
     }
 }

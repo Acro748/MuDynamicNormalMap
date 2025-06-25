@@ -18,19 +18,20 @@ namespace Mus {
 			return;
 
 		RE::FormID id = actor->formID;
+		std::string name = actor->GetName();
 		std::uint32_t bipedSlot = RE::BIPED_OBJECT::kHead;
 		std::string delayTaskID = GetDelayTaskID(id, bipedSlot);
 
 		if (Config::GetSingleton().GetBakeEnable())
 		{
-			RegisterDelayTask(delayTaskID, Config::GetSingleton().GetNormalmapBakeDelayTick(), [this, id, bipedSlot, delayTaskID]() {
+			RegisterDelayTask(delayTaskID, Config::GetSingleton().GetNormalmapBakeDelayTick(), [this, id, name, bipedSlot, delayTaskID]() {
 				RE::Actor* actor = GetFormByID<RE::Actor*>(id);
 				if (!actor || !actor->loadedData || !actor->loadedData->data3D)
 				{
-					logger::error("{:x} {} : invalid reference. so skip", id, GetBipedName(bipedSlot));
+					logger::error("{:x} {} : invalid reference. so skip", id, name);
 					return;
 				}
-				BakeSkinObjectsNormalMap(actor, bipedSlot);
+				QBakeSkinObjectsNormalMap(actor, bipedSlot);
 			});
 		}
 	}
@@ -40,19 +41,20 @@ namespace Mus {
 			return;
 
 		RE::FormID id = e.actor->formID;
+		std::string name = e.actor->GetName();
 		std::uint32_t bipedSlot = RE::BIPED_OBJECT::kHead;
 		std::string delayTaskID = GetDelayTaskID(id, bipedSlot);
 
 		if (Config::GetSingleton().GetBakeEnable())
 		{
-			RegisterDelayTask(delayTaskID, Config::GetSingleton().GetNormalmapBakeDelayTick(), [this, id, bipedSlot, delayTaskID]() {
+			RegisterDelayTask(delayTaskID, Config::GetSingleton().GetNormalmapBakeDelayTick(), [this, id, name, bipedSlot, delayTaskID]() {
 				RE::Actor* actor = GetFormByID<RE::Actor*>(id);
 				if (!actor || !actor->loadedData || !actor->loadedData->data3D)
 				{
-					logger::error("{:x} {} : invalid reference. so skip", id, GetBipedName(bipedSlot));
+					logger::error("{:x} {} : invalid reference. so skip", id, name);
 					return;
 				}
-				BakeSkinObjectsNormalMap(actor, bipedSlot);
+				QBakeSkinObjectsNormalMap(actor, bipedSlot);
 			});
 		}
 	}
@@ -66,19 +68,20 @@ namespace Mus {
 			return;
 
 		RE::FormID id = e.actor->formID;
+		std::string name = e.actor->GetName();
 		std::uint32_t bipedSlot = e.bipedSlot;
 		std::string delayTaskID = GetDelayTaskID(id, bipedSlot);
 
 		if (Config::GetSingleton().GetBakeEnable())
 		{
-			RegisterDelayTask(delayTaskID, Config::GetSingleton().GetNormalmapBakeDelayTick(), [this, id, bipedSlot, delayTaskID]() {
+			RegisterDelayTask(delayTaskID, Config::GetSingleton().GetNormalmapBakeDelayTick(), [this, id, name, bipedSlot, delayTaskID]() {
 				RE::Actor* actor = GetFormByID<RE::Actor*>(id);
 				if (!actor || !actor->loadedData || !actor->loadedData->data3D)
 				{
-					logger::error("{:x} {} : invalid reference. so skip", id, GetBipedName(bipedSlot));
+					logger::error("{:x} {} : invalid reference. so skip", id, name);
 					return;
 				}
-				BakeSkinObjectsNormalMap(actor, bipedSlot);
+				QBakeSkinObjectsNormalMap(actor, bipedSlot);
 			});
 		}
 	}
@@ -252,7 +255,7 @@ namespace Mus {
 		return geometries;
 	}
 
-	void TaskManager::BakeSkinObjectsNormalMap(RE::Actor* a_actor, std::uint32_t bipedSlot)
+	void TaskManager::QBakeSkinObjectsNormalMap(RE::Actor* a_actor, std::uint32_t bipedSlot)
 	{
 		if (!a_actor)
 			return;
@@ -353,10 +356,10 @@ namespace Mus {
 			newBakeTextureSet.textureName = textureName;
 			newBakeTextureSet.geometryName = geo->name.c_str();
 			newBakeTextureSet.srcTexturePath = texturePath;
-			newBakeTextureSet.maskTexturePath = GetCustomBakeNormalMapMaskTexture(a_actor, geo->name.c_str(), slot);
+			newBakeTextureSet.overlayTexturePath = GetBakeNormalMapOverlayTexture(geo->name.c_str(), slot);
 			bakeData.bakeTextureSet.emplace(geoIndex, newBakeTextureSet);
-			logger::debug("{:x}::{} : {} {} (vertices {} / uvs {} / tris {}) queue added on bake object normalmap", id, actorName,
-						 geo->name.c_str(), newBakeTextureSet.maskTexturePath, 
+			logger::debug("{:x}::{} : {} - (vertices {} / uvs {} / tris {}) queue added on bake object normalmap", id, actorName,
+						 geo->name.c_str(), newBakeTextureSet.overlayTexturePath, 
 						 bakeData.geoData.geometries[geoIndex].second.vertexCount(), bakeData.geoData.geometries[geoIndex].second.uvCount(), bakeData.geoData.geometries[geoIndex].second.indicesCount() / 3);
 
 			auto found = lastNormalMap[id].find(bakeData.geoData.geometries[geoIndex].second.vertexCount());
@@ -437,65 +440,29 @@ namespace Mus {
 		return true;
 	}
 
-	std::string TaskManager::GetBakeNormalMapMaskTexture(std::string a_geometryName, std::uint32_t bipedSlot, std::filesystem::path baseFolder)
+	std::string TaskManager::GetBakeNormalMapOverlayTexture(std::string a_geometryName, std::uint32_t bipedSlot)
 	{
+		const std::filesystem::path baseFolder = "Textures\\MuDynamicTextureTool\\BakeNormalMap\\Overlay";
 		const std::filesystem::path defaultMaskPath = baseFolder / "Default.dds";
 		if (a_geometryName.empty() || bipedSlot >= RE::BIPED_OBJECT::kEditorTotal)
 			return defaultMaskPath.string();
 
 		bipedSlot += 30;
-		std::filesystem::path maskPath = "Data" / baseFolder / std::to_string(bipedSlot);
-		if (IsExistDirectoy(maskPath.string()))
+		std::filesystem::path overlayPath = "Data" / baseFolder / std::to_string(bipedSlot);
+		if (IsExistDirectoy(overlayPath.string()))
 		{
 			try {
-				for (const auto& file : std::filesystem::directory_iterator(maskPath))
+				for (const auto& file : std::filesystem::directory_iterator(overlayPath))
 				{
 					if (IsContainString(a_geometryName, file.path().stem().string()))
-						return stringRemoveStarts(file.path().string(), GetRuntimeDataDirectory());
+						return (baseFolder / std::to_string(bipedSlot) / file.path().filename()).string();
 				}
 			}
 			catch (...) {}
-			return (maskPath / "Default.dds").string();
+			return (baseFolder / std::to_string(bipedSlot) / "Default.dds").string();
 		}
-		return baseFolder.string();
+		return defaultMaskPath.string();
 	}
-	std::string TaskManager::GetCustomBakeNormalMapMaskTexture(RE::Actor* a_actor, std::string a_geometryName, std::uint32_t bipedSlot)
-	{
-		if (!a_actor || a_geometryName.empty() || bipedSlot >= RE::BIPED_OBJECT::kEditorTotal)
-			return GetBakeNormalMapMaskTexture(a_geometryName, bipedSlot);
-
-		if (bipedSlot == RE::BIPED_OBJECT::kHead)
-		{
-			if (auto hp = RE::TESForm::LookupByEditorID<RE::BGSHeadPart>(a_geometryName); hp)
-			{
-				if (auto found = bakeObjectNormalMapMaskTexture.find(hp->formID); found != bakeObjectNormalMapMaskTexture.end())
-					return GetBakeNormalMapMaskTexture(a_geometryName, bipedSlot, found->second);
-			}
-		}
-		if (auto armor = a_actor->GetSkin(RE::BIPED_MODEL::BipedObjectSlot(1 << bipedSlot)); armor)
-		{
-			if (auto found = bakeObjectNormalMapMaskTexture.find(armor->formID); found != bakeObjectNormalMapMaskTexture.end())
-				return GetBakeNormalMapMaskTexture(a_geometryName, bipedSlot, found->second);
-		}
-		if (auto race = a_actor->GetRace(); race)
-		{
-			if (auto found = bakeObjectNormalMapMaskTexture.find(race->formID); found != bakeObjectNormalMapMaskTexture.end())
-				return GetBakeNormalMapMaskTexture(a_geometryName, bipedSlot, found->second);
-		}
-		if (auto actorBase = a_actor->GetActorBase(); actorBase)
-		{
-			if (auto found = bakeObjectNormalMapMaskTexture.find(actorBase->formID); found != bakeObjectNormalMapMaskTexture.end())
-				return GetBakeNormalMapMaskTexture(a_geometryName, bipedSlot, found->second);
-			if (actorBase->faceNPC)
-			{
-				if (auto found = bakeObjectNormalMapMaskTexture.find(actorBase->faceNPC->formID); found != bakeObjectNormalMapMaskTexture.end())
-					return GetBakeNormalMapMaskTexture(a_geometryName, bipedSlot, found->second);
-			}
-		}
-		if (auto found = bakeObjectNormalMapMaskTexture.find(a_actor->formID); found != bakeObjectNormalMapMaskTexture.end())
-			return GetBakeNormalMapMaskTexture(a_geometryName, bipedSlot, found->second);
-		return GetBakeNormalMapMaskTexture(a_geometryName, bipedSlot);
-	}	
 	void TaskManager::InsertCustomBakeNormalMapMaskTexture(RE::FormID id, std::string baseFolder)
 	{
 		baseFolder = stringRemoveStarts(baseFolder, GetRuntimeDataDirectory());

@@ -35,6 +35,7 @@ set(headers
         include/Store.h
         include/Common.h
         include/Geometry.h
+        include/InputManager.h
         include/RGBA.h
 )
 
@@ -49,6 +50,7 @@ set(sources
         src/HookEvent.cpp
         src/Store.cpp
         src/Geometry.cpp
+        src/InputManager.cpp
         src/Main.cpp
 
         ${CMAKE_CURRENT_BINARY_DIR}/version.rc

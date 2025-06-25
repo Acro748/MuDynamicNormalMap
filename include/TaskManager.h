@@ -27,7 +27,7 @@ namespace Mus {
 		std::unordered_set<RE::BSGeometry*> GetSkinGeometries(RE::Actor* a_actor, std::uint32_t bipedSlot);
 		std::unordered_set<RE::BSGeometry*> GetGeometries(std::string a_fileName);
 
-		void BakeSkinObjectsNormalMap(RE::Actor* a_actor, std::uint32_t bipedSlot);
+		void QBakeSkinObjectsNormalMap(RE::Actor* a_actor, std::uint32_t bipedSlot);
 		bool QBakeObjectNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::uint32_t bipedSlot);
 
 		std::int64_t GenerateUniqueID();
@@ -56,8 +56,7 @@ namespace Mus {
 		std::string GetTextureName(RE::Actor* a_actor, std::uint32_t a_bipedSlot, RE::BSGeometry* a_geo); // ActorID + Armor/SkinID + BipedSlot + GeometryName + VertexCount
 		bool GetTextureInfo(std::string a_textureName, TextureInfo& a_textureInfo); // ActorID + GeometryName + VertexCount
 
-		std::string GetBakeNormalMapMaskTexture(std::string a_geometryName, std::uint32_t bipedSlot, std::filesystem::path baseFolder = "Textures\\MuDynamicTextureTool\\BakeNormalMap");
-		std::string GetCustomBakeNormalMapMaskTexture(RE::Actor* a_actor, std::string a_geometryName, std::uint32_t bipedSlot);
+		std::string GetBakeNormalMapOverlayTexture(std::string a_geometryName, std::uint32_t bipedSlot);
 		std::unordered_map<RE::FormID, std::string> bakeObjectNormalMapMaskTexture;
 
 		std::unordered_map<RE::FormID, std::unordered_map<std::string, std::int64_t>> bakeObjectNormalMapCounter; // ActorID, GeometryName, BakeID
