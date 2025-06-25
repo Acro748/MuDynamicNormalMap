@@ -27,6 +27,7 @@ namespace Mus {
 		std::unordered_set<RE::BSGeometry*> GetSkinGeometries(RE::Actor* a_actor, std::uint32_t bipedSlot);
 		std::unordered_set<RE::BSGeometry*> GetGeometries(std::string a_fileName);
 
+		void QObjectToTangent(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::uint32_t bipedSlot);
 		void QBakeSkinObjectsNormalMap(RE::Actor* a_actor, std::uint32_t bipedSlot);
 		bool QBakeObjectNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::uint32_t bipedSlot);
 
@@ -62,5 +63,8 @@ namespace Mus {
 		std::unordered_map<RE::FormID, std::unordered_map<std::string, std::int64_t>> bakeObjectNormalMapCounter; // ActorID, GeometryName, BakeID
 		std::mutex bakeObjectNormalMapCounterLock;
 		concurrency::concurrent_unordered_map<RE::FormID, concurrency::concurrent_unordered_map<std::uint32_t, std::string>> lastNormalMap; // ActorID, VertexCount, TextureName>
+
+
+		std::string GetTangentNormalMapPath(std::string a_normalMapPath);
 	};
 }

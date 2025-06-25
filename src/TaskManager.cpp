@@ -255,6 +255,85 @@ namespace Mus {
 		return geometries;
 	}
 
+	void TaskManager::QObjectToTangent(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::uint32_t bipedSlot)
+	{
+		if (!a_actor || !a_actor->loadedData || !a_actor->loadedData->data3D || a_srcGeometies.empty() || bipedSlot >= RE::BIPED_OBJECT::kEditorTotal)
+		{
+			logger::error("{} : Invalid parameters", __func__);
+			return;
+		}
+
+		RE::FormID id = a_actor->formID;
+		std::string actorName = a_actor->GetName();
+		BakeData bakeData;
+		std::size_t geoIndex = 0;
+		for (auto& geo : a_srcGeometies)
+		{
+			using State = RE::BSGeometry::States;
+			using Feature = RE::BSShaderMaterial::Feature;
+			if (!geo || geo->name.empty())
+				continue;
+			if (!geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
+				continue;
+			auto effect = geo->GetGeometryRuntimeData().properties[State::kEffect].get();
+			auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
+			if (!lightingShader || !lightingShader->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
+				continue;
+			RE::BSLightingShaderMaterialBase* material = skyrim_cast<RE::BSLightingShaderMaterialBase*>(lightingShader->material);
+			if (!material || !material->normalTexture || !material->textureSet)
+				continue;
+			std::string texturePath = GetTexturePath(material->textureSet.get(), RE::BSTextureSet::Texture::kNormal);
+			if (texturePath.empty())
+				continue;
+
+			BakeTextureSet newBakeTextureSet;
+			newBakeTextureSet.geometryName = geo->name.c_str();
+			newBakeTextureSet.srcTexturePath = texturePath;
+			bakeData.geoData.GetGeometryData(geo);
+			bakeData.bakeTextureSet.emplace(geoIndex, newBakeTextureSet);
+			geoIndex++;
+		}
+
+		bakeData.geoData.UpdateMap();
+		bakeData.geoData.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree());
+		for (auto& geoSet : bakeData.bakeTextureSet)
+		{
+			using State = RE::BSGeometry::States;
+			using Feature = RE::BSShaderMaterial::Feature;
+			auto obj = a_actor->loadedData->data3D->GetObjectByName(geoSet.second.geometryName);
+			auto geo = obj ? obj->AsGeometry() : nullptr;
+			if (!geo || geo->name.empty())
+				continue;
+			if (!geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
+				continue;
+			auto effect = geo->GetGeometryRuntimeData().properties[State::kEffect].get();
+			auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
+			if (!lightingShader || !lightingShader->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
+				continue;
+			RE::BSLightingShaderMaterialBase* material = skyrim_cast<RE::BSLightingShaderMaterialBase*>(lightingShader->material);
+			if (!material || !material->normalTexture || !material->textureSet)
+				continue;
+
+			if (!bakeData.geoData.SetGeometryData(geo, geoSet.first))
+				continue;
+
+			auto tangentTexture = GetTangentNormalMapPath(geoSet.second.srcTexturePath);
+			if (IsExistFile(tangentTexture, ExistType::textures))
+			{
+				RE::NiPointer<RE::NiSourceTexture> texture;
+				Shader::TextureLoadManager::LoadTexture(tangentTexture.c_str(), 1, texture, false);
+				material->normalTexture = texture;
+			}
+			else
+			{
+				RE::NiPointer<RE::NiSourceTexture> texture;
+				Shader::TextureLoadManager::LoadTexture("Textures\\MuDynamicTextureTool\\BakeNormalMap\\32\\Default.dds", 1, texture, false);
+				material->normalTexture = texture;
+			}
+			logger::info("{} updated", geo->name.c_str());
+		}
+	}
+
 	void TaskManager::QBakeSkinObjectsNormalMap(RE::Actor* a_actor, std::uint32_t bipedSlot)
 	{
 		if (!a_actor)
@@ -307,7 +386,7 @@ namespace Mus {
 			}
 			else
 				geometries = GetSkinGeometries(actor, bipedSlot);
-			QBakeObjectNormalMap(actor, geometries, bipedSlot);
+			QObjectToTangent(actor, geometries, bipedSlot);
 		});
 	}
 
@@ -539,5 +618,27 @@ namespace Mus {
 		a_textureInfo.geoName = frag[3];
 		a_textureInfo.vertexCount = Config::GetIntValue(frag[4]);
 		return true;
+	}
+
+	std::string TaskManager::GetTangentNormalMapPath(std::string a_normalMapPath)
+	{
+		constexpr std::string_view prefix = "Textures\\";
+		constexpr std::string_view msn_suffix = "_msn";
+		constexpr std::string_view n_suffix = "_n";
+		if (a_normalMapPath.empty())
+			return "";
+		if (!stringStartsWith(a_normalMapPath, prefix.data()))
+			a_normalMapPath = prefix.data() + a_normalMapPath;
+		std::filesystem::path file(a_normalMapPath);
+		std::string filename = file.stem().string();
+		if (stringEndsWith(filename, msn_suffix.data())) //_msn -> _n
+		{
+			filename = stringRemoveEnds(filename, msn_suffix.data());
+			filename += n_suffix;
+			return (file.parent_path() / (filename + ".dds")).string();
+		}
+		else if (stringEndsWith(filename, n_suffix.data())) //_n
+			return a_normalMapPath;
+		return "";
 	}
 }

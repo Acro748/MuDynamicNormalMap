@@ -13,6 +13,8 @@ namespace Mus {
 			bool hasNormals = false;
 			bool hasTangents = false;
 			bool hasBitangents = false;
+			bool hasColors = false;
+			bool hasSkinned = false;
 		};
 		struct ObjectInfo {
 			GeometryInfo info;
@@ -31,6 +33,12 @@ namespace Mus {
 			std::size_t bitangentStart;
 			std::size_t bitangentEnd;
 			std::size_t bitangentCount() { return info.hasBitangents ? bitangentEnd - bitangentStart : 0; }
+			std::size_t colorStart;
+			std::size_t colorEnd;
+			std::size_t colorCount() { return info.hasColors ? colorEnd - colorStart : 0; }
+			std::size_t skinnedStart;
+			std::size_t skinnedEnd;
+			std::size_t skinnedCount() { return info.hasSkinned ? skinnedEnd - skinnedStart : 0; }
 			std::size_t indicesStart;
 			std::size_t indicesEnd;
 			std::size_t indicesCount() { return indicesEnd - indicesStart; }
@@ -42,6 +50,7 @@ namespace Mus {
 		void RecalculateNormals(float a_smooth);
 		void Subdivision(std::uint32_t a_subCount);
 		void VertexSmooth(float a_strength, std::uint32_t a_smoothCount);
+		bool SetGeometryData(RE::BSGeometry* a_geo, std::uint32_t geoIndex);
 
 		GeometryInfo mainInfo;
 		concurrency::concurrent_vector<DirectX::XMFLOAT3> vertices;
@@ -50,6 +59,13 @@ namespace Mus {
 		concurrency::concurrent_vector<DirectX::XMFLOAT3> tangents;
 		concurrency::concurrent_vector<DirectX::XMFLOAT3> bitangents;
 		concurrency::concurrent_vector<std::uint32_t> indices;
+
+		concurrency::concurrent_vector<std::uint32_t> colors;
+		struct skinData {
+			std::uint64_t unk1;
+			std::uint32_t unk2;
+		};
+		concurrency::concurrent_vector<skinData> skinned;
 
 		concurrency::concurrent_vector<std::pair<std::string, ObjectInfo>> geometries; //geometry name, ObjectInfo
 		std::uint32_t mainGeometryIndex = 0;

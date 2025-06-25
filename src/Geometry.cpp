@@ -24,6 +24,8 @@ namespace Mus {
 		info.hasNormals = desc.HasFlag(RE::BSGraphics::Vertex::VF_NORMAL);
 		info.hasTangents = desc.HasFlag(RE::BSGraphics::Vertex::VF_TANGENT);
 		info.hasBitangents = info.hasVertices && info.hasNormals && info.hasTangents;
+		info.hasColors = desc.HasFlag(RE::BSGraphics::Vertex::VF_COLORS);
+		info.hasSkinned = desc.HasFlag(RE::BSGraphics::Vertex::VF_SKINNED);
 		return true;
 	}
 	bool GeometryData::GetGeometryData(RE::BSGeometry* a_geo)
@@ -62,6 +64,8 @@ namespace Mus {
 		std::size_t beforeNormalCount = normals.size();
 		std::size_t beforeTangentCount = tangents.size();
 		std::size_t beforeBitangentCount = bitangents.size();
+		std::size_t beforeColorCount = colors.size();
+		std::size_t beforeSkinnedCount = skinned.size();
 		vertices.resize(beforeVertexCount + vertexCount);
 		uvs.resize(beforeUVCount + vertexCount);
 		if (info.hasNormals)
@@ -70,8 +74,13 @@ namespace Mus {
 			tangents.resize(beforeTangentCount + vertexCount);
 		if (info.hasBitangents)
 			bitangents.resize(beforeBitangentCount + vertexCount);
+		if (info.hasColors)
+			colors.resize(beforeColorCount + vertexCount);
+		if (info.hasSkinned)
+			skinned.resize(beforeSkinnedCount + vertexCount);
 
 		std::uint32_t vertexSize = desc.GetSize();
+		logger::info("{}", vertexSize);
 		std::uint8_t* vertexBlock = skinPartition->partitions[0].buffData->rawVertexData;
 		DirectX::XMVECTOR* dynamicVertex = dynamicTriShape ? reinterpret_cast<DirectX::XMVECTOR*>(dynamicTriShape->GetDynamicTrishapeRuntimeData().dynamicData) : nullptr;
 		float colorConvert = 1.0f / 255.0f;
@@ -82,6 +91,8 @@ namespace Mus {
 			std::uint32_t ni = beforeNormalCount + i;
 			std::uint32_t ti = beforeTangentCount + i;
 			std::uint32_t bi = beforeBitangentCount + i;
+			std::uint32_t ci = beforeColorCount + i;
+			std::uint32_t si = beforeSkinnedCount + i;
 			if (info.hasVertices)
 			{
 				if (dynamicTriShape)
@@ -124,6 +135,15 @@ namespace Mus {
 						bitangents[bi].z = static_cast<float>(*block);
 				}
 			}
+
+			/*if (info.hasColors)
+			{
+				colors[ci] = *reinterpret_cast<std::uint32_t*>(block);
+				block += 4;
+			}*/
+			skinned[si].unk1 = *reinterpret_cast<std::uint64_t*>(block);
+			block += 8;
+			skinned[si].unk2 = *reinterpret_cast<std::uint32_t*>(block);
 		}
 
 		std::uint32_t indexOffset = 0;
@@ -155,6 +175,10 @@ namespace Mus {
 		newObjInfo.tangentEnd = tangents.size();
 		newObjInfo.bitangentStart = beforeBitangentCount;
 		newObjInfo.bitangentEnd = bitangents.size();
+		newObjInfo.colorStart = beforeColorCount;
+		newObjInfo.colorEnd = colors.size();
+		newObjInfo.skinnedStart = beforeSkinnedCount;
+		newObjInfo.skinnedEnd = skinned.size();
 		newObjInfo.indicesStart = beforeIndices;
 		newObjInfo.indicesEnd = indices.size();
 		geometries.push_back(std::make_pair(std::string(a_geo->name.c_str()), newObjInfo));
@@ -665,5 +689,155 @@ namespace Mus {
 		}
 		logger::debug("{} : {} vertex smooth done", __func__, vertices.size());
 		return;
+	}
+
+	bool GeometryData::SetGeometryData(RE::BSGeometry* a_geo, std::uint32_t geoIndex)
+	{
+		if (!a_geo || geometries.size() <= geoIndex)
+			return false;
+
+		using State = RE::BSGeometry::States;
+		using Feature = RE::BSShaderMaterial::Feature;
+		std::size_t vertexCount = geometries[geoIndex].second.vertexCount();
+
+		if (vertexCount != geometries[geoIndex].second.uvCount()
+			|| vertexCount != geometries[geoIndex].second.normalCount()
+			|| vertexCount != geometries[geoIndex].second.tangentCount()
+			|| vertexCount != geometries[geoIndex].second.bitangentCount()
+			|| (geometries[geoIndex].second.colorCount() > 0 && vertexCount != geometries[geoIndex].second.colorCount())
+			|| (geometries[geoIndex].second.skinnedCount() > 0 && vertexCount != geometries[geoIndex].second.skinnedCount()))
+			return false;
+
+		RE::BSDynamicTriShape* dynamicTriShape = a_geo->AsDynamicTriShape();
+		RE::BSTriShape* triShape = a_geo->AsTriShape();
+		if (!triShape)
+			return false;
+
+		if (!a_geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
+			return false;
+		auto effect = a_geo->GetGeometryRuntimeData().properties[State::kEffect].get();
+		auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
+		if (!lightingShader)
+			return false;
+
+		RE::NiSkinInstance* skinInstance = a_geo->GetGeometryRuntimeData().skinInstance.get();
+		if (!skinInstance)
+			return false;
+
+		RE::NiPointer<RE::NiSkinPartition> skinPartition = skinInstance->skinPartition;
+		std::uint32_t geoVertexCount = triShape->GetTrishapeRuntimeData().vertexCount;
+		geoVertexCount = geoVertexCount ? geoVertexCount : skinPartition->vertexCount;
+		if (!skinPartition || vertexCount != geoVertexCount)
+			return false;
+
+		RE::NiPointer<RE::NiObject> newNiObject;
+		skinPartition->CreateDeepCopy(newNiObject);
+		if (!newNiObject)
+			return false;
+		RE::NiSkinPartition* newSkinPartition = netimmerse_cast<RE::NiSkinPartition*>(newNiObject.get());
+		if (!newSkinPartition)
+			return false;
+
+		auto& newPartition = newSkinPartition->partitions[0];
+		if (!newPartition.buffData)
+			return false;
+
+		a_geo->GetGeometryRuntimeData().vertexDesc.SetFlag(RE::BSGraphics::Vertex::VF_NORMAL);
+		a_geo->GetGeometryRuntimeData().vertexDesc.SetFlag(RE::BSGraphics::Vertex::VF_TANGENT);
+
+		lightingShader->flags.reset(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals);
+		lightingShader->SetFlags(RE::BSShaderProperty::EShaderPropertyFlag8::kModelSpaceNormals, false);
+
+		auto vertexSize = a_geo->GetGeometryRuntimeData().vertexDesc.GetSize();
+		logger::info("{}", vertexSize);
+		std::uint8_t* newVertexBlock = new std::uint8_t[vertexCount * vertexSize];
+		std::memset(newVertexBlock, 0, vertexCount * vertexSize);
+
+		float colorConvert = 255.0f;
+		std::size_t vertexOffset = geometries[geoIndex].second.vertexStart;
+		std::size_t uvOffset = geometries[geoIndex].second.uvStart;
+		std::size_t normalOffset = geometries[geoIndex].second.normalStart;
+		std::size_t tangentOffset = geometries[geoIndex].second.tangentStart;
+		std::size_t bitantentOffset = geometries[geoIndex].second.bitangentStart;
+		std::size_t colorOffset = geometries[geoIndex].second.colorStart;
+		std::size_t skinnedOffset = geometries[geoIndex].second.skinnedStart;
+		for (std::uint32_t i = 0; i < vertexCount; i++)
+		{
+			std::uint8_t* block = &newVertexBlock[i * vertexSize];
+			std::uint32_t vi = vertexOffset + i;
+			std::uint32_t ui = uvOffset + i;
+			std::uint32_t ni = normalOffset + i;
+			std::uint32_t ti = tangentOffset + i;
+			std::uint32_t bi = bitantentOffset + i;
+			std::uint32_t ci = colorOffset + i;
+			std::uint32_t si = skinnedOffset + i;
+
+			if (!dynamicTriShape)
+				*reinterpret_cast<DirectX::XMFLOAT3*>(block) = vertices[vi];
+			block += 12;
+
+			*reinterpret_cast<float*>(block) = bitangents[bi].x;
+			block += 4;
+
+			*reinterpret_cast<std::uint16_t*>(block) = DirectX::PackedVector::XMConvertFloatToHalf(uvs[ui].x);
+			*reinterpret_cast<std::uint16_t*>(block + 2) = DirectX::PackedVector::XMConvertFloatToHalf(uvs[ui].y);
+			block += 4;
+
+			block[0] = static_cast<std::uint8_t>(normals[ni].x * colorConvert);
+			block[1] = static_cast<std::uint8_t>(normals[ni].y * colorConvert);
+			block[2] = static_cast<std::uint8_t>(normals[ni].z * colorConvert);
+			block += 3;
+
+			*block = bitangents[bi].y;
+			block += 1;
+
+			block[0] = static_cast<std::uint8_t>(tangents[ti].x * colorConvert);
+			block[1] = static_cast<std::uint8_t>(tangents[ti].y * colorConvert);
+			block[2] = static_cast<std::uint8_t>(tangents[ti].z * colorConvert);
+			block += 3;
+
+			*block = bitangents[bi].z;
+			block += 1;
+
+			/*if (geometries[geoIndex].second.colorCount() > 0)
+			{
+				*reinterpret_cast<std::uint32_t*>(block) = colors[ci];
+				block += 4;
+			}*/
+			*reinterpret_cast<std::uint64_t*>(block) = skinned[si].unk1;
+			block += 8;
+			*reinterpret_cast<std::uint32_t*>(block) = skinned[si].unk2;
+		}
+
+		newPartition.buffData->rawVertexData = newVertexBlock;
+		newPartition.vertexDesc = a_geo->GetGeometryRuntimeData().vertexDesc;
+		newPartition.buffData->vertexDesc = a_geo->GetGeometryRuntimeData().vertexDesc;
+		for (std::uint32_t i = 1; i < newSkinPartition->numPartitions; ++i)
+		{
+			auto& newPartitionAlt = newSkinPartition->partitions[i];
+			memcpy(newPartitionAlt.buffData->rawVertexData, newPartition.buffData->rawVertexData, vertexCount * vertexSize);
+		}
+
+		Shader::ShaderManager::GetSingleton().ShaderContextLock();
+		auto deviceContext = Shader::ShaderManager::GetSingleton().GetContext();
+		deviceContext->UpdateSubresource(reinterpret_cast<ID3D11Buffer*>(newPartition.buffData->vertexBuffer), 0, nullptr, newPartition.buffData->rawVertexData, vertexCount * vertexSize, 0);
+		for (std::uint32_t i = 1; i < newSkinPartition->numPartitions; ++i)
+		{
+			auto& newPartitionAlt = newSkinPartition->partitions[i];
+			newPartitionAlt.vertexDesc = a_geo->GetGeometryRuntimeData().vertexDesc;
+			newPartitionAlt.buffData->vertexDesc = a_geo->GetGeometryRuntimeData().vertexDesc;
+			if (newPartition.buffData->vertexBuffer != newPartitionAlt.buffData->vertexBuffer)
+				deviceContext->UpdateSubresource(reinterpret_cast<ID3D11Buffer*>(newPartitionAlt.buffData->vertexBuffer), 0, nullptr, newPartitionAlt.buffData->rawVertexData, vertexCount * vertexSize, 0);
+		}
+		Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+		skinInstance->skinPartition = RE::NiPointer(newSkinPartition);
+
+		RE::NiUpdateData updateData;
+		updateData.flags = RE::NiUpdateData::Flag::kDirty;
+		updateData.time = 0;
+		a_geo->Update(updateData);
+
+		logger::info("converted!");
+		return true;
 	}
 }
