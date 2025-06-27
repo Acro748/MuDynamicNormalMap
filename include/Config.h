@@ -53,6 +53,12 @@ namespace Mus {
         [[nodiscard]] inline unsigned long GetPriorityCoreCount() const noexcept {
             return PriorityCores;
         }
+        [[nodiscard]] inline std::uint8_t GetTaskQMaxCount() const noexcept {
+            return TaskQMaxCount;
+        }
+        [[nodiscard]] inline std::uint8_t GetTaskQTick() const noexcept {
+            return TaskQTick;
+        }
         [[nodiscard]] inline std::uint8_t GetNormalmapBakeDelayTick() const noexcept {
             return NormalmapBakeDelayTick;
         }
@@ -99,6 +105,8 @@ namespace Mus {
         bool HeadEnable = false;
         unsigned long PriorityCores = 0;
         unsigned long PriorityCoreCount = 0;
+        std::uint8_t TaskQMaxCount = 5;
+        std::clock_t TaskQTick = 500;
         std::uint8_t NormalmapBakeDelayTick = 2;
         std::uint32_t BakeKey1 = 0;
         std::uint32_t BakeKey2 = 43;

@@ -73,8 +73,7 @@ namespace Mus {
 		std::vector<std::future<void>> parallelBakings;;
 		for (auto& bake : a_bakeSet)
 		{
-			parallelBakings.push_back(std::async(std::launch::async, [&, bake]() {
-				TaskManager::SetDeferredWorker();
+			parallelBakings.push_back(ThreadPool::GetSingleton().submitAsync([&, bake]() {
 
 				if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 				{
@@ -265,8 +264,7 @@ namespace Mus {
 				std::vector<std::future<void>> parallelMips;
 				for (UINT mip = 0; mip < dstStagingDesc.MipLevels; mip++)
 				{
-					parallelMips.push_back(std::async(std::launch::async, [&, mip]() {
-						TaskManager::SetDeferredWorker();
+					parallelMips.push_back(ThreadPool::GetSingleton().submitAsync([&, mip]() {
 
 						D3D11_MAPPED_SUBRESOURCE mappedResource;
 						const UINT subresourceIndex = D3D11CalcSubresource(mip, 0, dstStagingDesc.MipLevels);
@@ -371,61 +369,77 @@ namespace Mus {
 											const std::uint32_t* overlayPixel = reinterpret_cast<std::uint32_t*>(overlayRowData + (UINT)overlayX * 4);
 											overlayColor.SetReverse(*overlayPixel);
 										}
-										if (overlayColor.a < 1.0f)
+										RGBA srcColor(0.5f, 0.5f, 1.0f, 0.0f);
+										if (srcRowData)
 										{
-											RGBA srcColor(0.5f, 0.5f, 1.0f, 0.0f);
-											if (srcRowData)
-											{
-												const float srcX = mX * srcWidthF;
-												const std::uint32_t* srcPixel = reinterpret_cast<std::uint32_t*>(srcRowData + (UINT)srcX * 4);
-												srcColor.SetReverse(*srcPixel);
-											}
-											const DirectX::XMVECTOR t = DirectX::XMVector3Normalize(
-												DirectX::XMVectorAdd(DirectX::XMVectorAdd(
-													DirectX::XMVectorScale(t0v, bary.x),
-													DirectX::XMVectorScale(t1v, bary.y)),
-													DirectX::XMVectorScale(t2v, bary.z)));
-
-											const DirectX::XMVECTOR b = DirectX::XMVector3Normalize(
-												DirectX::XMVectorAdd(DirectX::XMVectorAdd(
-													DirectX::XMVectorScale(b0v, bary.x),
-													DirectX::XMVectorScale(b1v, bary.y)),
-													DirectX::XMVectorScale(b2v, bary.z)));
-
-											const DirectX::XMVECTOR n = DirectX::XMVector3Normalize(
-												DirectX::XMVectorAdd(DirectX::XMVectorAdd(
-													DirectX::XMVectorScale(n0v, bary.x),
-													DirectX::XMVectorScale(n1v, bary.y)),
-													DirectX::XMVectorScale(n2v, bary.z)));
-
-											const DirectX::XMVECTOR ft = DirectX::XMVector3Normalize(
-												DirectX::XMVectorSubtract(t, DirectX::XMVectorScale(n, DirectX::XMVectorGetX(DirectX::XMVector3Dot(n, t))))); 
-
-											DirectX::XMVECTOR cross = DirectX::XMVector3Cross(n, ft);
-											float handedness = (DirectX::XMVectorGetX(DirectX::XMVector3Dot(cross, b)) < 0.0f) ? -1.0f : 1.0f;
-											const DirectX::XMVECTOR fb = DirectX::XMVector3Normalize(DirectX::XMVectorScale(cross, handedness));
-											const DirectX::XMMATRIX tbn = DirectX::XMMATRIX(ft, fb, n, DirectX::XMVectorSet(0, 0, 0, 1));
-											const DirectX::XMFLOAT3 srcNormal = {
-												(srcColor.r * 2.0f - 1.0f),
-												(srcColor.g * 2.0f - 1.0f),
-												(srcColor.b * 2.0f - 1.0f),
-											};
-											const DirectX::XMVECTOR detailNormal = DirectX::XMVector3Normalize(DirectX::XMVector3TransformNormal(DirectX::XMLoadFloat3(&srcNormal), tbn));
-											DirectX::XMVECTOR normalResult = DirectX::XMVector3Normalize(DirectX::XMVectorLerp(n, detailNormal, srcColor.a));
-
-											DirectX::XMFLOAT3 normal;
-											DirectX::XMStoreFloat3(&normal, normalResult);
-
-											normal.x = normal.x * 0.5f + 0.5f;
-											normal.y = normal.y * 0.5f + 0.5f;
-											normal.z = normal.z * 0.5f + 0.5f;
-
-											dstColor = RGBA(normal.x, normal.z, normal.y);
+											const float srcX = mX * srcWidthF;
+											const std::uint32_t* srcPixel = reinterpret_cast<std::uint32_t*>(srcRowData + (UINT)srcX * 4);
+											srcColor.SetReverse(*srcPixel);
 										}
+										const DirectX::XMVECTOR t = DirectX::XMVector3Normalize(
+											DirectX::XMVectorAdd(DirectX::XMVectorAdd(
+												DirectX::XMVectorScale(t0v, bary.x),
+												DirectX::XMVectorScale(t1v, bary.y)),
+												DirectX::XMVectorScale(t2v, bary.z)));
+
+										const DirectX::XMVECTOR b = DirectX::XMVector3Normalize(
+											DirectX::XMVectorAdd(DirectX::XMVectorAdd(
+												DirectX::XMVectorScale(b0v, bary.x),
+												DirectX::XMVectorScale(b1v, bary.y)),
+												DirectX::XMVectorScale(b2v, bary.z)));
+
+										const DirectX::XMVECTOR n = DirectX::XMVector3Normalize(
+											DirectX::XMVectorAdd(DirectX::XMVectorAdd(
+												DirectX::XMVectorScale(n0v, bary.x),
+												DirectX::XMVectorScale(n1v, bary.y)),
+												DirectX::XMVectorScale(n2v, bary.z)));
+
+										const DirectX::XMVECTOR ft = DirectX::XMVector3Normalize(
+											DirectX::XMVectorSubtract(t, DirectX::XMVectorScale(n, DirectX::XMVectorGetX(DirectX::XMVector3Dot(n, t)))));
+
+										DirectX::XMVECTOR cross = DirectX::XMVector3Cross(n, ft);
+										float handedness = (DirectX::XMVectorGetX(DirectX::XMVector3Dot(cross, b)) < 0.0f) ? -1.0f : 1.0f;
+										const DirectX::XMVECTOR fb = DirectX::XMVector3Normalize(DirectX::XMVectorScale(cross, handedness));
+										const DirectX::XMMATRIX tbn = DirectX::XMMATRIX(ft, fb, n, DirectX::XMVectorSet(0, 0, 0, 1));
+
+										const DirectX::XMFLOAT3 srcNormal = {
+											(srcColor.r * 2.0f - 1.0f),
+											(srcColor.g * 2.0f - 1.0f),
+											(srcColor.b * 2.0f - 1.0f),
+										};
+										const DirectX::XMVECTOR detailNormal = DirectX::XMVector3Normalize(DirectX::XMVector3TransformNormal(DirectX::XMLoadFloat3(&srcNormal), tbn));
+										DirectX::XMVECTOR normalResult = DirectX::XMVector3Normalize(DirectX::XMVectorLerp(n, detailNormal, srcColor.a));
+
 										if (overlayColor.a > 0.0f)
 										{
-											dstColor = RGBA::lerp(dstColor, overlayColor, overlayColor.a);
+											const DirectX::XMFLOAT3 overlayNormal = {
+												(overlayColor.r * 2.0f - 1.0f),
+												(overlayColor.g * 2.0f - 1.0f),
+												(overlayColor.b * 2.0f - 1.0f),
+											};
+											const DirectX::XMVECTOR ovDetailNormal = DirectX::XMLoadFloat3(&overlayNormal);
+											normalResult = DirectX::XMVectorLerp(normalResult, ovDetailNormal, overlayColor.a);
+
+											//normalResult = DirectX::XMVector3Normalize(DirectX::XMVectorAdd(normalResult, DirectX::XMVectorScale(ovDetailNormal, overlayColor.a)));
+
+											//const DirectX::XMVECTOR offset = DirectX::XMVector3Normalize(DirectX::XMVectorSubtract(ovDetailNormal, normalResult));
+											//normalResult = DirectX::XMVector3Normalize(DirectX::XMVectorAdd(normalResult, DirectX::XMVectorScale(offset, overlayColor.a)));
+
+											/*const DirectX::XMVECTOR axis = DirectX::XMVector3Normalize(DirectX::XMVector3Cross(normalResult, ovDetailNormal));
+											const float dot = std::clamp(DirectX::XMVectorGetX(DirectX::XMVector3Dot(normalResult, ovDetailNormal)), -1.0f, 1.0f);
+											const float angle = acosf(dot) * overlayColor.a;
+											const DirectX::XMVECTOR rotation = DirectX::XMQuaternionRotationAxis(axis, angle);
+											normalResult = DirectX::XMVector3Rotate(normalResult, rotation);*/
 										}
+
+										DirectX::XMFLOAT3 normal;
+										DirectX::XMStoreFloat3(&normal, normalResult);
+
+										normal.x = normal.x * 0.5f + 0.5f;
+										normal.y = normal.y * 0.5f + 0.5f;
+										normal.z = normal.z * 0.5f + 0.5f;
+
+										dstColor = RGBA(normal.x, normal.z, normal.y);
 
 										std::uint32_t* dstPixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
 										*dstPixel = dstColor.GetReverse() | 0xFF000000;

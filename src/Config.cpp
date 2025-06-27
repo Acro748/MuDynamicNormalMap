@@ -148,6 +148,14 @@ namespace Mus {
                 {
                     detectPriorityCores = GetIntValue(variableValue);
                 }
+				else if (variableName == "TaskQMaxCount")
+				{
+                    TaskQMaxCount = GetUIntValue(variableValue);
+				}
+				else if (variableName == "TaskQTick")
+				{
+                    TaskQTick = GetUIntValue(variableValue);
+				}
 				else if (variableName == "NormalmapBakeDelayTick")
 				{
                     NormalmapBakeDelayTick = GetUIntValue(variableValue);

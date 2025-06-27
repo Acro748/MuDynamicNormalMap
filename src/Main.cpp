@@ -160,10 +160,12 @@ namespace {
         Mus::weldDistance = Mus::Config::GetSingleton().GetWeldDistance();
         Mus::weldDistanceMult = 1.0f / Mus::weldDistance;
 		Mus::g_frameEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
+		Mus::g_frameEventDispatcher.addListener(&Mus::ThreadPool::GetSingleton());
 		Mus::g_armorAttachEventEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_facegenNiNodeEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_actorChangeHeadPartEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
         Mus::EventHandler::GetSingleton().Register(true);
+        Mus::ThreadPool::GetSingleton();
     }
 
     void kNewGameFunction()

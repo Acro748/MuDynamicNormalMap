@@ -410,7 +410,7 @@ namespace Mus {
 		auto taskIDsrc = TaskID{ id, std::to_string(bipedSlot)};
 		taskIDsrc.taskID = AttachTaskID(taskIDsrc);
 
-		std::thread([this, id, actorName, bakeData, taskIDsrc]() {
+		ThreadPool::GetSingleton().submitAsync([this, id, actorName, bakeData, taskIDsrc]() {
 			SetDeferredWorker();
 
 			struct textureResult {
@@ -473,7 +473,7 @@ namespace Mus {
 					logger::info("{:x}::{}::{} : {} bake object normalmap done", id, actorName, taskIDsrc.taskID, geo->name.c_str());
 				}
 			});
-		}).detach();
+		});
 		return true;
 	}
 
