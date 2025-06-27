@@ -173,25 +173,17 @@ namespace Mus {
 		auto slots = SubBipedObjectSlots(bipedSlot);
 		for (auto& slot : slots)
 		{
-			auto armo = a_actor->GetSkin(RE::BIPED_MODEL::BipedObjectSlot(slot));
-			if (!armo)
-				return geometries;
-
-			for (auto& arma : armo->armorAddons)
+			if (slot & std::to_underlying(RE::BIPED_MODEL::BipedObjectSlot::kHead))
 			{
-				if (!arma)
-					continue;
-				if (!arma->bipedModelData.bipedObjectSlots.any(RE::BIPED_MODEL::BipedObjectSlot(slot)))
-					continue;
-				char addonString[MAX_PATH]{ '\0' };
-				arma->GetNodeName(addonString, a_actor, armo, -1);
-				auto root = a_actor->loadedData->data3D->GetObjectByName(addonString);
+				auto root = a_actor->GetFaceNode();
 				if (!root)
 					continue;
 				RE::BSVisit::TraverseScenegraphGeometries(root, [&geometries](RE::BSGeometry* geometry) -> RE::BSVisit::BSVisitControl {
 					using State = RE::BSGeometry::States;
 					using Feature = RE::BSShaderMaterial::Feature;
 					if (!geometry || geometry->name.empty())
+						return RE::BSVisit::BSVisitControl::kContinue;
+					if (IsContainString(geometry->name.c_str(), "[Ovl") || IsContainString(geometry->name.c_str(), "[SOvl") || IsContainString(geometry->name.c_str(), "overlay")) //without overlay
 						return RE::BSVisit::BSVisitControl::kContinue;
 					if (!geometry->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
 						return RE::BSVisit::BSVisitControl::kContinue;
@@ -203,9 +195,46 @@ namespace Mus {
 						return RE::BSVisit::BSVisitControl::kContinue;
 					geometries.insert(geometry);
 					return RE::BSVisit::BSVisitControl::kContinue;
-														  });
-				if (!geometries.empty())
-					continue;
+				});
+			}
+			else
+			{
+				auto armo = a_actor->GetSkin(RE::BIPED_MODEL::BipedObjectSlot(slot));
+				if (!armo)
+					return geometries;
+
+				for (auto& arma : armo->armorAddons)
+				{
+					if (!arma)
+						continue;
+					if (!arma->bipedModelData.bipedObjectSlots.any(RE::BIPED_MODEL::BipedObjectSlot(slot)))
+						continue;
+					char addonString[MAX_PATH]{ '\0' };
+					arma->GetNodeName(addonString, a_actor, armo, -1);
+					auto root = a_actor->loadedData->data3D->GetObjectByName(addonString);
+					if (!root)
+						continue;
+					RE::BSVisit::TraverseScenegraphGeometries(root, [&geometries](RE::BSGeometry* geometry) -> RE::BSVisit::BSVisitControl {
+						using State = RE::BSGeometry::States;
+						using Feature = RE::BSShaderMaterial::Feature;
+						if (!geometry || geometry->name.empty())
+							return RE::BSVisit::BSVisitControl::kContinue;
+						if (IsContainString(geometry->name.c_str(), "[Ovl") || IsContainString(geometry->name.c_str(), "[SOvl") || IsContainString(geometry->name.c_str(), "overlay")) //without overlay
+							return RE::BSVisit::BSVisitControl::kContinue;
+						if (!geometry->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
+							return RE::BSVisit::BSVisitControl::kContinue;
+						auto effect = geometry->GetGeometryRuntimeData().properties[State::kEffect].get();
+						if (!effect)
+							return RE::BSVisit::BSVisitControl::kContinue;
+						auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
+						if (!lightingShader || !lightingShader->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
+							return RE::BSVisit::BSVisitControl::kContinue;
+						geometries.insert(geometry);
+						return RE::BSVisit::BSVisitControl::kContinue;
+					});
+					if (!geometries.empty())
+						continue;
+				}
 			}
 		}
 		return geometries;
@@ -332,23 +361,28 @@ namespace Mus {
 				continue;
 			if (!geo->GetGeometryRuntimeData().skinInstance)
 				continue;
-			auto skinInstance = geo->GetGeometryRuntimeData().skinInstance.get();
-			auto dismember = netimmerse_cast<RE::BSDismemberSkinInstance*>(skinInstance);
-			if (!dismember)
-				continue;
 
 			bakeData.geoData.GetGeometryData(geo);
 			std::uint32_t slot = 0;
-			if (dismember->GetRuntimeData().partitions[0].slot < 30 || dismember->GetRuntimeData().partitions[0].slot >= RE::BIPED_OBJECT::kEditorTotal + 30)
+			auto skinInstance = geo->GetGeometryRuntimeData().skinInstance.get();
+			auto dismember = netimmerse_cast<RE::BSDismemberSkinInstance*>(skinInstance);
+			if (dismember)
 			{
-				if (auto dynamicTri = geo->AsDynamicTriShape(); dynamicTri) { //maybe head
-					slot = RE::BIPED_OBJECT::kHead;
+				if (dismember->GetRuntimeData().partitions[0].slot < 30 || dismember->GetRuntimeData().partitions[0].slot >= RE::BIPED_OBJECT::kEditorTotal + 30)
+				{
+					if (auto dynamicTri = geo->AsDynamicTriShape(); dynamicTri) { //maybe head
+						slot = RE::BIPED_OBJECT::kHead;
+					}
+					else //unknown slot
+						continue;
 				}
-				else //unknown slot
-					continue; 
+				else
+					slot = dismember->GetRuntimeData().partitions[0].slot - 30;
 			}
-			else
-				slot = dismember->GetRuntimeData().partitions[0].slot - 30;
+			else //maybe it's just skinInstance in headpart
+			{
+				slot = RE::BIPED_OBJECT::kHead;
+			}
 
 			std::string textureName = GetTextureName(a_actor, slot, geo);
 			if (bipedSlot & 1 << slot)
@@ -357,7 +391,7 @@ namespace Mus {
 				newBakeTextureSet.textureName = textureName;
 				newBakeTextureSet.geometryName = geo->name.c_str();
 				newBakeTextureSet.srcTexturePath = texturePath;
-				newBakeTextureSet.overlayTexturePath = GetOverlayTexture(geo->name.c_str(), slot);
+				newBakeTextureSet.overlayTexturePath = GetOverlayNormalMapPath(texturePath);
 				bakeData.bakeTextureSet.emplace(geoIndex, newBakeTextureSet);
 				logger::debug("{:x}::{} : {} - (vertices {} / uvs {} / tris {}) queue added on bake object normalmap", id, actorName,
 							  geo->name.c_str(), newBakeTextureSet.overlayTexturePath,
@@ -384,7 +418,7 @@ namespace Mus {
 				RE::NiPointer<RE::NiSourceTexture> texture;
 			};
 
-			if (GetCurrentTaskID(taskIDsrc) != taskIDsrc.taskID)
+			if (!IsValidTaskID(taskIDsrc))
 			{
 				logger::info("{:x}::{}::{} : cancel queue for bake object normalmap", id, actorName, taskIDsrc.taskID);
 				return;
@@ -410,7 +444,7 @@ namespace Mus {
 				{
 					using State = RE::BSGeometry::States;
 					using Feature = RE::BSShaderMaterial::Feature;
-					if (GetCurrentTaskID(taskIDsrc) != taskIDsrc.taskID)
+					if (!IsValidTaskID(taskIDsrc))
 					{
 						logger::error("{:x}::{}::{} : invalid task queue. so cancel all current queue for bake object normalmap", id, actorName, taskIDsrc.taskID);
 						return;
@@ -443,28 +477,41 @@ namespace Mus {
 		return true;
 	}
 
-	std::string TaskManager::GetOverlayTexture(std::string a_geometryName, std::uint32_t bipedSlot)
+	std::string TaskManager::GetOverlayNormalMapPath(std::string a_normalMapPath)
 	{
-		const std::filesystem::path baseFolder = "Textures\\MuDynamicNormalMap\\Overlay";
-		const std::filesystem::path defaultMaskPath = baseFolder / "Default.dds";
-		if (a_geometryName.empty() || bipedSlot >= RE::BIPED_OBJECT::kEditorTotal)
-			return defaultMaskPath.string();
+		constexpr std::string_view prefix = "Textures\\";
+		constexpr std::string_view msn_suffix = "_msn";
+		constexpr std::string_view n_suffix = "_n";
+		constexpr std::string_view ov_suffix = "_ov";
+		if (a_normalMapPath.empty())
+			return "";
+		if (!stringStartsWith(a_normalMapPath, prefix.data()))
+			a_normalMapPath = prefix.data() + a_normalMapPath;
+		std::filesystem::path file(a_normalMapPath);
+		std::string filename = file.stem().string();
 
-		bipedSlot += 30;
-		std::filesystem::path overlayPath = "Data" / baseFolder / std::to_string(bipedSlot);
-		if (IsExistDirectoy(overlayPath.string()))
+		if (stringEndsWith(filename, msn_suffix.data())) //_msn -> _n_ov
 		{
-			try {
-				for (const auto& file : std::filesystem::directory_iterator(overlayPath))
-				{
-					if (IsContainString(a_geometryName, file.path().stem().string()))
-						return (baseFolder / std::to_string(bipedSlot) / file.path().filename()).string();
-				}
-			}
-			catch (...) {}
-			return (baseFolder / std::to_string(bipedSlot) / "Default.dds").string();
+			filename = stringRemoveEnds(filename, msn_suffix.data());
+			filename += n_suffix;
+			filename += ov_suffix;
+			std::string fullPath = (file.parent_path() / (filename + ".dds")).string();
+			if (IsExistFile(fullPath, ExistType::textures))
+				return fullPath;
 		}
-		return defaultMaskPath.string();
+		if (stringEndsWith(filename, n_suffix.data())) //_n -> _n_ov
+		{
+			filename += ov_suffix;
+			std::string fullPath = (file.parent_path() / (filename + ".dds")).string();
+			if (IsExistFile(fullPath, ExistType::textures))
+				return fullPath;
+		}
+		if (stringEndsWith(filename, ov_suffix.data())) //_ov
+		{
+			if (IsExistFile(a_normalMapPath, ExistType::textures))
+				return a_normalMapPath;
+		}
+		return "";
 	}
 
 	std::int64_t TaskManager::GenerateUniqueID()
@@ -507,6 +554,12 @@ namespace Mus {
 		if (taskID != taskIDsrc.taskID)
 			return -1;
 		return taskID;
+	}
+	bool TaskManager::IsValidTaskID(TaskID taskIDsrc) 
+	{
+		if (taskIDsrc.refrID == 0 || taskIDsrc.taskName.empty())
+			return false;
+		return GetCurrentTaskID(taskIDsrc) == taskIDsrc.taskID;
 	}
 
 	std::string TaskManager::GetTextureName(RE::Actor* a_actor, std::uint32_t a_bipedSlot, RE::BSGeometry* a_geo)

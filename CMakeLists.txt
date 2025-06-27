@@ -37,7 +37,7 @@ set(headers
         include/Geometry.h
         include/InputManager.h
         include/RGBA.h
-        include/ThreadPool.h
+        #include/ThreadPool.h
         include/Interface/Interface.h
         include/Interface/InterfaceImpl.h
 )
@@ -54,7 +54,6 @@ set(sources
         src/Store.cpp
         src/Geometry.cpp
         src/InputManager.cpp
-        src/ThreadPool.cpp
         src/Main.cpp
 
         ${CMAKE_CURRENT_BINARY_DIR}/version.rc

@@ -78,6 +78,7 @@ namespace Mus {
 		void DetachTaskID(TaskID taskIDsrc, std::int64_t a_ownID);
 		void ReleaseTaskID(TaskID taskIDsrc);
 		std::uint64_t GetCurrentTaskID(TaskID taskIDsrc);
+		bool IsValidTaskID(TaskID taskIDsrc);
 
 		static inline void SetDeferredWorker() {
 			SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
@@ -97,7 +98,7 @@ namespace Mus {
 		std::string GetTextureName(RE::Actor* a_actor, std::uint32_t a_bipedSlot, RE::BSGeometry* a_geo); // ActorID + Armor/SkinID + BipedSlot + GeometryName + VertexCount
 		bool GetTextureInfo(std::string a_textureName, TextureInfo& a_textureInfo); // ActorID + GeometryName + VertexCount
 
-		std::string GetOverlayTexture(std::string a_geometryName, std::uint32_t bipedSlot);
+		std::string GetOverlayNormalMapPath(std::string a_normalMapPath);
 		std::unordered_map<RE::FormID, std::string> bakeObjectNormalMapMaskTexture;
 
 		std::unordered_map<RE::FormID, std::unordered_map<std::string, std::int64_t>> bakeObjectNormalMapCounter; // ActorID, GeometryName, BakeID

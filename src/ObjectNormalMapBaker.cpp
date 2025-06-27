@@ -29,7 +29,7 @@ namespace Mus {
 
 		/*a_data.Subdivision(Config::GetSingleton().GetSubdivision());
 		std::this_thread::yield();
-		if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
+		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 			return result;
@@ -37,7 +37,7 @@ namespace Mus {
 
 		a_data.UpdateMap();
 		std::this_thread::yield();
-		if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
+		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 			return result;
@@ -45,7 +45,7 @@ namespace Mus {
 
 		/*a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
 		std::this_thread::yield();
-		if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
+		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 			return result;
@@ -53,7 +53,7 @@ namespace Mus {
 
 		a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree());
 		std::this_thread::yield();
-		if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
+		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 			return result;
@@ -76,7 +76,7 @@ namespace Mus {
 			parallelBakings.push_back(std::async(std::launch::async, [&, bake]() {
 				TaskManager::SetDeferredWorker();
 
-				if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
+				if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 				{
 					logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 					return;
@@ -184,12 +184,9 @@ namespace Mus {
 				if (!bake.second.overlayTexturePath.empty())
 				{
 					Microsoft::WRL::ComPtr<ID3D11Texture2D> overlayTexture2D = nullptr;
-					std::string overlayTexturePath = "";
-					if (overlayTexturePath = GetOverlayNormalMapPath(bake.second.srcTexturePath); !IsExistFile(overlayTexturePath, ExistType::textures))
-						overlayTexturePath = bake.second.overlayTexturePath;
-					logger::info("{}::{} : {} overlay texture loading...)", _func_, taskID.taskID, overlayTexturePath);
+					logger::info("{}::{} : {} overlay texture loading...)", _func_, taskID.taskID, bake.second.overlayTexturePath);
 					D3D11_TEXTURE2D_DESC overlayDesc;
-					if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(overlayTexturePath, overlayDesc, DXGI_FORMAT_R8G8B8A8_UNORM, overlayTexture2D))
+					if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.overlayTexturePath, overlayDesc, DXGI_FORMAT_R8G8B8A8_UNORM, overlayTexture2D))
 					{
 						overlayStagingDesc = overlayDesc;
 						overlayStagingDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -230,7 +227,7 @@ namespace Mus {
 					return;
 				}
 
-				if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
+				if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 				{
 					logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 					return;
@@ -491,7 +488,7 @@ namespace Mus {
 					return;
 				}
 
-				if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
+				if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 				{
 					logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 					return;
@@ -558,27 +555,27 @@ namespace Mus {
 		}
 
 		a_data.UpdateMap();
-		if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
+		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{} : Invalid taskID", __func__);
 			return nullptr;
 		}
 
 		a_data.Subdivision(Config::GetSingleton().GetSubdivision());
-		if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
+		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{} : Invalid taskID", __func__);
 			return nullptr;
 		}
 
 		a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
-		if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
+		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{} : Invalid taskID", __func__);
 			return nullptr;
 		}
 		a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree());
-		if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
+		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{} : Invalid taskID", __func__);
 			return nullptr;
@@ -1015,35 +1012,6 @@ namespace Mus {
 			return (file.parent_path() / (filename + ".dds")).string();
 		}
 		else if (stringEndsWith(filename, n_suffix.data())) //_n
-			return a_normalMapPath;
-		return "";
-	}
-	std::string ObjectNormalMapBaker::GetOverlayNormalMapPath(std::string a_normalMapPath)
-	{
-		constexpr std::string_view prefix = "Textures\\";
-		constexpr std::string_view msn_suffix = "_msn";
-		constexpr std::string_view n_suffix = "_n";
-		constexpr std::string_view ov_suffix = "_ov";
-		if (a_normalMapPath.empty())
-			return "";
-		if (!stringStartsWith(a_normalMapPath, prefix.data()))
-			a_normalMapPath = prefix.data() + a_normalMapPath;
-		std::filesystem::path file(a_normalMapPath);
-		std::string filename = file.stem().string();
-
-		if (stringEndsWith(filename, msn_suffix.data())) //_msn -> _n_ov
-		{
-			filename = stringRemoveEnds(filename, msn_suffix.data());
-			filename += n_suffix;
-			filename += ov_suffix;
-			return (file.parent_path() / (filename + ".dds")).string();
-		}
-		else if (stringEndsWith(filename, n_suffix.data())) //_n -> _n_ov
-		{
-			filename += ov_suffix;
-			return (file.parent_path() / (filename + ".dds")).string();
-		}
-		else if (stringEndsWith(filename, ov_suffix.data())) //_ov
 			return a_normalMapPath;
 		return "";
 	}

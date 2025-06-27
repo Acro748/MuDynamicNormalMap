@@ -140,7 +140,7 @@ namespace util {
 #include "B/BSFaceGenBaseMorphExtraData.h"
 
 #include "RGBA.h"
-#include "ThreadPool.h"
+//#include "ThreadPool.h"
 
 #include "Store.h"
 #include "Geometry.h"
