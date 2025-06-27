@@ -1,7 +1,7 @@
 #include "ObjectNormalMapBaker.h"
 
 namespace Mus {
-#define BAKE_TEST
+//#define BAKE_TEST
 
 	ObjectNormalMapBaker::BakeResult ObjectNormalMapBaker::BakeObjectNormalMap(TaskID taskID, GeometryData a_data, std::unordered_map<std::size_t, BakeTextureSet> a_bakeSet)
 	{
@@ -21,33 +21,39 @@ namespace Mus {
 
 		//is this works?
 		/*concurrency::SchedulerPolicy policy = concurrency::CurrentScheduler::GetPolicy();
-		policy.SetPolicyValue(
-			concurrency::ContextPriority, THREAD_PRIORITY_BELOW_NORMAL
-		);
+		policy.SetPolicyValue(concurrency::ContextPriority, THREAD_PRIORITY_LOWEST);
+		policy.SetPolicyValue(concurrency::SchedulingProtocol, concurrency::EnhanceScheduleGroupLocality);
+		policy.SetPolicyValue(concurrency::DynamicProgressFeedback, true);
+		policy.SetPolicyValue(concurrency::TargetOversubscriptionFactor, 1);
 		concurrency::CurrentScheduler::Create(policy);*/
 
+		/*a_data.Subdivision(Config::GetSingleton().GetSubdivision());
+		std::this_thread::yield();
+		if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
+		{
+			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
+			return result;
+		}*/
+
 		a_data.UpdateMap();
-		if (TaskManager::GetSingleton().GetCurrentBakeObjectNormalMapTaskID(taskID) != taskID.taskID)
+		std::this_thread::yield();
+		if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 			return result;
 		}
 
-		a_data.Subdivision(Config::GetSingleton().GetSubdivision());
-		if (TaskManager::GetSingleton().GetCurrentBakeObjectNormalMapTaskID(taskID) != taskID.taskID)
+		/*a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
+		std::this_thread::yield();
+		if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 			return result;
-		}
+		}*/
 
-		a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
-		if (TaskManager::GetSingleton().GetCurrentBakeObjectNormalMapTaskID(taskID) != taskID.taskID)
-		{
-			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
-			return result;
-		}
 		a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree());
-		if (TaskManager::GetSingleton().GetCurrentBakeObjectNormalMapTaskID(taskID) != taskID.taskID)
+		std::this_thread::yield();
+		if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 			return result;
@@ -64,13 +70,13 @@ namespace Mus {
 
 		const std::int32_t margin = Config::GetSingleton().GetTextureMargin();
 
-		std::vector<std::thread> bakeThreads;
+		std::vector<std::future<void>> parallelBakings;;
 		for (auto& bake : a_bakeSet)
 		{
-			bakeThreads.push_back(std::thread([&, bake]() {
+			parallelBakings.push_back(std::async(std::launch::async, [&, bake]() {
 				TaskManager::SetDeferredWorker();
 
-				if (TaskManager::GetSingleton().GetCurrentBakeObjectNormalMapTaskID(taskID) != taskID.taskID)
+				if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
 				{
 					logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 					return;
@@ -224,11 +230,12 @@ namespace Mus {
 					return;
 				}
 
-				if (TaskManager::GetSingleton().GetCurrentBakeObjectNormalMapTaskID(taskID) != taskID.taskID)
+				if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
 				{
 					logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 					return;
 				}
+				std::this_thread::yield();
 
 				logger::info("{}::{}::{} : {} {} {} {} baking normalmap...", _func_, taskID.taskID, a_data.geometries[bakeIndex].first,
 							 a_data.geometries[bakeIndex].second.vertexCount(),
@@ -258,14 +265,14 @@ namespace Mus {
 				}
 
 				bool isBakeProblem = false;
-				std::vector<std::thread> parallelMips;
+				std::vector<std::future<void>> parallelMips;
 				for (UINT mip = 0; mip < dstStagingDesc.MipLevels; mip++)
 				{
-					parallelMips.push_back(std::thread([&, mip]() {
+					parallelMips.push_back(std::async(std::launch::async, [&, mip]() {
 						TaskManager::SetDeferredWorker();
 
 						D3D11_MAPPED_SUBRESOURCE mappedResource;
-						UINT subresourceIndex = D3D11CalcSubresource(mip, 0, dstStagingDesc.MipLevels);
+						const UINT subresourceIndex = D3D11CalcSubresource(mip, 0, dstStagingDesc.MipLevels);
 						Shader::ShaderManager::GetSingleton().ShaderContextLock();
 						hr = context->Map(dstStagingTexture2D.Get(), subresourceIndex, D3D11_MAP_READ_WRITE, 0, &mappedResource);
 						Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
@@ -276,157 +283,193 @@ namespace Mus {
 							return;
 						}
 
-						UINT mipWidth = (std::max)(UINT(1), dstStagingDesc.Width >> mip);
-						UINT mipHeight = (std::max)(UINT(1), dstStagingDesc.Height >> mip);
+						const UINT mipWidth = std::max(UINT(1), dstStagingDesc.Width >> mip);
+						const UINT mipHeight = std::max(UINT(1), dstStagingDesc.Height >> mip);
 						uint8_t* dstData = reinterpret_cast<uint8_t*>(mappedResource.pData);
+
+						auto uvToPix = [mipWidth, mipHeight](DirectX::XMFLOAT2 uv) -> DirectX::XMINT2 {
+							return {
+								static_cast<int>(uv.x * mipWidth + 0.5f),
+								static_cast<int>(uv.y * mipHeight + 0.5f)
+							};
+						};
+						const float invMipWidth = 1.0f / (float)mipWidth;
+						const float invMipHeight = 1.0f / (float)mipHeight;
+						const float srcHeightF = srcData ? (float)srcStagingDesc.Height : 0.0f;
+						const float srcWidthF = srcData ? (float)srcStagingDesc.Width : 0.0f;
+						const float overlayHeightF = overlayData ? (float)overlayStagingDesc.Height : 0.0f;
+						const float overlayWidthF = overlayData ? (float)overlayStagingDesc.Width : 0.0f;
 
 						std::uint32_t chunkSize = 16;
 						if (mip > 0)
-							chunkSize *= std::pow(2, mip + 1);
+							chunkSize *= 1 << mip + 1;
+						chunkSize = (std::min)(chunkSize, totalTaskCount);
 						std::uint32_t chunkCount = (totalTaskCount + chunkSize - 1) / chunkSize;
 						concurrency::parallel_for(std::uint32_t(0), chunkCount, [&](std::uint32_t taskIndex) {
 							std::uint32_t start = taskIndex * chunkSize;
 							std::uint32_t end = (std::min)(start + chunkSize, totalTaskCount);
 							for (std::uint32_t i = start; i < end; i++)
 							{
-								std::uint32_t index = a_data.geometries[bakeIndex].second.indicesStart + i * 3;
+								const std::uint32_t index = a_data.geometries[bakeIndex].second.indicesStart + i * 3;
 
-								std::uint32_t index1 = a_data.indices[index + 0];
-								std::uint32_t index2 = a_data.indices[index + 1];
-								std::uint32_t index3 = a_data.indices[index + 2];
+								const std::uint32_t index0 = a_data.indices[index + 0];
+								const std::uint32_t index1 = a_data.indices[index + 1];
+								const std::uint32_t index2 = a_data.indices[index + 2];
 
-								DirectX::XMFLOAT3& v0 = a_data.vertices[index1];
-								DirectX::XMFLOAT3& v1 = a_data.vertices[index2];
-								DirectX::XMFLOAT3& v2 = a_data.vertices[index3];
+								const DirectX::XMFLOAT2& u0 = a_data.uvs[index0];
+								const DirectX::XMFLOAT2& u1 = a_data.uvs[index1];
+								const DirectX::XMFLOAT2& u2 = a_data.uvs[index2];
 
-								DirectX::XMFLOAT2& u0 = a_data.uvs[index1];
-								DirectX::XMFLOAT2& u1 = a_data.uvs[index2];
-								DirectX::XMFLOAT2& u2 = a_data.uvs[index3];
+								DirectX::XMVECTOR n0v = DirectX::XMLoadFloat3(&a_data.normals[index0]);
+								DirectX::XMVECTOR n1v = DirectX::XMLoadFloat3(&a_data.normals[index1]);
+								DirectX::XMVECTOR n2v = DirectX::XMLoadFloat3(&a_data.normals[index2]);
 
-								DirectX::XMFLOAT3& n0 = a_data.normals[index1];
-								DirectX::XMFLOAT3& n1 = a_data.normals[index2];
-								DirectX::XMFLOAT3& n2 = a_data.normals[index3];
+								DirectX::XMVECTOR t0v = DirectX::XMLoadFloat3(&a_data.tangents[index0]);
+								DirectX::XMVECTOR t1v = DirectX::XMLoadFloat3(&a_data.tangents[index1]);
+								DirectX::XMVECTOR t2v = DirectX::XMLoadFloat3(&a_data.tangents[index2]);
 
-								DirectX::XMFLOAT3& t0 = a_data.tangents[index1];
-								DirectX::XMFLOAT3& t1 = a_data.tangents[index2];
-								DirectX::XMFLOAT3& t2 = a_data.tangents[index3];
+								DirectX::XMVECTOR b0v = DirectX::XMLoadFloat3(&a_data.bitangents[index0]);
+								DirectX::XMVECTOR b1v = DirectX::XMLoadFloat3(&a_data.bitangents[index1]);
+								DirectX::XMVECTOR b2v = DirectX::XMLoadFloat3(&a_data.bitangents[index2]);
 
-								DirectX::XMFLOAT3& b0 = a_data.bitangents[index1];
-								DirectX::XMFLOAT3& b1 = a_data.bitangents[index2];
-								DirectX::XMFLOAT3& b2 = a_data.bitangents[index3];
+								const auto p0 = uvToPix(u0);
+								const auto p1 = uvToPix(u1);
+								const auto p2 = uvToPix(u2);
 
-								auto uvToPix = [&](DirectX::XMFLOAT2 uv) -> DirectX::XMINT2 {
-									return {
-										static_cast<int>(uv.x * mipWidth + 0.5f),
-										static_cast<int>(uv.y * mipHeight + 0.5f)
-									};
+								const std::int32_t minX = std::max((std::int32_t)0, (std::min)({ p0.x, p1.x, p2.x }) - margin);
+								const std::int32_t minY = std::max((std::int32_t)0, (std::min)({ p0.y, p1.y, p2.y }) - margin);
+								const std::int32_t maxX = (std::min)((std::int32_t)mipWidth - 1, std::max({ p0.x, p1.x, p2.x }) + margin);
+								const std::int32_t maxY = (std::min)((std::int32_t)mipWidth - 1, std::max({ p0.y, p1.y, p2.y }) + margin);
+
+								auto isInside = [minX, minY, maxX, maxY, margin](std::int32_t x, std::int32_t y) -> bool {
+									return x > minX + margin && x < maxX - margin &&
+										y > minY + margin && y < maxY - margin;
 								};
 
-								auto p0 = uvToPix(u0);
-								auto p1 = uvToPix(u1);
-								auto p2 = uvToPix(u2);
-
-								std::int32_t minX = (std::max)((std::int32_t)0, (std::min)({ p0.x, p1.x, p2.x }) - margin);
-								std::int32_t minY = (std::max)((std::int32_t)0, (std::min)({ p0.y, p1.y, p2.y }) - margin);
-								std::int32_t maxX = (std::min)((std::int32_t)mipWidth - 1, (std::max)({ p0.x, p1.x, p2.x }) + margin);
-								std::int32_t maxY = (std::min)((std::int32_t)mipWidth - 1, (std::max)({ p0.y, p1.y, p2.y }) + margin);
-
-								std::int32_t sizeX = maxX - minX + 1;
-								std::int32_t sizeY = maxY - minY + 1;
-								std::int32_t sizeXY = sizeX * sizeY;
-
-								for (std::int32_t xy = 0; xy < sizeXY; xy++)
+								for (std::int32_t y = minY; y < maxY; y++)
 								{
-									std::int32_t x = minX + (xy % sizeX);
-									std::int32_t y = minY + (xy / sizeX);
+									const float mY = (float)y * invMipHeight;
 
-									DirectX::XMFLOAT3 bary;
-									if (!ComputeBarycentric((float)x + 0.5f, (float)y + 0.5f, p0, p1, p2, bary))
-										continue;
+									const float srcY = srcData ? mY * srcHeightF : 0.0f;
+									uint8_t* srcRowData = srcData ? srcData + (UINT)srcY * srcMappedResource.RowPitch : nullptr;
 
-									float mY = (float)y / (float)mipHeight;
-									float mX = (float)x / (float)mipWidth;
+									const float overlayY = overlayData ? mY * overlayHeightF : 0.0f;
+									uint8_t* overlayRowData = overlayData ? overlayData + (UINT)overlayY * overlayMappedResource.RowPitch : nullptr;
 
-									RGBA dstColor;
-									RGBA overlayColor(1.0f, 1.0f, 1.0f, 0.0f);
-									if (overlayData)
+									std::uint8_t* rowData = dstData + y * mappedResource.RowPitch;
+
+									for (std::int32_t x = minX; x < maxX; x++)
 									{
-										float overlayY = mY * (float)overlayStagingDesc.Height;
-										uint8_t* overlayRowData = static_cast<uint8_t*>(overlayData) + (UINT)overlayY * overlayMappedResource.RowPitch;
-										float overlayX = mX * (float)overlayStagingDesc.Width;
-										uint32_t* overlayPixel = reinterpret_cast<uint32_t*>(overlayRowData + (UINT)overlayX * 4);
-										overlayColor.SetReverse(*overlayPixel);
-									}
-									if (overlayColor.a < 1.0f)
-									{
-										RGBA srcColor(0.5f, 0.5f, 1.0f, 0.5f);
-										if (srcData)
+										DirectX::XMFLOAT3 bary;
+										if (!ComputeBarycentrics(x, y, p0, p1, p2, bary))
+											continue;
+
+										const float mX = (float)x / (float)mipWidth;
+
+										RGBA dstColor;
+										RGBA overlayColor(1.0f, 1.0f, 1.0f, 0.0f);
+										if (overlayRowData)
 										{
-											float srcY = mY * (float)srcStagingDesc.Height;
-											uint8_t* srcRowData = static_cast<uint8_t*>(srcData) + (UINT)srcY * srcMappedResource.RowPitch;
-											float srcX = mX * (float)srcStagingDesc.Width;
-											uint32_t* srcPixel = reinterpret_cast<uint32_t*>(srcRowData + (UINT)srcX * 4);
-											srcColor.SetReverse(*srcPixel);
+											const float overlayX = mX * overlayWidthF;
+											const std::uint32_t* overlayPixel = reinterpret_cast<std::uint32_t*>(overlayRowData + (UINT)overlayX * 4);
+											overlayColor.SetReverse(*overlayPixel);
+										}
+										if (overlayColor.a < 1.0f)
+										{
+											RGBA srcColor(0.5f, 0.5f, 1.0f, 0.0f);
+											if (srcRowData)
+											{
+												const float srcX = mX * srcWidthF;
+												const std::uint32_t* srcPixel = reinterpret_cast<std::uint32_t*>(srcRowData + (UINT)srcX * 4);
+												srcColor.SetReverse(*srcPixel);
+											}
+											const DirectX::XMVECTOR t = DirectX::XMVector3Normalize(
+												DirectX::XMVectorAdd(DirectX::XMVectorAdd(
+													DirectX::XMVectorScale(t0v, bary.x),
+													DirectX::XMVectorScale(t1v, bary.y)),
+													DirectX::XMVectorScale(t2v, bary.z)));
+
+											const DirectX::XMVECTOR b = DirectX::XMVector3Normalize(
+												DirectX::XMVectorAdd(DirectX::XMVectorAdd(
+													DirectX::XMVectorScale(b0v, bary.x),
+													DirectX::XMVectorScale(b1v, bary.y)),
+													DirectX::XMVectorScale(b2v, bary.z)));
+
+											const DirectX::XMVECTOR n = DirectX::XMVector3Normalize(
+												DirectX::XMVectorAdd(DirectX::XMVectorAdd(
+													DirectX::XMVectorScale(n0v, bary.x),
+													DirectX::XMVectorScale(n1v, bary.y)),
+													DirectX::XMVectorScale(n2v, bary.z)));
+
+											const DirectX::XMVECTOR ft = DirectX::XMVector3Normalize(
+												DirectX::XMVectorSubtract(t, DirectX::XMVectorScale(n, DirectX::XMVectorGetX(DirectX::XMVector3Dot(n, t))))); 
+
+											DirectX::XMVECTOR cross = DirectX::XMVector3Cross(n, ft);
+											float handedness = (DirectX::XMVectorGetX(DirectX::XMVector3Dot(cross, b)) < 0.0f) ? -1.0f : 1.0f;
+											const DirectX::XMVECTOR fb = DirectX::XMVector3Normalize(DirectX::XMVectorScale(cross, handedness));
+											const DirectX::XMMATRIX tbn = DirectX::XMMATRIX(ft, fb, n, DirectX::XMVectorSet(0, 0, 0, 1));
+											const DirectX::XMFLOAT3 srcNormal = {
+												(srcColor.r * 2.0f - 1.0f),
+												(srcColor.g * 2.0f - 1.0f),
+												(srcColor.b * 2.0f - 1.0f),
+											};
+											const DirectX::XMVECTOR detailNormal = DirectX::XMVector3Normalize(DirectX::XMVector3TransformNormal(DirectX::XMLoadFloat3(&srcNormal), tbn));
+											DirectX::XMVECTOR normalResult = DirectX::XMVector3Normalize(DirectX::XMVectorLerp(n, detailNormal, srcColor.a));
+
+											DirectX::XMFLOAT3 normal;
+											DirectX::XMStoreFloat3(&normal, normalResult);
+
+											normal.x = normal.x * 0.5f + 0.5f;
+											normal.y = normal.y * 0.5f + 0.5f;
+											normal.z = normal.z * 0.5f + 0.5f;
+
+											dstColor = RGBA(normal.x, normal.z, normal.y);
+										}
+										if (overlayColor.a > 0.0f)
+										{
+											dstColor = RGBA::lerp(dstColor, overlayColor, overlayColor.a);
 										}
 
-										DirectX::XMVECTOR t = DirectX::XMVector3Normalize(
-											DirectX::XMVectorAdd(DirectX::XMVectorAdd(
-												DirectX::XMVectorScale(DirectX::XMLoadFloat3(&t0), bary.x),
-												DirectX::XMVectorScale(DirectX::XMLoadFloat3(&t1), bary.y)),
-												DirectX::XMVectorScale(DirectX::XMLoadFloat3(&t2), bary.z)));
+										std::uint32_t* dstPixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
+										*dstPixel = dstColor.GetReverse() | 0xFF000000;
 
-										DirectX::XMVECTOR b = DirectX::XMVector3Normalize(
-											DirectX::XMVectorAdd(DirectX::XMVectorAdd(
-												DirectX::XMVectorScale(DirectX::XMLoadFloat3(&b0), bary.x),
-												DirectX::XMVectorScale(DirectX::XMLoadFloat3(&b1), bary.y)),
-												DirectX::XMVectorScale(DirectX::XMLoadFloat3(&b2), bary.z)));
+										if (isInside(x, y) || margin == 0)
+											continue;
 
-										DirectX::XMVECTOR n = DirectX::XMVector3Normalize(
-											DirectX::XMVectorAdd(DirectX::XMVectorAdd(
-												DirectX::XMVectorScale(DirectX::XMLoadFloat3(&n0), bary.x),
-												DirectX::XMVectorScale(DirectX::XMLoadFloat3(&n1), bary.y)),
-												DirectX::XMVectorScale(DirectX::XMLoadFloat3(&n2), bary.z)));
+										for (int dy = -margin; dy <= margin; ++dy) {
+											const int ny = y + dy;
+											if (ny < 0 || ny >= mipHeight) 
+												continue;
+											std::uint8_t* nRow = dstData + ny * mappedResource.RowPitch;
 
-										DirectX::XMMATRIX tbn = DirectX::XMMATRIX(t, b, n, DirectX::XMVectorSet(0, 0, 0, 1));
+											for (int dx = -margin; dx <= margin; ++dx) {
+												if (dx == 0 && dy == 0)
+													continue;
 
-										DirectX::XMFLOAT3 detailTangentNormal = {
-											srcColor.r * 2.0f - 1.0f,
-											srcColor.g * 2.0f - 1.0f,
-											srcColor.b * 2.0f - 1.0f,
-										};
-										DirectX::XMVECTOR detailNormal = DirectX::XMVector3Normalize(DirectX::XMVector3TransformNormal(XMLoadFloat3(&detailTangentNormal), tbn));
-										DirectX::XMVECTOR normal = DirectX::XMVector3Normalize(DirectX::XMVectorLerp(n, detailNormal, srcColor.a));
-										DirectX::XMFLOAT3 normalF3;
-										DirectX::XMStoreFloat3(&normalF3, normal);
-										normalF3.x = normalF3.x * 0.5f + 0.5f;
-										normalF3.y = normalF3.y * 0.5f + 0.5f;
-										normalF3.z = normalF3.z * 0.5f + 0.5f;
+												int nx = x + dx;
+												if (nx < 0 || nx >= mipWidth)
+													continue;
 
-										dstColor = RGBA(normalF3.x, normalF3.z, normalF3.y);
+												std::uint32_t* nPixel = reinterpret_cast<std::uint32_t*>(nRow + nx * 4);
+												RGBA itPixel;
+												itPixel.SetReverse(*nPixel);
+												if (itPixel.a < 1.0f) {
+													*nPixel = RGBA::lerp(itPixel, dstColor, 0.5f).GetReverse() | 0xFF000000;
+												}
+											}
+										}
 									}
-									if (overlayColor.a > 0.0f)
-									{
-										dstColor = RGBA::lerp(dstColor, overlayColor, overlayColor.a);
-										dstColor.a = 1.0f;
-									}
-
-									std::uint8_t* rowData = static_cast<std::uint8_t*>(dstData) + y * mappedResource.RowPitch;
-									std::uint32_t* dstPixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
-									*dstPixel = dstColor.GetReverse();
 								}
 							}
 						});
 
-						std::uint32_t* pixels = reinterpret_cast<uint32_t*>(dstData);
-						BleedTexture(pixels, mipWidth, mipHeight, margin);
-
 						Shader::ShaderManager::GetSingleton().ShaderContextLock();
 						context->Unmap(dstStagingTexture2D.Get(), subresourceIndex);
 						Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-					}));
+					 }));
 				}
 				for (auto& parallelMip : parallelMips) {
-					parallelMip.join();
+					parallelMip.get();
 				}
 
 				if (srcStagingTexture2D)
@@ -448,7 +491,7 @@ namespace Mus {
 					return;
 				}
 
-				if (TaskManager::GetSingleton().GetCurrentBakeObjectNormalMapTaskID(taskID) != taskID.taskID)
+				if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
 				{
 					logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 					return;
@@ -491,8 +534,8 @@ namespace Mus {
 				logger::info("{}::{}::{} : normalmap baked", _func_, taskID.taskID, a_bakeSet[bakeIndex].geometryName);
 			}));
 		}
-		for (auto& bakeThread : bakeThreads) {
-			bakeThread.join();
+		for (auto& parallelBaking : parallelBakings) {
+			parallelBaking.get();
 		}
 #ifdef BAKE_TEST
 		PerformanceLog(std::string(_func_) + "::" + std::to_string(taskID.taskID), true, false);
@@ -515,27 +558,27 @@ namespace Mus {
 		}
 
 		a_data.UpdateMap();
-		if (TaskManager::GetSingleton().GetCurrentBakeObjectNormalMapTaskID(taskID) != taskID.taskID)
+		if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
 		{
 			logger::error("{} : Invalid taskID", __func__);
 			return nullptr;
 		}
 
 		a_data.Subdivision(Config::GetSingleton().GetSubdivision());
-		if (TaskManager::GetSingleton().GetCurrentBakeObjectNormalMapTaskID(taskID) != taskID.taskID)
+		if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
 		{
 			logger::error("{} : Invalid taskID", __func__);
 			return nullptr;
 		}
 
 		a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
-		if (TaskManager::GetSingleton().GetCurrentBakeObjectNormalMapTaskID(taskID) != taskID.taskID)
+		if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
 		{
 			logger::error("{} : Invalid taskID", __func__);
 			return nullptr;
 		}
 		a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree());
-		if (TaskManager::GetSingleton().GetCurrentBakeObjectNormalMapTaskID(taskID) != taskID.taskID)
+		if (TaskManager::GetSingleton().GetCurrentTaskID(taskID) != taskID.taskID)
 		{
 			logger::error("{} : Invalid taskID", __func__);
 			return nullptr;
@@ -843,6 +886,25 @@ namespace Mus {
 		out = { u, v, w };
 		return true;
 	}
+	
+	bool ObjectNormalMapBaker::ComputeBarycentrics(float px, float py, DirectX::XMINT2 a, DirectX::XMINT2 b, DirectX::XMINT2 c, std::int32_t margin, DirectX::XMFLOAT3& out)
+	{
+		px += 0.5f;
+		py += 0.5f;
+		for (float dy = py - margin; dy <= py + margin; dy++) {
+			for (float dx = px - margin; dx <= px + margin; dx++) {
+				if (ComputeBarycentric(dx, dy, a, b, c, out)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+	bool ObjectNormalMapBaker::ComputeBarycentrics(float px, float py, DirectX::XMINT2 a, DirectX::XMINT2 b, DirectX::XMINT2 c, DirectX::XMFLOAT3& out)
+	{
+		return ComputeBarycentric(px, py, a, b, c, out) || ComputeBarycentric(px + 1, py, a, b, c, out) 
+			|| ComputeBarycentric(px, py + 1, a, b, c, out) || ComputeBarycentric(px + 1, py + 1, a, b, c, out);
+	}
 
 	void ObjectNormalMapBaker::GenerateTileTriangleRanges(TileInfo tileInfo, const GeometryData& a_data, std::vector<uint32_t>& outPackedTriangleIndices, std::vector<TileTriangleRange>& outTileRanges)
 	{
@@ -858,9 +920,9 @@ namespace Mus {
 			const DirectX::XMFLOAT2& u2 = a_data.uvs[v2];
 
 			float minU = (std::min)({ u0.x, u1.x, u2.x });
-			float maxU = (std::max)({ u0.x, u1.x, u2.x });
+			float maxU = std::max({ u0.x, u1.x, u2.x });
 			float minV = (std::min)({ u0.y, u1.y, u2.y });
-			float maxV = (std::max)({ u0.y, u1.y, u2.y });
+			float maxV = std::max({ u0.y, u1.y, u2.y });
 
 			int minX = static_cast<int>(minU * tileInfo.TEX_WIDTH) / tileInfo.TILE_SIZE;
 			int maxX = static_cast<int>(maxU * tileInfo.TEX_WIDTH) / tileInfo.TILE_SIZE;
@@ -987,9 +1049,7 @@ namespace Mus {
 	}
 	bool ObjectNormalMapBaker::IsInvalidPixel(const std::uint32_t a_pixel)
 	{
-		RGBA pixel;
-		pixel.SetReverse(a_pixel);
-		return pixel.a == 0;
+		return (a_pixel & 0xFF000000) == 0;
 	}
 	void ObjectNormalMapBaker::BleedTexture(std::uint32_t* pixels, UINT width, UINT height, std::int32_t margin)
 	{
@@ -997,73 +1057,87 @@ namespace Mus {
 		PerformanceLog(std::string(__func__) + "::" + std::to_string(width) + "|" + std::to_string(height), false, false);
 #endif // BAKE_TEST
 
-		if (margin == 0)
+		if (margin <= 0) 
 			return;
 
-		struct PixelCoord {
-			int x, y;
-		};
-		std::vector<std::uint32_t> original(pixels, pixels + width * height);
-		std::vector<std::uint8_t> visited(width* height, 0);
-		concurrency::concurrent_queue<PixelCoord> frontier;
+		const size_t totalPixels = static_cast<size_t>(width) * height;
+		const int widthInt = static_cast<int>(width);
+		const int heightInt = static_cast<int>(height);
 
-		auto GetIndex = [&](int x, int y) {
-			return y * width + x;
+		struct SeedPoint {
+			int16_t x, y;
+			std::uint32_t color;
 		};
 
-		concurrency::parallel_for(UINT(0), height, [&](UINT y) {
-			for (int x = 0; x < width; ++x) {
-				int idx = GetIndex(x, y);
-				if (IsInvalidPixel(original[idx]))
-					continue;
+		std::vector<SeedPoint> seedBuffer(totalPixels);
+		std::vector<int> distanceBuffer(totalPixels);
 
-				static const int offsets[4][2] = { {1,0}, {-1,0}, {0,1}, {0,-1} };
-				for (auto& off : offsets) {
-					int nx = x + off[0];
-					int ny = y + off[1];
-					if (nx < 0 || ny < 0 || nx >= width || ny >= height)
-						continue;
+		auto getIndex = [widthInt](int x, int y) -> size_t {
+			return static_cast<size_t>(y) * widthInt + x;
+		};
 
-					int nidx = GetIndex(nx, ny);
-					if (IsInvalidPixel(original[nidx]) && !visited[nidx]) {
-						visited[nidx] = 1;
-						pixels[nidx] = original[idx];
-						frontier.push({ nx, ny });
-					}
+		concurrency::parallel_for(0, heightInt, [&](int y) {
+			for (int x = 0; x < widthInt; ++x) {
+				const size_t idx = getIndex(x, y);
+				if (!IsInvalidPixel(pixels[idx])) {
+					seedBuffer[idx] = { static_cast<int16_t>(x), static_cast<int16_t>(y), pixels[idx] };
+					distanceBuffer[idx] = 0;
+				}
+				else {
+					seedBuffer[idx] = { -1, -1, 0 };
+					distanceBuffer[idx] = INT_MAX;
 				}
 			}
 		});
 
-		for (int step = 1; step < margin; ++step) {
-			std::vector<PixelCoord> currentFrontier;
-			PixelCoord p;
-			while (frontier.try_pop(p)) {
-				currentFrontier.push_back(p);
-			}
+		for (int step = std::max(widthInt, heightInt) / 2; step >= 1; step /= 2) {
+			concurrency::parallel_for(0, heightInt, [&](int y) {
+				for (int x = 0; x < widthInt; ++x) {
+					const size_t idx = getIndex(x, y);
 
-			concurrency::parallel_for(std::size_t(0), currentFrontier.size(), [&](std::size_t i) {
-				int x = currentFrontier[i].x;
-				int y = currentFrontier[i].y;
-				int idx = GetIndex(x, y);
-				std::uint32_t srcPixel = pixels[idx];
-
-				static const int offsets[4][2] = { {1,0}, {-1,0}, {0,1}, {0,-1} };
-				for (auto& off : offsets) {
-					int nx = x + off[0];
-					int ny = y + off[1];
-					if (nx < 0 || ny < 0 || nx >= width || ny >= height)
+					if (seedBuffer[idx].x >= 0) 
 						continue;
 
-					int nidx = GetIndex(nx, ny);
-					if (IsInvalidPixel(pixels[nidx]) && !visited[nidx]) {
-						if (_InterlockedExchange8(reinterpret_cast<volatile char*>(&visited[nidx]), 1) == 0) {
-							pixels[nidx] = srcPixel;
-							frontier.push({ nx, ny });
+					int bestDist = distanceBuffer[idx];
+					SeedPoint bestSeed = seedBuffer[idx];
+
+					for (int dy = -step; dy <= step; dy += step) {
+						for (int dx = -step; dx <= step; dx += step) {
+							const int nx = x + dx;
+							const int ny = y + dy;
+
+							if (nx < 0 || ny < 0 || nx >= widthInt || ny >= heightInt) 
+								continue;
+
+							const size_t nidx = getIndex(nx, ny);
+							const SeedPoint& neighborSeed = seedBuffer[nidx];
+
+							if (neighborSeed.x >= 0) {
+								const int dist = std::abs(x - neighborSeed.x) + std::abs(y - neighborSeed.y);
+								if (dist < bestDist && dist <= margin) {
+									bestDist = dist;
+									bestSeed = neighborSeed;
+								}
+							}
 						}
+					}
+
+					if (bestDist < distanceBuffer[idx]) {
+						seedBuffer[idx] = bestSeed;
+						distanceBuffer[idx] = bestDist;
 					}
 				}
 			});
 		}
+
+		concurrency::parallel_for(0, heightInt, [&](int y) {
+			for (int x = 0; x < widthInt; ++x) {
+				const size_t idx = getIndex(x, y);
+				if (IsInvalidPixel(pixels[idx]) && seedBuffer[idx].x >= 0) {
+					pixels[idx] = seedBuffer[idx].color;
+				}
+			}
+		});
 
 #ifdef BAKE_TEST
 		PerformanceLog(std::string(__func__) + "::" + std::to_string(width) + "|" + std::to_string(height), true, false);

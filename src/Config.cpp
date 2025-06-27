@@ -6,7 +6,7 @@ namespace Mus {
     bool Config::LoadLogging()
     {
         std::string configPath = GetRuntimeSKSEDirectory();
-        configPath += "MuDynamicTextureTool.ini";
+        configPath += "MuDynamicNormalMap.ini";
 
         std::ifstream file(configPath);
 
@@ -55,7 +55,7 @@ namespace Mus {
 
     bool Config::LoadConfig() {
         std::string configPath = GetRuntimeSKSEDirectory();
-        configPath += "MuDynamicTextureTool.ini";
+        configPath += "MuDynamicNormalMap.ini";
 
         std::ifstream file(configPath);
 
@@ -171,6 +171,7 @@ namespace Mus {
 				else if (variableName == "NormalSmoothDegree")
 				{
                     NormalSmoothDegree = GetFloatValue(variableValue);
+                    NormalSmoothDegree = std::clamp(NormalSmoothDegree, 0.0f, 90.0f);
 				}
 				else if (variableName == "Subdivision")
 				{
@@ -202,7 +203,7 @@ namespace Mus {
         if (detectPriorityCores > 0)
         {
             detectPriorityCores = cores / (std::pow(2, detectPriorityCores));
-            detectPriorityCores = (std::max)(std::int32_t(1), detectPriorityCores);
+            detectPriorityCores = std::max(std::int32_t(1), detectPriorityCores);
             detectPriorityCores -= priorityCores.size();
             if (detectPriorityCores > 0)
             {
@@ -223,6 +224,7 @@ namespace Mus {
                 coreList += ", ";
             coreList += std::to_string(core);
             PriorityCores |= 1 << core;
+            PriorityCoreCount += 1;
         }
         logger::info("Enable cores for baking normalmap : {} / {:x}", coreList, PriorityCores);
 
@@ -232,7 +234,7 @@ namespace Mus {
     bool MultipleConfig::LoadBakeNormalMapMaskTexture()
     {
         std::string configPath = GetRuntimeSKSEDirectory();
-        configPath += "MuDynamicTextureTool\\BakeObjectNormalMap";
+        configPath += "MuDynamicNormalMap\\BakeObjectNormalMap";
 
         for (auto& file : GetAllFiles(configPath))
         {

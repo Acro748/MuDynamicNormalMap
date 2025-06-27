@@ -19,24 +19,21 @@ namespace Mus {
 			return result;
 		}
 
-		void QBakeObjectNormalmap(RE::StaticFunctionTag*, RE::Actor* a_actor, std::int32_t bipedSlot)
+		std::uint32_t GetArmorSlotBit(RE::StaticFunctionTag*, std::uint32_t slot)
 		{
-			if (bipedSlot >= 30)
-				bipedSlot -= 30;
-			if (bipedSlot == -1)
-			{
-				if (!a_actor || !a_actor->loadedData || !a_actor->loadedData->data3D)
-					return;
-				TaskManager::GetSingleton().QBakeObjectNormalMap(a_actor, TaskManager::GetSingleton().GetGeometries(a_actor->loadedData->data3D.get(), [](RE::BSGeometry*) -> bool { return true; }), bipedSlot);
-			}
-			else
-			{
-				TaskManager::GetSingleton().QBakeObjectNormalMap(a_actor, TaskManager::GetSingleton().GetGeometries(a_actor, bipedSlot), bipedSlot);
-			}
+			if (slot >= 30)
+				slot -= 30;
+			return 1 << slot;
+		}
+
+		void QBakeObjectNormalmap(RE::StaticFunctionTag*, RE::Actor* a_actor, std::uint32_t bipedSlot)
+		{
+			TaskManager::GetSingleton().QBakeObjectNormalMap(a_actor, TaskManager::GetSingleton().GetSkinGeometries(a_actor, bipedSlot), bipedSlot);
 		}
 
         bool RegisterPapyrusFunctions(RE::BSScript::IVirtualMachine* vm) {
             vm->RegisterFunction("GetVersion", ScriptFileName, GetVersion);
+            vm->RegisterFunction("GetArmorSlotBit", ScriptFileName, GetArmorSlotBit);
             vm->RegisterFunction("QBakeObjectNormalmap", ScriptFileName, QBakeObjectNormalmap);
             
             return true;

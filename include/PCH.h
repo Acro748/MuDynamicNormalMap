@@ -1,4 +1,5 @@
 #pragma once
+#define NOMINMAX
 
 #include <RE/Skyrim.h>
 #include <SKSE/SKSE.h>
@@ -136,7 +137,10 @@ namespace util {
     using SKSE::stl::report_and_fail;
 }
 
+#include "B/BSFaceGenBaseMorphExtraData.h"
+
 #include "RGBA.h"
+#include "ThreadPool.h"
 
 #include "Store.h"
 #include "Geometry.h"
@@ -155,4 +159,7 @@ namespace util {
 #include "ObjectNormalMapBaker.h"
 #include "TaskManager.h"
 #include "PapyrusScripts.h"
+
+#include "Interface/Interface.h"
+#include "Interface/InterfaceImpl.h"
 

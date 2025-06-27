@@ -8,6 +8,7 @@ namespace Mus {
 		~GeometryData() {};
 
 		struct GeometryInfo {
+			std::string name;
 			bool hasVertices = false;
 			bool hasUVs = false;
 			bool hasNormals = false;
@@ -35,6 +36,8 @@ namespace Mus {
 			std::size_t indicesEnd;
 			std::size_t indicesCount() { return indicesEnd - indicesStart; }
 		};
+
+		RE::BSFaceGenBaseMorphExtraData* GetMorphExtraData(RE::BSGeometry* a_geometry);
 
 		bool GetGeometryInfo(RE::BSGeometry* a_geo, GeometryInfo& info);
 		bool GetGeometryData(RE::BSGeometry* a_geo);

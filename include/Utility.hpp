@@ -766,4 +766,15 @@ namespace Mus {
             return nullptr;
         return skinInstance->skinPartition;
     }
+
+    inline std::vector<std::uint32_t> SubBipedObjectSlots(std::uint32_t bipedSlots)
+    {
+        std::vector<std::uint32_t> slots;
+        for (int i = 0; i < 32; ++i) {
+            if (bipedSlots & (1u << i)) {
+                slots.push_back(1 << i);
+            }
+        }
+        return slots;
+    }
 }

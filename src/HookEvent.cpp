@@ -81,7 +81,10 @@ namespace Mus {
 						}
 						if (!target)
 							target = RE::PlayerCharacter::GetSingleton();
-						TaskManager::GetSingleton().QBakeSkinObjectsNormalMap(target, RE::BIPED_OBJECT::kBody);
+						std::uint32_t bakeSlots = TaskManager::BipedObjectSlot::kAll;
+						if (!Config::GetSingleton().GetHeadEnable())
+							bakeSlots -= TaskManager::BipedObjectSlot::kHead;
+						TaskManager::GetSingleton().QBakeSkinObjectsNormalMap(target, bakeSlots);
 					}
 				}
 			}

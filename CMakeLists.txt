@@ -5,9 +5,9 @@ message("Using toolchain file ${CMAKE_TOOLCHAIN_FILE}.")
 ## Define project
 ########################################################################################################################
 project(
-        MuDynamicTextureTool
+        MuDynamicNormalMap
         VERSION 0.1.0
-        DESCRIPTION "MuDynamicTextureTool by Acro."
+        DESCRIPTION "MuDynamicNormalMap by Acro."
         LANGUAGES CXX
 )
 set(CMAKE_CXX_STANDARD 23)
@@ -37,6 +37,9 @@ set(headers
         include/Geometry.h
         include/InputManager.h
         include/RGBA.h
+        include/ThreadPool.h
+        include/Interface/Interface.h
+        include/Interface/InterfaceImpl.h
 )
 
 set(sources
@@ -51,6 +54,7 @@ set(sources
         src/Store.cpp
         src/Geometry.cpp
         src/InputManager.cpp
+        src/ThreadPool.cpp
         src/Main.cpp
 
         ${CMAKE_CURRENT_BINARY_DIR}/version.rc
@@ -103,6 +107,7 @@ target_include_directories(
     ${PROJECT_NAME}
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/ExtraRE/include>
 )
 
 target_link_libraries(
@@ -121,7 +126,7 @@ target_precompile_headers(
     PRIVATE
         include/PCH.h)
         
-target_compile_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:/sdl;/utf-8;/Zi;/permissive-;/Zc:preprocessor;/Zc:inline;/JMC-;/O2;/Ob3>")
+target_compile_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:/sdl;/utf-8;/Zi;/permissive-;/Zc:preprocessor;/Zc:inline;/JMC-;/O2;/fp:fast;/Ob3>")
 target_link_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:/INCREMENTAL:NO;/OPT:REF;/OPT:ICF;/DEBUG:FULL>")
 
 install(TARGETS ${PROJECT_NAME}

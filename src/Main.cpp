@@ -16,7 +16,7 @@ namespace {
         std::string LogDirectory = Mus::GetRuntimeSKSEDirectory();
         
         std::optional<std::filesystem::path> path(LogDirectory);
-        *path /= "MuDynamicTextureTool";
+        *path /= "MuDynamicNormalMap";
         *path += L".log";
 
         std::shared_ptr<spdlog::logger> log;
@@ -138,7 +138,14 @@ namespace {
             {
                 switch (message->type)
                 {
-                break;
+                case MDNM::InterfaceExchangeMessage::kMessage_ExchangeInterface:
+                {
+                    MDNM::InterfaceExchangeMessage* exchangeMessage = (MDNM::InterfaceExchangeMessage*)message->data;
+                    exchangeMessage->Interface = &MDNM::DNM;
+                    break;
+                }
+                default:
+                    break;
                 }
             })) {
             logger::critical("Couldn't get MessagingInterface for API");

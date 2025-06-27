@@ -17,6 +17,49 @@ namespace Mus {
 
 		void Init();
 
+		enum BipedObjectSlot : std::uint32_t
+		{
+			kNone = 0,
+			kHead = 1 << 0,
+			kHair = 1 << 1,
+			kBody = 1 << 2,
+			kHands = 1 << 3,
+			kForearms = 1 << 4,
+			kAmulet = 1 << 5,
+			kRing = 1 << 6,
+			kFeet = 1 << 7,
+			kCalves = 1 << 8,
+			kShield = 1 << 9,
+			kTail = 1 << 10,
+			kLongHair = 1 << 11,
+			kCirclet = 1 << 12,
+			kEars = 1 << 13,
+			kModMouth = 1 << 14,
+			kModNeck = 1 << 15,
+			kModChestPrimary = 1 << 16,
+			kModBack = 1 << 17,
+			kModMisc1 = 1 << 18,
+			kModPelvisPrimary = 1 << 19,
+			kDecapitateHead = 1 << 20,
+			kDecapitate = 1 << 21,
+			kModPelvisSecondary = 1 << 22,
+			kModLegRight = 1 << 23,
+			kModLegLeft = 1 << 24,
+			kModFaceJewelry = 1 << 25,
+			kModChestSecondary = 1 << 26,
+			kModShoulder = 1 << 27,
+			kModArmLeft = 1 << 28,
+			kModArmRight = 1 << 29,
+			kModMisc2 = 1 << 30,
+			kFX01 = 1 << 31,
+
+			kSkin = kBody + kHands + kFeet,
+			kSkinWithHead = kSkin + kHead,
+			kSkinWithGenital = kSkin + kModPelvisSecondary,
+			kSkinWithHeadAndGenital = kSkinWithHead + kModPelvisSecondary,
+			kAll = 0xFFFFFFFF
+		};
+
 		void RunDelayTask();
 		void RegisterDelayTask(std::string id, std::function<void()> func);
 		void RegisterDelayTask(std::string id, std::uint8_t delayTick, std::function<void()> func);
@@ -31,17 +74,15 @@ namespace Mus {
 		bool QBakeObjectNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::uint32_t bipedSlot);
 
 		std::int64_t GenerateUniqueID();
-		std::uint64_t AttachBakeObjectNormalMapTaskID(TaskID& taskIDsrc);
-		void DetachBakeObjectNormalMapTaskID(TaskID taskIDsrc, std::int64_t a_ownID);
-		void ReleaseBakeObjectNormalMapTaskID(TaskID taskIDsrc);
-		std::uint64_t GetCurrentBakeObjectNormalMapTaskID(TaskID taskIDsrc);
-
-		void InsertCustomBakeNormalMapMaskTexture(RE::FormID id, std::string baseFolder);
+		std::uint64_t AttachTaskID(TaskID& taskIDsrc);
+		void DetachTaskID(TaskID taskIDsrc, std::int64_t a_ownID);
+		void ReleaseTaskID(TaskID taskIDsrc);
+		std::uint64_t GetCurrentTaskID(TaskID taskIDsrc);
 
 		static inline void SetDeferredWorker() {
 			SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
 			SetThreadAffinityMask(GetCurrentThread(), Config::GetSingleton().GetPriorityCores());
-			std::this_thread::yield();
+			//std::this_thread::yield();
 		}
 	protected:
 		void onEvent(const FrameEvent& e) override;
@@ -56,7 +97,7 @@ namespace Mus {
 		std::string GetTextureName(RE::Actor* a_actor, std::uint32_t a_bipedSlot, RE::BSGeometry* a_geo); // ActorID + Armor/SkinID + BipedSlot + GeometryName + VertexCount
 		bool GetTextureInfo(std::string a_textureName, TextureInfo& a_textureInfo); // ActorID + GeometryName + VertexCount
 
-		std::string GetBakeNormalMapOverlayTexture(std::string a_geometryName, std::uint32_t bipedSlot);
+		std::string GetOverlayTexture(std::string a_geometryName, std::uint32_t bipedSlot);
 		std::unordered_map<RE::FormID, std::string> bakeObjectNormalMapMaskTexture;
 
 		std::unordered_map<RE::FormID, std::unordered_map<std::string, std::int64_t>> bakeObjectNormalMapCounter; // ActorID, GeometryName, BakeID

@@ -199,7 +199,7 @@ namespace Mus {
 
 		std::wstring ShaderManager::GetShaderFilePath(std::string shaderName, bool compiled, ShaderType shaderType)
 		{
-			std::string file = "Data\\SKSE\\Plugins\\MuDynamicTextureTool\\Shader\\";
+			std::string file = "Data\\SKSE\\Plugins\\MuDynamicNormalMap\\Shader\\";
 			if (compiled)
 			{
 				file += "Compiled\\";
@@ -263,7 +263,7 @@ namespace Mus {
 			std::string FailedShaderCompile = "";
 			if (FailedShaderCompile.length() == 0)
 			{
-				FailedShaderCompile = "MuDynamicTextureTool - Warning!";
+				FailedShaderCompile = "MuDynamicNormalMap - Warning!";
 				FailedShaderCompile += "\n\nFailed to Compile shader!";
 				FailedShaderCompile += "\nPlease update graphic driver";
 			}
@@ -302,7 +302,7 @@ namespace Mus {
 			std::string FailedShaderCompile = "";
 			if (FailedShaderCompile.length() == 0)
 			{
-				FailedShaderCompile = "MuDynamicTextureTool - Warning!";
+				FailedShaderCompile = "MuDynamicNormalMap - Warning!";
 				FailedShaderCompile += "\n\nFailed to Compile shader!";
 				FailedShaderCompile += "\nPlease update graphic driver";
 			}
@@ -341,7 +341,7 @@ namespace Mus {
 			std::string FailedShaderCompile = "";
 			if (FailedShaderCompile.length() == 0)
 			{
-				FailedShaderCompile = "MuDynamicTextureTool - Warning!";
+				FailedShaderCompile = "MuDynamicNormalMap - Warning!";
 				FailedShaderCompile += "\n\nFailed to Compile shader!";
 				FailedShaderCompile += "\nPlease update graphic driver";
 			}
@@ -978,8 +978,8 @@ namespace Mus {
 		float h = 0.0f;
 		float s = 0.0f;
 		float v = 0.0f;
-		float cmax = max(max(r, g), b);
-		float cmin = min(min(r, g), b);
+		float cmax = std::max(std::max(r, g), b);
+		float cmin = std::min(std::min(r, g), b);
 		float delta = cmax - cmin;
 
 		if (delta > 0) {
