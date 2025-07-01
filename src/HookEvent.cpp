@@ -32,11 +32,9 @@ namespace Mus {
 				using namespace InputManager;
 				std::uint32_t keyCode = 0;
 				std::uint32_t keyMask = button->idCode;
-				//logger::info("{}", keyMask);
 				if (button->device.all(RE::INPUT_DEVICE::kMouse))
 					keyCode = InputMap::kMacro_MouseButtonOffset + keyMask;
-				else if (//isUsingMotionControllers() &&
-						 REL::Module::IsVR() &&
+				else if (REL::Module::IsVR() &&
 						 button->device.underlying() >= INPUT_DEVICE_CROSS_VR::kVirtualKeyboard &&
 						 button->device.underlying() <= INPUT_DEVICE_CROSS_VR::kDeviceType_WindowsMRSecondary) {
 					keyCode = GetDeviceOffsetForDevice(button->device.underlying()) + keyMask;
@@ -57,13 +55,13 @@ namespace Mus {
 						continue;
 				}
 
-				if (keyCode == Config::GetSingleton().GetBakeKey1())
+				if (keyCode == Config::GetSingleton().GetHotKey1())
 				{
-					isPressedBakeKey1 = button->IsPressed();
+					isPressedHotKey1 = button->IsPressed();
 				}
-				else if (keyCode == Config::GetSingleton().GetBakeKey2())
+				else if (keyCode == Config::GetSingleton().GetHotKey2())
 				{
-					if (isPressedBakeKey1 || Config::GetSingleton().GetBakeKey1() == 0)
+					if (isPressedHotKey1 || Config::GetSingleton().GetHotKey1() == 0)
 					{
 						RE::Actor* target = nullptr;
 						if (auto crossHair = RE::CrosshairPickData::GetSingleton(); crossHair && crossHair->targetActor)
@@ -84,7 +82,7 @@ namespace Mus {
 						std::uint32_t bakeSlots = TaskManager::BipedObjectSlot::kAll;
 						if (!Config::GetSingleton().GetHeadEnable())
 							bakeSlots -= TaskManager::BipedObjectSlot::kHead;
-						TaskManager::GetSingleton().QBakeSkinObjectsNormalMap(target, bakeSlots);
+						TaskManager::GetSingleton().QUpdateNormalMap(target, bakeSlots);
 					}
 				}
 			}

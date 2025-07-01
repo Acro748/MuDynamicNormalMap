@@ -384,8 +384,8 @@ namespace Mus {
 			if (DirectX::XMVector3Equal(nSum, DirectX::XMVectorZero()))
 				return;
 
-			DirectX::XMVECTOR t = DirectX::XMVector3Length(tSum).m128_f32[0] > floatPrecision ? DirectX::XMVector3Normalize(tSum) : DirectX::XMVectorZero();
-			DirectX::XMVECTOR b = DirectX::XMVector3Length(bSum).m128_f32[0] > floatPrecision ? DirectX::XMVector3Normalize(bSum) : DirectX::XMVectorZero();
+			DirectX::XMVECTOR t = DirectX::XMVectorGetX(DirectX::XMVector3Length(tSum)) > floatPrecision ? DirectX::XMVector3Normalize(tSum) : DirectX::XMVectorZero();
+			DirectX::XMVECTOR b = DirectX::XMVectorGetX(DirectX::XMVector3Length(bSum)) > floatPrecision ? DirectX::XMVector3Normalize(bSum) : DirectX::XMVectorZero();
 			DirectX::XMVECTOR n = DirectX::XMVector3Normalize(nSum);
 
 			if (!DirectX::XMVector3Equal(t, DirectX::XMVectorZero())) {

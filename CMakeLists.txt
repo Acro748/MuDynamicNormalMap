@@ -28,7 +28,7 @@ set(headers
         include/Config.h
         include/PapyrusScripts.h
         include/ShaderManager.h
-        include/ObjectNormalMapBaker.h
+        include/ObjectNormalMapUpdater.h
         include/TaskManager.h
         include/Hook.h
         include/HookEvent.h
@@ -38,6 +38,7 @@ set(headers
         include/InputManager.h
         include/RGBA.h
         include/ThreadPool.h
+        include/MiniBenchMark.h
         include/Interface/Interface.h
         include/Interface/InterfaceImpl.h
 )
@@ -47,7 +48,7 @@ set(sources
         src/Config.cpp
         src/PapyrusScripts.cpp
         src/ShaderManager.cpp
-        src/ObjectNormalMapBaker.cpp
+        src/ObjectNormalMapUpdater.cpp
         src/TaskManager.cpp
         src/Hook.cpp
         src/HookEvent.cpp
@@ -137,6 +138,7 @@ install(TARGETS ${PROJECT_NAME}
 ########################################################################################################################
 set(compute_shader_sources 
    ${CMAKE_CURRENT_SOURCE_DIR}/shader/ObjectNormalMapBaker.hlsl
+   ${CMAKE_CURRENT_SOURCE_DIR}/shader/BleedTexture.hlsl
 )
 set(vertex_shader_sources 
 
@@ -154,7 +156,7 @@ foreach(shader ${compute_shader_sources})
 
     add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD
         TARGET ValidateShaders
-        COMMAND fxc.exe /T cs_5_0 /E main /Fo ${compiledShader} /nologo ${shader}
+        COMMAND fxc.exe /T cs_5_0 /E CSMain /Fo ${compiledShader} /nologo ${shader}
         COMMAND ${CMAKE_COMMAND} -E echo "Shader valid : ${shader}"
     )
 endforeach()

@@ -12,6 +12,16 @@ namespace Mus {
         bool LoadConfig();
         bool LoadConfig(std::ifstream& configfile);
 
+        enum AutoTaskQList : std::uint8_t {
+            Disable = 0,
+            Fastest,
+            Faster,
+            Balanced,
+            BetterPerformance,
+            BestPerformance,
+            Total
+        };
+
         //Debug
         [[nodiscard]] inline spdlog::level::level_enum GetLogLevel() const noexcept {
             return logLevel;
@@ -33,11 +43,6 @@ namespace Mus {
         [[nodiscard]] inline bool GetIgnoreTextureSize() const noexcept {
             return IgnoreTextureSize;
         }
-
-        //NormalmapBake
-        [[nodiscard]] inline bool GetBakeEnable() const noexcept {
-            return BakeEnable;
-        }
         [[nodiscard]] inline bool GetPlayerEnable() const noexcept {
             return PlayerEnable;
         }
@@ -51,28 +56,34 @@ namespace Mus {
             return PriorityCores;
         }
         [[nodiscard]] inline unsigned long GetPriorityCoreCount() const noexcept {
-            return PriorityCores;
+            return PriorityCoreCount;
         }
-        [[nodiscard]] inline std::uint8_t GetTaskQMaxCount() const noexcept {
-            return TaskQMaxCount;
+        [[nodiscard]] inline std::uint8_t GetAutoTaskQ() const noexcept {
+            return AutoTaskQ;
+        }
+        [[nodiscard]] inline std::uint8_t GetTaskQMax() const noexcept {
+            return TaskQMax;
         }
         [[nodiscard]] inline std::uint8_t GetTaskQTick() const noexcept {
             return TaskQTick;
         }
-        [[nodiscard]] inline std::uint8_t GetNormalmapBakeDelayTick() const noexcept {
-            return NormalmapBakeDelayTick;
+        [[nodiscard]] inline bool GetDirectTaskQ() const noexcept {
+            return DirectTaskQ;
         }
-        [[nodiscard]] inline std::uint32_t GetBakeKey1() const noexcept {
-            return BakeKey1;
+        [[nodiscard]] inline bool GetDivideTaskQ() const noexcept {
+            return DivideTaskQ;
         }
-        [[nodiscard]] inline std::uint32_t GetBakeKey2() const noexcept {
-            return BakeKey2;
+        [[nodiscard]] inline std::uint8_t GetUpdateDelayTick() const noexcept {
+            return UpdateDelayTick;
+        }
+        [[nodiscard]] inline std::uint32_t GetHotKey1() const noexcept {
+            return HotKey1;
+        }
+        [[nodiscard]] inline std::uint32_t GetHotKey2() const noexcept {
+            return HotKey2;
         }
         [[nodiscard]] inline float GetWeldDistance() const noexcept {
             return WeldDistance;
-        }
-        [[nodiscard]] inline std::int32_t GetTextureMargin() const noexcept {
-            return TextureMargin;
         }
         [[nodiscard]] inline float GetNormalSmoothDegree() const noexcept {
             return NormalSmoothDegree;
@@ -86,7 +97,29 @@ namespace Mus {
         [[nodiscard]] inline float GetVertexSmoothStrength() const noexcept {
             return VertexSmoothStrength;
         }
+        [[nodiscard]] inline std::uint32_t GetTextureMargin() const noexcept {
+            return TextureMargin;
+        }
+        [[nodiscard]] inline bool GetTextureMarginGPU() const noexcept {
+            return TextureMarginGPU;
+        }
 
+        inline void SetTaskQMax(std::uint8_t newTaskQMax) {
+            TaskQMax = newTaskQMax;
+            logger::info("Set TaskQMax {}", newTaskQMax);
+        }
+        inline void SetTaskQTick(std::uint8_t newTaskQTick) {
+            TaskQTick = newTaskQTick;
+            logger::info("Set TaskQTick {}", newTaskQTick);
+        }
+        inline void SetDirectTaskQ(bool isEnable) {
+            DirectTaskQ = isEnable;
+            logger::info("DirectTaskQ {}", isEnable ? "Enabled" : "Disabled");
+        }
+        inline void SetDivideTaskQ(std::uint8_t newDivideTaskQ) {
+            DivideTaskQ = newDivideTaskQ;
+            logger::info("Set DivideTaskQ {}", newDivideTaskQ);
+        }
     protected:
         //Debug
         spdlog::level::level_enum logLevel{ spdlog::level::level_enum::info };
@@ -99,23 +132,32 @@ namespace Mus {
 		bool IgnoreTextureSize = false;
 
         //NormalmapBake
-        bool BakeEnable = true;
         bool PlayerEnable = true;
         bool NPCEnable = true;
         bool HeadEnable = false;
+
         unsigned long PriorityCores = 0;
         unsigned long PriorityCoreCount = 0;
-        std::uint8_t TaskQMaxCount = 5;
-        std::clock_t TaskQTick = 500;
-        std::uint8_t NormalmapBakeDelayTick = 2;
-        std::uint32_t BakeKey1 = 0;
-        std::uint32_t BakeKey2 = 43;
+
+        std::uint8_t AutoTaskQ = AutoTaskQList::Disable; //0 disable, 1 speed focused, 2 speed focused but performance focused, 3 balanced, 4 performance focused
+        std::uint8_t TaskQMax = 1;
+        std::clock_t TaskQTick = 13;
+        bool DirectTaskQ = false;
+        std::uint8_t DivideTaskQ = 1;
+
+        std::uint8_t UpdateDelayTick = 1;
+
+        std::uint32_t HotKey1 = 0;
+        std::uint32_t HotKey2 = 43;
+
         float WeldDistance = 0.0001f;
-        std::int32_t TextureMargin = 2;
         float NormalSmoothDegree = 60.0f;
         std::uint8_t Subdivision = 0;
         std::uint8_t VertexSmooth = 0;
         float VertexSmoothStrength = 0.5f;
+
+        std::uint32_t TextureMargin = 2;
+        bool TextureMarginGPU = true;
 
     public:
         inline std::string getCurrentSettingValue(std::string s)
@@ -219,8 +261,6 @@ namespace Mus {
 
     class MultipleConfig : public Config {
     public:
-        bool LoadBakeNormalMapMaskTexture();
-
         static inline std::vector<std::filesystem::path> GetAllFiles(std::string folder)
         {
             std::vector<std::filesystem::path> files;

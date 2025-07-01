@@ -139,6 +139,8 @@ namespace util {
 
 #include "B/BSFaceGenBaseMorphExtraData.h"
 
+#include "MiniBenchmark.h"
+
 #include "RGBA.h"
 
 #include "Store.h"
@@ -156,7 +158,7 @@ namespace util {
 
 #include "ShaderManager.h"
 
-#include "ObjectNormalMapBaker.h"
+#include "ObjectNormalMapUpdater.h"
 #include "TaskManager.h"
 #include "PapyrusScripts.h"
 

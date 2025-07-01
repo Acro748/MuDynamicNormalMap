@@ -1,40 +1,63 @@
 #include "ThreadPool.h"
 
 namespace Mus {
-    TaskGroup::TaskGroup() : counter(0) {}
+    std::unique_ptr<ThreadPool_ParallelModule> actorThreads;
+    std::unique_ptr<ThreadPool_ParallelModule> bakingThreads;
 
-    void TaskGroup::addTask() {
-        counter.fetch_add(1, std::memory_order_relaxed);
-    }
-
-    void TaskGroup::completeTask() {
-        if (counter.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-            std::unique_lock lock(mtx);
-            cv.notify_all();
-        }
-    }
-
-    void TaskGroup::wait() {
-        std::unique_lock lock(mtx);
-        cv.wait(lock, [&] { return counter.load() == 0; });
-    }
-
-    ThreadPool& ThreadPool::GetSingleton() {
-        static ThreadPool instance(Config::GetSingleton().GetPriorityCoreCount());
-        return instance;
-    }
-
-    ThreadPool::ThreadPool(size_t numThreads)
-        : stop(false)
+    ThreadPool_ParallelModule::ThreadPool_ParallelModule(std::uint32_t threadSize)
+        : stop(false), priorityCoreMask(Config::GetSingleton().GetPriorityCores())
     {
-        mainWorker = std::make_unique<std::thread>([this] { mainWorkerLoop(); });
-
-        for (size_t i = 0; i < numThreads; ++i) {
+        std::uint32_t coreCount = std::max(std::uint32_t(1), threadSize);
+        for (std::uint32_t i = 0; i < coreCount; i++) {
             workers.emplace_back([this] { workerLoop(); });
         }
     }
 
-    ThreadPool::~ThreadPool() {
+    ThreadPool_ParallelModule::~ThreadPool_ParallelModule() {
+        stop.store(true);
+        cv.notify_all();
+        for (auto& t : workers)
+            if (t.joinable()) t.join();
+    }
+
+    void ThreadPool_ParallelModule::workerLoop() {
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+        if (priorityCoreMask > 0)
+            SetThreadAffinityMask(GetCurrentThread(), priorityCoreMask);
+        while (true) {
+            std::function<void()> task;
+            {
+                std::unique_lock lock(queueMutex);
+                cv.wait(lock, [this] {
+                    return stop.load() || !tasks.empty();
+                });
+                if (stop.load() && tasks.empty())
+                    return;
+                task = std::move(tasks.front());
+                tasks.pop();
+            }
+            task();
+        }
+    }
+
+    ThreadPool_TaskModule& ThreadPool_TaskModule::GetSingleton() {
+        static ThreadPool_TaskModule instance;
+        return instance;
+    }
+
+    ThreadPool_TaskModule::ThreadPool_TaskModule()
+        : stop(false), taskQTick(Config::GetSingleton().GetTaskQTick())
+        , directTaskQ(Config::GetSingleton().GetDirectTaskQ())
+        , priorityCoreMask(Config::GetSingleton().GetPriorityCores())
+        , taskQMaxCount(std::max(std::uint8_t(1), Config::GetSingleton().GetTaskQMax()))
+    {
+        mainWorker = std::make_unique<std::thread>([this] { mainWorkerLoop(); });
+        for (std::uint8_t i = 0; i < taskQMaxCount + 1; i++) {
+            workers.emplace_back([this] { workerLoop(); });
+        }
+    }
+
+    ThreadPool_TaskModule::~ThreadPool_TaskModule() {
         stop.store(true);
         maincv.notify_all();
         mainWorker->join();
@@ -43,9 +66,10 @@ namespace Mus {
             if (t.joinable()) t.join();
     }
 
-    void ThreadPool::mainWorkerLoop() {
+    void ThreadPool_TaskModule::mainWorkerLoop() {
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
-        SetThreadAffinityMask(GetCurrentThread(), Config::GetSingleton().GetPriorityCores());
+        if (priorityCoreMask > 0)
+            SetThreadAffinityMask(GetCurrentThread(), priorityCoreMask);
         while (true) {
             std::function<void()> task;
             {
@@ -61,9 +85,10 @@ namespace Mus {
             task();
         }
     }
-    void ThreadPool::workerLoop() {
+    void ThreadPool_TaskModule::workerLoop() {
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
-        SetThreadAffinityMask(GetCurrentThread(), Config::GetSingleton().GetPriorityCores());
+        if (priorityCoreMask > 0)
+            SetThreadAffinityMask(GetCurrentThread(), priorityCoreMask);
         while (true) {
             std::function<void()> task;
             {
@@ -80,10 +105,10 @@ namespace Mus {
         }
     }
 
-    void ThreadPool::onEvent(const FrameEvent& e)
+    void ThreadPool_TaskModule::onEvent(const FrameEvent& e)
     {
         auto now = std::clock();
-        if (now - lastTickTime < Config::GetSingleton().GetTaskQTick())
+        if (now - lastTickTime < taskQTick)
             return;
 
         lastTickTime = now;
@@ -91,9 +116,10 @@ namespace Mus {
         if (tasks.empty())
             return;
 
+        std::lock_guard<std::mutex> mlg(mainMutex);
         mainTask = std::make_unique<std::function<void()>>([this]{
-            std::lock_guard<std::mutex> lock(queueMutex);
-            while (tasksProcessed < Config::GetSingleton().GetTaskQMaxCount() && !tasks.empty()) {
+            std::lock_guard<std::mutex> qlg(queueMutex);
+            while (tasksProcessed < taskQMaxCount && currentTasks.size() < taskQMaxCount && !tasks.empty()) {
                 currentTasks.push(std::move(tasks.front()));
                 cv.notify_one();
                 tasks.pop();

@@ -17,6 +17,6 @@ namespace Mus {
 		EventResult ProcessEvent(RE::InputEvent* const* evn, RE::BSTEventSource<RE::InputEvent*>*) override;
 
 	private:
-		bool isPressedBakeKey1 = false;
+		bool isPressedHotKey1 = false;
 	};
 }

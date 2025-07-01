@@ -10,8 +10,6 @@ namespace Mus {
 	bool PerformanceCheckConsolePrint = false;
 	bool PerformanceCheckTick = false;
 
-	std::unique_ptr<ThreadPool> threads;
-
 	float weldDistance = 0.0001f;
 	std::uint32_t weldDistanceMult = 10000;
 }

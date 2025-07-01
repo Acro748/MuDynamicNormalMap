@@ -28,7 +28,7 @@ namespace Mus {
 			if (!GetDevice() || !shaderCode || std::strlen(shaderCode) == 0)
 				return false;
 			Blob errorBlob;
-			HRESULT hr = D3DCompile(shaderCode, std::strlen(shaderCode), nullptr, nullptr, nullptr, "main", "cs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, shaderData.ReleaseAndGetAddressOf(), &errorBlob);
+			HRESULT hr = D3DCompile(shaderCode, std::strlen(shaderCode), nullptr, nullptr, nullptr, "CSMain", "cs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, shaderData.ReleaseAndGetAddressOf(), &errorBlob);
 			if (FAILED(hr)) {
 				logger::error("Failed to compile shader {} : {}", hr, errorBlob ? errorBlob->GetBufferPointer() : "Unknown Error");
 				return false;
@@ -45,7 +45,7 @@ namespace Mus {
 			if (!GetDevice() || shaderFile.empty())
 				return false;
 			Blob errorBlob;
-			HRESULT hr = D3DCompileFromFile(shaderFile.c_str(), nullptr, nullptr, "main", "cs_5_0", 0, 0, shaderData.ReleaseAndGetAddressOf(), nullptr);
+			HRESULT hr = D3DCompileFromFile(shaderFile.c_str(), nullptr, nullptr, "CSMain", "cs_5_0", 0, 0, shaderData.ReleaseAndGetAddressOf(), nullptr);
 			if (FAILED(hr))
 			{
 				logger::error("Failed to compile shader {} : {}", hr, errorBlob ? errorBlob->GetBufferPointer() : "Unknown Error");

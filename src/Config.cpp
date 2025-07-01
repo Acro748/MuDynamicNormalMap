@@ -118,13 +118,6 @@ namespace Mus {
 				{
 					IgnoreTextureSize = GetBoolValue(variableValue);
 				}
-			}
-            else if (currentSetting == "[NormalmapBake]")
-            {
-                if (variableName == "BakeEnable")
-				{
-                    BakeEnable = GetBoolValue(variableValue);
-				}
                 else if (variableName == "PlayerEnable")
 				{
                     PlayerEnable = GetBoolValue(variableValue);
@@ -148,33 +141,42 @@ namespace Mus {
                 {
                     detectPriorityCores = GetIntValue(variableValue);
                 }
-				else if (variableName == "TaskQMaxCount")
+				else if (variableName == "AutoTaskQ")
 				{
-                    TaskQMaxCount = GetUIntValue(variableValue);
+                    AutoTaskQ = GetUIntValue(variableValue);
+                    AutoTaskQ = std::min(std::uint8_t(AutoTaskQList::Total - 1), AutoTaskQ);
+				}
+				else if (variableName == "TaskQMax")
+				{
+                    TaskQMax = GetUIntValue(variableValue);
 				}
 				else if (variableName == "TaskQTick")
 				{
                     TaskQTick = GetUIntValue(variableValue);
 				}
-				else if (variableName == "NormalmapBakeDelayTick")
+				else if (variableName == "DirectTaskQ")
 				{
-                    NormalmapBakeDelayTick = GetUIntValue(variableValue);
+                    DirectTaskQ = GetBoolValue(variableValue);
 				}
-				else if (variableName == "BakeKey1")
+				else if (variableName == "DivideTaskQ")
 				{
-                    BakeKey1 = GetUIntValue(variableValue);
+                    DivideTaskQ = GetUIntValue(variableValue);
 				}
-				else if (variableName == "BakeKey2")
+				else if (variableName == "UpdateDelayTick")
 				{
-                    BakeKey2 = GetUIntValue(variableValue);
+                    UpdateDelayTick = GetUIntValue(variableValue);
+				}
+				else if (variableName == "HotKey1")
+				{
+                    HotKey1 = GetUIntValue(variableValue);
+				}
+				else if (variableName == "HotKey2")
+				{
+                    HotKey2 = GetUIntValue(variableValue);
 				}
 				else if (variableName == "WeldDistance")
 				{
                     WeldDistance = GetFloatValue(variableValue);
-				}
-				else if (variableName == "TextureMargin")
-				{
-                    TextureMargin = GetIntValue(variableValue);
 				}
 				else if (variableName == "NormalSmoothDegree")
 				{
@@ -193,62 +195,66 @@ namespace Mus {
 				{
                     VertexSmoothStrength = GetFloatValue(variableValue);
 				}
+				else if (variableName == "TextureMargin")
+				{
+                    TextureMargin = GetUIntValue(variableValue);
+				}
+				else if (variableName == "TextureMarginGPU")
+				{
+                    TextureMarginGPU = GetBoolValue(variableValue);
+				}
 			}
         }
 
         PriorityCores = 0;
         std::uint32_t cores = std::thread::hardware_concurrency();
         logger::info("Detected cores : {}", cores);
-        auto priorityCores_ = priorityCores;
-        priorityCores.clear();
-        for (auto& core : priorityCores_) {
-            if (core < 0 || core >= cores)
-                continue;
-            priorityCores.insert(core);
-        }
-        if (priorityCores.empty() && detectPriorityCores == 0)
-            detectPriorityCores = 1;
-        if (detectPriorityCores > 0)
+        if (priorityCores.empty())
         {
-            detectPriorityCores = cores / (std::pow(2, detectPriorityCores));
-            detectPriorityCores = std::max(std::int32_t(1), detectPriorityCores);
-            detectPriorityCores -= priorityCores.size();
+            PriorityCoreCount = std::max(2.0, cores / (std::pow(2, detectPriorityCores)));
+            logger::info("Enable cores for task : {}", PriorityCoreCount);
+        }
+        else
+        {
+            auto priorityCores_ = priorityCores;
+            priorityCores.clear();
+            for (auto& core : priorityCores_) {
+                if (core < 0 || core >= cores)
+                    continue;
+                priorityCores.insert(core);
+            }
+            if (priorityCores.empty() && detectPriorityCores == 0)
+                detectPriorityCores = 1;
             if (detectPriorityCores > 0)
             {
-                for (std::int32_t i = cores; i > 1; i--) { //excluding first core
-                    std::int32_t coreNum = i - 1;
-                    if (priorityCores.find(coreNum) != priorityCores.end())
-                        continue;
-                    priorityCores.insert(coreNum);
-                    detectPriorityCores--;
-                    if (detectPriorityCores == 0)
-                        break;
+                detectPriorityCores = cores / (std::pow(2, detectPriorityCores));
+                detectPriorityCores = std::max(std::int32_t(1), detectPriorityCores);
+                detectPriorityCores -= priorityCores.size();
+                if (detectPriorityCores > 0)
+                {
+                    for (std::int32_t i = cores; i > 1; i--) { //excluding first core
+                        std::int32_t coreNum = i - 1;
+                        if (priorityCores.find(coreNum) != priorityCores.end())
+                            continue;
+                        priorityCores.insert(coreNum);
+                        detectPriorityCores--;
+                        if (detectPriorityCores == 0)
+                            break;
+                    }
                 }
             }
+            std::string coreList = "";
+            for (auto core : priorityCores) {
+                if (!coreList.empty())
+                    coreList += ", ";
+                coreList += std::to_string(core);
+                PriorityCores |= 1 << core;
+                PriorityCoreCount += 1;
+            }
+            logger::info("Enable cores for task : {} / {:x}", coreList, PriorityCores);
         }
-        std::string coreList = "";
-        for (auto core : priorityCores) {
-            if (!coreList.empty())
-                coreList += ", ";
-            coreList += std::to_string(core);
-            PriorityCores |= 1 << core;
-            PriorityCoreCount += 1;
-        }
-        logger::info("Enable cores for baking normalmap : {} / {:x}", coreList, PriorityCores);
 
         return true;
-    }
-
-    bool MultipleConfig::LoadBakeNormalMapMaskTexture()
-    {
-        std::string configPath = GetRuntimeSKSEDirectory();
-        configPath += "MuDynamicNormalMap\\BakeObjectNormalMap";
-
-        for (auto& file : GetAllFiles(configPath))
-        {
-
-        }
-        return false;
     }
 }
 

@@ -65,13 +65,11 @@ namespace Mus {
 		void RegisterDelayTask(std::string id, std::uint8_t delayTick, std::function<void()> func);
 		std::string GetDelayTaskID(RE::FormID refrID, std::uint32_t bipedSlot);
 
-		std::unordered_set<RE::BSGeometry*> GetGeometries(RE::NiAVObject* a_root, std::function<bool(RE::BSGeometry*)> func);
 		std::unordered_set<RE::BSGeometry*> GetGeometries(RE::Actor* a_actor, std::uint32_t bipedSlot);
 		std::unordered_set<RE::BSGeometry*> GetSkinGeometries(RE::Actor* a_actor, std::uint32_t bipedSlot);
-		std::unordered_set<RE::BSGeometry*> GetGeometries(std::string a_fileName);
 
-		void QBakeSkinObjectsNormalMap(RE::Actor* a_actor, std::uint32_t bipedSlot);
-		bool QBakeObjectNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::uint32_t bipedSlot);
+		void QUpdateNormalMap(RE::Actor* a_actor, std::uint32_t bipedSlot);
+		bool QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::uint32_t bipedSlot);
 
 		std::int64_t GenerateUniqueID();
 		std::uint64_t AttachTaskID(TaskID& taskIDsrc);
@@ -80,11 +78,6 @@ namespace Mus {
 		std::uint64_t GetCurrentTaskID(TaskID taskIDsrc);
 		bool IsValidTaskID(TaskID taskIDsrc);
 
-		static inline void SetDeferredWorker() {
-			SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
-			SetThreadAffinityMask(GetCurrentThread(), Config::GetSingleton().GetPriorityCores());
-			//std::this_thread::yield();
-		}
 	protected:
 		void onEvent(const FrameEvent& e) override;
 		void onEvent(const FacegenNiNodeEvent& e) override;
@@ -99,10 +92,9 @@ namespace Mus {
 		bool GetTextureInfo(std::string a_textureName, TextureInfo& a_textureInfo); // ActorID + GeometryName + VertexCount
 
 		std::string GetOverlayNormalMapPath(std::string a_normalMapPath);
-		std::unordered_map<RE::FormID, std::string> bakeObjectNormalMapMaskTexture;
 
-		std::unordered_map<RE::FormID, std::unordered_map<std::string, std::int64_t>> bakeObjectNormalMapCounter; // ActorID, GeometryName, BakeID
-		std::mutex bakeObjectNormalMapCounterLock;
+		std::unordered_map<RE::FormID, std::unordered_map<std::string, std::int64_t>> updateObjectNormalMapCounter; // ActorID, GeometryName, BakeID
+		std::mutex updateObjectNormalMapCounterLock;
 		concurrency::concurrent_unordered_map<RE::FormID, concurrency::concurrent_unordered_map<std::uint32_t, std::string>> lastNormalMap; // ActorID, VertexCount, TextureName>
 	};
 }

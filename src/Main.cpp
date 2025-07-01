@@ -157,15 +157,69 @@ namespace {
     }
     void kDataloadedFunction()
     {
+        if (Mus::Config::GetSingleton().GetAutoTaskQ() > 0)
+        {
+            float benchMarkResult = Mus::miniBenchMark();
+            //55~high-end, 35~middle-end, 15~low-end
+            logger::info("CPU bench mark score : {}", (std::uint32_t)benchMarkResult);
+            float CPUPerformanceMult = std::max(1.0f, 55.0f / benchMarkResult);
+
+            switch (Mus::Config::GetSingleton().GetAutoTaskQ()) {
+            case Mus::Config::AutoTaskQList::Fastest:
+                Mus::Config::GetSingleton().SetTaskQMax(100);
+                Mus::Config::GetSingleton().SetTaskQTick(0);
+                Mus::Config::GetSingleton().SetDirectTaskQ(true);
+                Mus::Config::GetSingleton().SetDivideTaskQ(0);
+                break;
+            case Mus::Config::AutoTaskQList::Faster:
+                Mus::Config::GetSingleton().SetTaskQMax(2);
+                Mus::Config::GetSingleton().SetTaskQTick(Mus::TaskQTickBase * CPUPerformanceMult);
+                Mus::Config::GetSingleton().SetDirectTaskQ(true);
+                Mus::Config::GetSingleton().SetDivideTaskQ(0);
+                break;
+            case Mus::Config::AutoTaskQList::Balanced:
+                Mus::Config::GetSingleton().SetTaskQMax(1);
+                Mus::Config::GetSingleton().SetTaskQTick(Mus::TaskQTickBase * CPUPerformanceMult);
+                Mus::Config::GetSingleton().SetDirectTaskQ(false);
+                Mus::Config::GetSingleton().SetDivideTaskQ(0);
+                break;
+            case Mus::Config::AutoTaskQList::BetterPerformance:
+                Mus::Config::GetSingleton().SetTaskQMax(1);
+                Mus::Config::GetSingleton().SetTaskQTick(Mus::TaskQTickBase * CPUPerformanceMult);
+                Mus::Config::GetSingleton().SetDirectTaskQ(false);
+                Mus::Config::GetSingleton().SetDivideTaskQ(1);
+                break;
+            case Mus::Config::AutoTaskQList::BestPerformance:
+                Mus::Config::GetSingleton().SetTaskQMax(1);
+                Mus::Config::GetSingleton().SetTaskQTick(Mus::TaskQTickBase * CPUPerformanceMult);
+                Mus::Config::GetSingleton().SetDirectTaskQ(false);
+                Mus::Config::GetSingleton().SetDivideTaskQ(2);
+                break;
+            default:
+                break;
+            }
+        }
+
         Mus::weldDistance = Mus::Config::GetSingleton().GetWeldDistance();
         Mus::weldDistanceMult = 1.0f / Mus::weldDistance;
 		Mus::g_frameEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
-		Mus::g_frameEventDispatcher.addListener(&Mus::ThreadPool::GetSingleton());
+		Mus::g_frameEventDispatcher.addListener(&Mus::ThreadPool_TaskModule::GetSingleton());
 		Mus::g_armorAttachEventEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_facegenNiNodeEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_actorChangeHeadPartEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
         Mus::EventHandler::GetSingleton().Register(true);
-        Mus::ThreadPool::GetSingleton();
+
+        auto coreCount = Mus::Config::GetSingleton().GetPriorityCoreCount();
+
+        std::uint32_t actorThreads = std::max(2.0f, ceil((float)coreCount / 4.0f));
+        Mus::actorThreads = std::make_unique<Mus::ThreadPool_ParallelModule>(actorThreads);
+        logger::info("set actorThreads {}", actorThreads);
+
+        std::uint32_t bakingThreads = std::max(2.0f, ceil((float)coreCount / 4.0f * 3.0f));
+        Mus::bakingThreads = std::make_unique<Mus::ThreadPool_ParallelModule>(bakingThreads);
+        logger::info("set bakingThreads {}", bakingThreads);
+
+        Mus::ThreadPool_TaskModule::GetSingleton();
     }
 
     void kNewGameFunction()

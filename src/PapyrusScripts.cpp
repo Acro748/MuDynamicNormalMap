@@ -26,15 +26,15 @@ namespace Mus {
 			return 1 << slot;
 		}
 
-		void QBakeObjectNormalmap(RE::StaticFunctionTag*, RE::Actor* a_actor, std::uint32_t bipedSlot)
+		void QUpdateNormalmap(RE::StaticFunctionTag*, RE::Actor* a_actor, std::uint32_t bipedSlot)
 		{
-			TaskManager::GetSingleton().QBakeObjectNormalMap(a_actor, TaskManager::GetSingleton().GetSkinGeometries(a_actor, bipedSlot), bipedSlot);
+			TaskManager::GetSingleton().QUpdateNormalMap(a_actor, TaskManager::GetSingleton().GetSkinGeometries(a_actor, bipedSlot), bipedSlot);
 		}
 
         bool RegisterPapyrusFunctions(RE::BSScript::IVirtualMachine* vm) {
             vm->RegisterFunction("GetVersion", ScriptFileName, GetVersion);
             vm->RegisterFunction("GetArmorSlotBit", ScriptFileName, GetArmorSlotBit);
-            vm->RegisterFunction("QBakeObjectNormalmap", ScriptFileName, QBakeObjectNormalmap);
+            vm->RegisterFunction("QUpdateNormalmap", ScriptFileName, QUpdateNormalmap);
             
             return true;
         }

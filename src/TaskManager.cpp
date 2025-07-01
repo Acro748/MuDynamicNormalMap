@@ -22,16 +22,16 @@ namespace Mus {
 		std::uint32_t bipedSlot = BipedObjectSlot::kHead;
 		std::string delayTaskID = GetDelayTaskID(id, bipedSlot);
 
-		if (Config::GetSingleton().GetBakeEnable() && Config::GetSingleton().GetHeadEnable())
+		if (Config::GetSingleton().GetHeadEnable())
 		{
-			RegisterDelayTask(delayTaskID, Config::GetSingleton().GetNormalmapBakeDelayTick(), [this, id, name, bipedSlot, delayTaskID]() {
+			RegisterDelayTask(delayTaskID, Config::GetSingleton().GetUpdateDelayTick(), [this, id, name, bipedSlot, delayTaskID]() {
 				RE::Actor* actor = GetFormByID<RE::Actor*>(id);
 				if (!actor || !actor->loadedData || !actor->loadedData->data3D)
 				{
 					logger::error("{:x} {} : invalid reference. so skip", id, name);
 					return;
 				}
-				QBakeSkinObjectsNormalMap(actor, bipedSlot);
+				QUpdateNormalMap(actor, bipedSlot);
 			});
 		}
 	}
@@ -45,24 +45,22 @@ namespace Mus {
 		std::uint32_t bipedSlot = BipedObjectSlot::kHead;
 		std::string delayTaskID = GetDelayTaskID(id, bipedSlot);
 
-		if (Config::GetSingleton().GetBakeEnable() && Config::GetSingleton().GetHeadEnable())
+		if (Config::GetSingleton().GetHeadEnable())
 		{
-			RegisterDelayTask(delayTaskID, Config::GetSingleton().GetNormalmapBakeDelayTick(), [this, id, name, bipedSlot, delayTaskID]() {
+			RegisterDelayTask(delayTaskID, Config::GetSingleton().GetUpdateDelayTick(), [this, id, name, bipedSlot, delayTaskID]() {
 				RE::Actor* actor = GetFormByID<RE::Actor*>(id);
 				if (!actor || !actor->loadedData || !actor->loadedData->data3D)
 				{
 					logger::error("{:x} {} : invalid reference. so skip", id, name);
 					return;
 				}
-				QBakeSkinObjectsNormalMap(actor, bipedSlot);
+				QUpdateNormalMap(actor, bipedSlot);
 			});
 		}
 	}
 	void TaskManager::onEvent(const ArmorAttachEvent& e)
 	{
 		if (!e.actor)
-			return;
-		if (!isPlayer(e.actor->formID))
 			return;
 		if (!e.hasAttached)
 			return;
@@ -72,18 +70,15 @@ namespace Mus {
 		std::uint32_t bipedSlot = 1 << e.bipedSlot;
 		std::string delayTaskID = GetDelayTaskID(id, bipedSlot);
 
-		if (Config::GetSingleton().GetBakeEnable())
-		{
-			RegisterDelayTask(delayTaskID, Config::GetSingleton().GetNormalmapBakeDelayTick(), [this, id, name, bipedSlot, delayTaskID]() {
-				RE::Actor* actor = GetFormByID<RE::Actor*>(id);
-				if (!actor || !actor->loadedData || !actor->loadedData->data3D)
-				{
-					logger::error("{:x} {} : invalid reference. so skip", id, name);
-					return;
-				}
-				QBakeSkinObjectsNormalMap(actor, bipedSlot);
-			});
-		}
+		RegisterDelayTask(delayTaskID, Config::GetSingleton().GetUpdateDelayTick(), [this, id, name, bipedSlot, delayTaskID]() {
+			RE::Actor* actor = GetFormByID<RE::Actor*>(id);
+			if (!actor || !actor->loadedData || !actor->loadedData->data3D)
+			{
+				logger::error("{:x} {} : invalid reference. so skip", id, name);
+				return;
+			}
+			QUpdateNormalMap(actor, bipedSlot);
+		});
 	}
 
 	void TaskManager::RunDelayTask()
@@ -117,44 +112,87 @@ namespace Mus {
 		return std::to_string(refrID) + "_" + std::to_string(bipedSlot);
 	}
 
-	std::unordered_set<RE::BSGeometry*> Mus::TaskManager::GetGeometries(RE::NiAVObject* a_root, std::function<bool(RE::BSGeometry*)> func)
-	{
-		std::unordered_set<RE::BSGeometry*> geometries;
-		if (!a_root)
-			return geometries;
-		RE::BSVisit::TraverseScenegraphGeometries(a_root, [&](RE::BSGeometry* geo) -> RE::BSVisit::BSVisitControl {
-			if (func(geo))
-				geometries.insert(geo);
-			return RE::BSVisit::BSVisitControl::kContinue;
-		});
-		return geometries;
-	}
 	std::unordered_set<RE::BSGeometry*> TaskManager::GetGeometries(RE::Actor* a_actor, std::uint32_t bipedSlot)
 	{
 		std::unordered_set<RE::BSGeometry*> geometries;
 		if (!a_actor || !a_actor->loadedData || !a_actor->loadedData->data3D)
 			return geometries;
+
 		auto slots = SubBipedObjectSlots(bipedSlot);
 		for (auto& slot : slots)
 		{
-			auto armo = a_actor->GetSkin(RE::BIPED_MODEL::BipedObjectSlot(slot));
-			if (!armo)
-				return geometries;
-
-			for (auto& arma : armo->armorAddons)
+			if (slot & std::to_underlying(RE::BIPED_MODEL::BipedObjectSlot::kHead))
 			{
-				if (!arma)
-					continue;
-				if (!arma->bipedModelData.bipedObjectSlots.any(RE::BIPED_MODEL::BipedObjectSlot(slot)))
-					continue;
-				char addonString[MAX_PATH]{ '\0' };
-				arma->GetNodeName(addonString, a_actor, armo, -1);
-				auto root = a_actor->loadedData->data3D->GetObjectByName(addonString);
+				auto root = a_actor->GetFaceNode();
 				if (!root)
 					continue;
 				RE::BSVisit::TraverseScenegraphGeometries(root, [&geometries](RE::BSGeometry* geometry) -> RE::BSVisit::BSVisitControl {
+					using State = RE::BSGeometry::States;
+					using Feature = RE::BSShaderMaterial::Feature;
 					if (!geometry || geometry->name.empty())
 						return RE::BSVisit::BSVisitControl::kContinue;
+					if (IsContainString(geometry->name.c_str(), "[Ovl") || IsContainString(geometry->name.c_str(), "[SOvl") || IsContainString(geometry->name.c_str(), "overlay")) //without overlay
+						return RE::BSVisit::BSVisitControl::kContinue;
+					if (!geometry->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
+						return RE::BSVisit::BSVisitControl::kContinue;
+					auto effect = geometry->GetGeometryRuntimeData().properties[State::kEffect].get();
+					if (!effect)
+						return RE::BSVisit::BSVisitControl::kContinue;
+					auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
+					if (!lightingShader || !lightingShader->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
+						return RE::BSVisit::BSVisitControl::kContinue;
+					geometries.insert(geometry);
+					return RE::BSVisit::BSVisitControl::kContinue;
+				});
+			}
+			else
+			{
+				auto root = a_actor->loadedData->data3D.get();
+				if (!root)
+					continue;
+				RE::BSVisit::TraverseScenegraphGeometries(root, [&geometries, slot](RE::BSGeometry* geometry) -> RE::BSVisit::BSVisitControl {
+					using State = RE::BSGeometry::States;
+					using Feature = RE::BSShaderMaterial::Feature;
+					if (!geometry || geometry->name.empty())
+						return RE::BSVisit::BSVisitControl::kContinue;
+					if (auto dynamicTri = geometry->AsDynamicTriShape(); dynamicTri)
+						return RE::BSVisit::BSVisitControl::kContinue;
+					if (IsContainString(geometry->name.c_str(), "[Ovl") || IsContainString(geometry->name.c_str(), "[SOvl") || IsContainString(geometry->name.c_str(), "overlay")) //without overlay
+						return RE::BSVisit::BSVisitControl::kContinue;
+					if (!geometry->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
+						return RE::BSVisit::BSVisitControl::kContinue;
+					auto effect = geometry->GetGeometryRuntimeData().properties[State::kEffect].get();
+					if (!effect)
+						return RE::BSVisit::BSVisitControl::kContinue;
+					auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
+					if (!lightingShader || !lightingShader->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
+						return RE::BSVisit::BSVisitControl::kContinue;
+
+					std::uint32_t pslot = 0;
+					auto skinInstance = geometry->GetGeometryRuntimeData().skinInstance.get();
+					auto dismember = netimmerse_cast<RE::BSDismemberSkinInstance*>(skinInstance);
+					if (dismember)
+					{
+						bool found = false;
+						for (std::uint32_t p = 0; p < dismember->GetRuntimeData().numPartitions; p++)
+						{
+							auto& partition = dismember->GetRuntimeData().partitions[p];
+							if (partition.slot < 30 || partition.slot >= RE::BIPED_OBJECT::kEditorTotal + 30)
+								return RE::BSVisit::BSVisitControl::kContinue; //unknown slot
+							else
+								pslot = 1 << (partition.slot - 30);
+							if (slot & pslot)
+							{
+								found = true;
+								break;
+							}
+						}
+						if (!found)
+							return RE::BSVisit::BSVisitControl::kContinue;
+					}
+					else //maybe it's just skinInstance in headpart
+						return RE::BSVisit::BSVisitControl::kContinue;
+
 					geometries.insert(geometry);
 					return RE::BSVisit::BSVisitControl::kContinue;
 				});
@@ -199,105 +237,65 @@ namespace Mus {
 			}
 			else
 			{
-				auto armo = a_actor->GetSkin(RE::BIPED_MODEL::BipedObjectSlot(slot));
-				if (!armo)
-					return geometries;
-
-				for (auto& arma : armo->armorAddons)
-				{
-					if (!arma)
-						continue;
-					if (!arma->bipedModelData.bipedObjectSlots.any(RE::BIPED_MODEL::BipedObjectSlot(slot)))
-						continue;
-					char addonString[MAX_PATH]{ '\0' };
-					arma->GetNodeName(addonString, a_actor, armo, -1);
-					auto root = a_actor->loadedData->data3D->GetObjectByName(addonString);
-					if (!root)
-						continue;
-					RE::BSVisit::TraverseScenegraphGeometries(root, [&geometries](RE::BSGeometry* geometry) -> RE::BSVisit::BSVisitControl {
-						using State = RE::BSGeometry::States;
-						using Feature = RE::BSShaderMaterial::Feature;
-						if (!geometry || geometry->name.empty())
-							return RE::BSVisit::BSVisitControl::kContinue;
-						if (IsContainString(geometry->name.c_str(), "[Ovl") || IsContainString(geometry->name.c_str(), "[SOvl") || IsContainString(geometry->name.c_str(), "overlay")) //without overlay
-							return RE::BSVisit::BSVisitControl::kContinue;
-						if (!geometry->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
-							return RE::BSVisit::BSVisitControl::kContinue;
-						auto effect = geometry->GetGeometryRuntimeData().properties[State::kEffect].get();
-						if (!effect)
-							return RE::BSVisit::BSVisitControl::kContinue;
-						auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
-						if (!lightingShader || !lightingShader->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
-							return RE::BSVisit::BSVisitControl::kContinue;
-						geometries.insert(geometry);
+				auto root = a_actor->loadedData->data3D.get();
+				if (!root)
+					continue;
+				RE::BSVisit::TraverseScenegraphGeometries(root, [&geometries, slot](RE::BSGeometry* geometry) -> RE::BSVisit::BSVisitControl {
+					using State = RE::BSGeometry::States;
+					using Feature = RE::BSShaderMaterial::Feature;
+					if (!geometry || geometry->name.empty())
 						return RE::BSVisit::BSVisitControl::kContinue;
-					});
-					if (!geometries.empty())
-						continue;
-				}
+					if (auto dynamicTri = geometry->AsDynamicTriShape(); dynamicTri)
+						return RE::BSVisit::BSVisitControl::kContinue;
+					if (IsContainString(geometry->name.c_str(), "[Ovl") || IsContainString(geometry->name.c_str(), "[SOvl") || IsContainString(geometry->name.c_str(), "overlay")) //without overlay
+						return RE::BSVisit::BSVisitControl::kContinue;
+					if (!geometry->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
+						return RE::BSVisit::BSVisitControl::kContinue;
+					auto effect = geometry->GetGeometryRuntimeData().properties[State::kEffect].get();
+					if (!effect)
+						return RE::BSVisit::BSVisitControl::kContinue;
+					auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
+					if (!lightingShader || !lightingShader->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
+						return RE::BSVisit::BSVisitControl::kContinue;
+
+					std::uint32_t pslot = 0;
+					auto skinInstance = geometry->GetGeometryRuntimeData().skinInstance.get();
+					auto dismember = netimmerse_cast<RE::BSDismemberSkinInstance*>(skinInstance);
+					if (dismember)
+					{
+						bool found = false;
+						for (std::uint32_t p = 0; p < dismember->GetRuntimeData().numPartitions; p++)
+						{
+							auto& partition = dismember->GetRuntimeData().partitions[p];
+							if (partition.slot < 30 || partition.slot >= RE::BIPED_OBJECT::kEditorTotal + 30)
+								return RE::BSVisit::BSVisitControl::kContinue; //unknown slot
+							else
+								pslot = 1 << (partition.slot - 30);
+							if (slot & pslot)
+							{
+								found = true;
+								break;
+							}
+						}
+						if (!found)
+							return RE::BSVisit::BSVisitControl::kContinue;
+					}
+					else //maybe it's just skinInstance in headpart
+						return RE::BSVisit::BSVisitControl::kContinue;
+
+					geometries.insert(geometry);
+					return RE::BSVisit::BSVisitControl::kContinue;
+				});
+				if (!geometries.empty())
+					continue;
 			}
 		}
 		return geometries;
 	}
-	std::unordered_set<RE::BSGeometry*> TaskManager::GetGeometries(std::string a_fileName)
-	{
-		std::unordered_set<RE::BSGeometry*> geometries;
 
-		if (a_fileName.empty() || stringEndsWith(a_fileName, ".nif"))
-			return geometries;
-		if (stringStartsWith(a_fileName, "Data\\"))
-			a_fileName = stringRemoveStarts(a_fileName, "Data\\");
-		if (!stringStartsWith(a_fileName, "meshes\\"))
-			a_fileName = "meshes\\" + a_fileName;
-
-		RE::BSGeometry* geo = nullptr;
-
-		std::uint8_t niStreamMemory[sizeof(RE::NiStream)];
-		RE::NiStream* niStream = (RE::NiStream*)niStreamMemory;
-		NiStreamCtor(niStream);
-
-		RE::BSResourceNiBinaryStream binaryStream(a_fileName.c_str());
-		if (!binaryStream.good()) {
-			logger::critical("{} : Couldn't read nif file!", a_fileName);
-			NiStreamDtor(niStream);
-			return geometries;
-		}
-
-		if (!niStream->Load1(&binaryStream))
-		{
-			if (!niStream->Load3((GetRuntimeDataDirectory() + a_fileName).c_str()))
-			{
-				logger::critical("{} : Couldn't read nif file!", a_fileName);
-				NiStreamDtor(niStream);
-				return geometries;
-			}
-		}
-
-		if (niStream->topObjects.size() > 0)
-		{
-			RE::NiNode* root = niStream->topObjects[0]->AsNode();
-			if (root)
-			{
-				for (auto& child : root->GetChildren())
-				{
-					if (!child || child->name.empty())
-						continue;
-					geo = child->AsGeometry();
-					if (!geo)
-						continue;
-					geometries.insert(geo);
-				}
-			}
-		}
-		NiStreamDtor(niStream);
-		return geometries;
-	}
-
-	void TaskManager::QBakeSkinObjectsNormalMap(RE::Actor* a_actor, std::uint32_t bipedSlot)
+	void TaskManager::QUpdateNormalMap(RE::Actor* a_actor, std::uint32_t bipedSlot)
 	{
 		if (!a_actor)
-			return;
-		if (!Config::GetSingleton().GetBakeEnable())
 			return;
 		RE::FormID id = a_actor->formID;
 		std::string actorName = a_actor->GetName();
@@ -307,7 +305,7 @@ namespace Mus {
 			return;
 
 		std::string delayTaskID = GetDelayTaskID(id, bipedSlot);
-		RegisterDelayTask(delayTaskID, Config::GetSingleton().GetNormalmapBakeDelayTick(), [this, id, actorName, bipedSlot, delayTaskID]() {
+		RegisterDelayTask(delayTaskID, Config::GetSingleton().GetUpdateDelayTick(), [this, id, actorName, bipedSlot, delayTaskID]() {
 			RE::Actor* actor = GetFormByID<RE::Actor*>(id);
 			if (!actor || !actor->loadedData || !actor->loadedData->data3D)
 			{
@@ -317,19 +315,19 @@ namespace Mus {
 			std::unordered_set<RE::BSGeometry*> geometries;
 			if (bipedSlot & BipedObjectSlot::kSkinWithHeadAndGenital)
 			{
-				geometries = GetSkinGeometries(actor, bipedSlot);
+				geometries = GetGeometries(actor, bipedSlot);
 				if (geometries.empty())
 					return;
 				std::uint32_t mergeSlots = bipedSlot | BipedObjectSlot::kSkinWithHeadAndGenital;
-				geometries = GetSkinGeometries(actor, mergeSlots);
+				geometries = GetGeometries(actor, mergeSlots);
 			}
 			else
-				geometries = GetSkinGeometries(actor, bipedSlot);
-			QBakeObjectNormalMap(actor, geometries, bipedSlot);
+				geometries = GetGeometries(actor, bipedSlot);
+			QUpdateNormalMap(actor, geometries, bipedSlot);
 		});
 	}
 
-	bool TaskManager::QBakeObjectNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::uint32_t bipedSlot)
+	bool TaskManager::QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::uint32_t bipedSlot)
 	{
 		if (!a_actor || a_srcGeometies.empty())
 		{
@@ -410,9 +408,7 @@ namespace Mus {
 		auto taskIDsrc = TaskID{ id, std::to_string(bipedSlot)};
 		taskIDsrc.taskID = AttachTaskID(taskIDsrc);
 
-		ThreadPool::GetSingleton().submitAsync([this, id, actorName, bakeData, taskIDsrc]() {
-			SetDeferredWorker();
-
+		actorThreads->submitAsync([this, id, actorName, bakeData, taskIDsrc]() {
 			struct textureResult {
 				std::string geometryName;
 				RE::NiPointer<RE::NiSourceTexture> texture;
@@ -423,7 +419,7 @@ namespace Mus {
 				logger::info("{:x}::{}::{} : cancel queue for bake object normalmap", id, actorName, taskIDsrc.taskID);
 				return;
 			}
-			auto textures = ObjectNormalMapBaker::GetSingleton().BakeObjectNormalMap(taskIDsrc, bakeData.geoData, bakeData.bakeTextureSet);
+			auto textures = ObjectNormalMapUpdater::GetSingleton().UpdateObjectNormalMap(taskIDsrc, bakeData.geoData, bakeData.bakeTextureSet);
 			if (textures.empty())
 			{
 				logger::error("{:x}::{}::{} : Failed to bake object normalmap", id, actorName, taskIDsrc.taskID);
@@ -492,17 +488,17 @@ namespace Mus {
 
 		if (stringEndsWith(filename, msn_suffix.data())) //_msn -> _n_ov
 		{
-			filename = stringRemoveEnds(filename, msn_suffix.data());
-			filename += n_suffix;
-			filename += ov_suffix;
-			std::string fullPath = (file.parent_path() / (filename + ".dds")).string();
+			std::string filename_n_ov = stringRemoveEnds(filename, msn_suffix.data());
+			filename_n_ov += n_suffix;
+			filename_n_ov += ov_suffix;
+			std::string fullPath = (file.parent_path() / (filename_n_ov + ".dds")).string();
 			if (IsExistFile(fullPath, ExistType::textures))
 				return fullPath;
 		}
 		if (stringEndsWith(filename, n_suffix.data())) //_n -> _n_ov
 		{
-			filename += ov_suffix;
-			std::string fullPath = (file.parent_path() / (filename + ".dds")).string();
+			std::string filename_n_ov = filename + ov_suffix.data();
+			std::string fullPath = (file.parent_path() / (filename_n_ov + ".dds")).string();
 			if (IsExistFile(fullPath, ExistType::textures))
 				return fullPath;
 		}
@@ -524,9 +520,9 @@ namespace Mus {
 	{
 		if (taskIDsrc.refrID == 0 || taskIDsrc.taskName.empty())
 			return -1;
-		std::lock_guard<std::mutex> lg(bakeObjectNormalMapCounterLock);
+		std::lock_guard<std::mutex> lg(updateObjectNormalMapCounterLock);
 		auto taskID = GenerateUniqueID();
-		bakeObjectNormalMapCounter[taskIDsrc.refrID][taskIDsrc.taskName] = taskID;
+		updateObjectNormalMapCounter[taskIDsrc.refrID][taskIDsrc.taskName] = taskID;
 		taskIDsrc.taskID = taskID;
 		return taskID;
 	}
@@ -534,23 +530,23 @@ namespace Mus {
 	{
 		if (taskIDsrc.refrID == 0 || taskIDsrc.taskName.empty())
 			return;
-		std::lock_guard<std::mutex> lg(bakeObjectNormalMapCounterLock);
-		if (bakeObjectNormalMapCounter[taskIDsrc.refrID][taskIDsrc.taskName] == a_ownID)
-			bakeObjectNormalMapCounter[taskIDsrc.refrID].erase(taskIDsrc.taskName);
+		std::lock_guard<std::mutex> lg(updateObjectNormalMapCounterLock);
+		if (updateObjectNormalMapCounter[taskIDsrc.refrID][taskIDsrc.taskName] == a_ownID)
+			updateObjectNormalMapCounter[taskIDsrc.refrID].erase(taskIDsrc.taskName);
 	}
 	void TaskManager::ReleaseTaskID(TaskID taskIDsrc) 
 	{
 		if (taskIDsrc.refrID == 0 || taskIDsrc.taskName.empty())
 			return;
-		std::lock_guard<std::mutex> lg(bakeObjectNormalMapCounterLock);
-		bakeObjectNormalMapCounter[taskIDsrc.refrID].erase(taskIDsrc.taskName);
+		std::lock_guard<std::mutex> lg(updateObjectNormalMapCounterLock);
+		updateObjectNormalMapCounter[taskIDsrc.refrID].erase(taskIDsrc.taskName);
 	}
 	std::uint64_t TaskManager::GetCurrentTaskID(TaskID taskIDsrc) 
 	{
 		if (taskIDsrc.refrID == 0 || taskIDsrc.taskName.empty())
 			return -1;
-		std::lock_guard<std::mutex> lg(bakeObjectNormalMapCounterLock);
-		auto taskID = bakeObjectNormalMapCounter[taskIDsrc.refrID][taskIDsrc.taskName];
+		std::lock_guard<std::mutex> lg(updateObjectNormalMapCounterLock);
+		auto taskID = updateObjectNormalMapCounter[taskIDsrc.refrID][taskIDsrc.taskName];
 		if (taskID != taskIDsrc.taskID)
 			return -1;
 		return taskID;
