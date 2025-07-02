@@ -28,7 +28,7 @@ namespace Mus {
 
 		void QUpdateNormalmap(RE::StaticFunctionTag*, RE::Actor* a_actor, std::uint32_t bipedSlot)
 		{
-			TaskManager::GetSingleton().QUpdateNormalMap(a_actor, TaskManager::GetSingleton().GetSkinGeometries(a_actor, bipedSlot), bipedSlot);
+			TaskManager::GetSingleton().QUpdateNormalMap(a_actor, TaskManager::GetSingleton().GetGeometries(a_actor, bipedSlot), bipedSlot);
 		}
 
         bool RegisterPapyrusFunctions(RE::BSScript::IVirtualMachine* vm) {
@@ -39,4 +39,4 @@ namespace Mus {
             return true;
         }
     }
-}  // namespace Mus
+}

@@ -137,7 +137,7 @@ install(TARGETS ${PROJECT_NAME}
 ## Shader Script
 ########################################################################################################################
 set(compute_shader_sources 
-   ${CMAKE_CURRENT_SOURCE_DIR}/shader/ObjectNormalMapBaker.hlsl
+   ${CMAKE_CURRENT_SOURCE_DIR}/shader/UpdateObjectNormalMap.hlsl
    ${CMAKE_CURRENT_SOURCE_DIR}/shader/BleedTexture.hlsl
 )
 set(vertex_shader_sources 

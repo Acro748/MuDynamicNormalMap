@@ -126,6 +126,14 @@ namespace Mus {
 				{
                     NPCEnable = GetBoolValue(variableValue);
 				}
+                else if (variableName == "MaleEnable")
+				{
+                    MaleEnable = GetBoolValue(variableValue);
+				}
+                else if (variableName == "FemaleEnable")
+				{
+                    FemaleEnable = GetBoolValue(variableValue);
+				}
                 else if (variableName == "HeadEnable")
 				{
                     HeadEnable = GetBoolValue(variableValue);

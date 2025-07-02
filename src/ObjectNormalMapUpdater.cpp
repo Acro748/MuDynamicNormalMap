@@ -368,15 +368,16 @@ namespace Mus {
 											const std::uint32_t* overlayPixel = reinterpret_cast<std::uint32_t*>(overlayRowData + (UINT)overlayX * 4);
 											overlayColor.SetReverse(*overlayPixel);
 										}
-										RGBA srcColor(0.5f, 0.5f, 1.0f, 0.0f);
-										if (hasSrcData)
-										{
-											const float srcX = mX * srcWidthF;
-											const std::uint32_t* srcPixel = reinterpret_cast<std::uint32_t*>(srcRowData + (UINT)srcX * 4);
-											srcColor.SetReverse(*srcPixel);
-										}
 										if (overlayColor.a < 1.0f)
 										{
+											RGBA srcColor(0.5f, 0.5f, 1.0f, 0.0f);
+											if (hasSrcData)
+											{
+												const float srcX = mX * srcWidthF;
+												const std::uint32_t* srcPixel = reinterpret_cast<std::uint32_t*>(srcRowData + (UINT)srcX * 4);
+												srcColor.SetReverse(*srcPixel);
+											}
+
 											const DirectX::XMVECTOR t = DirectX::XMVector3Normalize(
 												DirectX::XMVectorAdd(DirectX::XMVectorAdd(
 													DirectX::XMVectorScale(t0v, bary.x),
@@ -572,7 +573,6 @@ namespace Mus {
 		//asyncResult = ThreadPool_TaskModule::GetSingleton().submitAsync( [&a_data]() { a_data.Subdivision(Config::GetSingleton().GetSubdivision()); });
 		//asyncResult.get();
 		/*a_data.Subdivision(Config::GetSingleton().GetSubdivision());
-		//std::this_thread::yield();
 		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
@@ -592,7 +592,6 @@ namespace Mus {
 		//asyncResult = ThreadPool_TaskModule::GetSingleton().submitAsync( [&a_data]() { a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth()); });
 		//asyncResult.get();
 		/*a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
-		//std::this_thread::yield();
 		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
@@ -602,7 +601,6 @@ namespace Mus {
 		asyncResult = ThreadPool_TaskModule::GetSingleton().submitAsync([&a_data]() { a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree()); });
 		asyncResult.get();
 		//a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree());
-		//std::this_thread::yield();
 		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
@@ -632,19 +630,13 @@ namespace Mus {
 
 				std::size_t bakeIndex = bake.first;
 
-				Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture2D, overlayTexture2D, dstTexture2D;
-				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcShaderResourceView, overlayShaderResourceView, dstShaderResourceView;
-				Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> dstTextureUAV;
-				D3D11_TEXTURE2D_DESC dstDesc = {};
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture2D, overlayTexture2D;
+				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcShaderResourceView, overlayShaderResourceView;
+				D3D11_TEXTURE2D_DESC srcDesc, overlayDesc, dstDesc = {}, dstWriteDesc;
 				D3D11_SHADER_RESOURCE_VIEW_DESC dstShaderResourceViewDesc = {};
-				D3D11_UNORDERED_ACCESS_VIEW_DESC dstUnorderedViewDesc = {};
-				dstUnorderedViewDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-				dstUnorderedViewDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
-				dstUnorderedViewDesc.Texture2D.MipSlice = 0;
 
 				if (!bake.second.srcTexturePath.empty())
 				{
-					D3D11_TEXTURE2D_DESC srcDesc;
 					D3D11_SHADER_RESOURCE_VIEW_DESC srcShaderResourceViewDesc;
 					if (std::string tangentNormalMapPath = GetTangentNormalMapPath(bake.second.srcTexturePath); IsExistFile(tangentNormalMapPath))
 					{
@@ -662,13 +654,9 @@ namespace Mus {
 								srcDesc.Height = srcDesc.Height * Config::GetSingleton().GetTextureResize();
 							}
 
+							dstWriteDesc = srcDesc;
 							dstDesc = srcDesc;
-							dstDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-							dstDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
-
 							dstShaderResourceViewDesc = srcShaderResourceViewDesc;
-							dstShaderResourceViewDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-							dstShaderResourceViewDesc.Texture2D.MipLevels = 1;
 
 							hr = device->CreateShaderResourceView(srcTexture2D.Get(), &srcShaderResourceViewDesc, &srcShaderResourceView);
 							if (FAILED(hr))
@@ -676,6 +664,27 @@ namespace Mus {
 								logger::error("{}::{}::{} : Failed to create src shader resource view ({}|{})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr, tangentNormalMapPath);
 								return;
 							}
+						}
+					}
+					else
+					{
+						logger::info("{}::{}::{} : {} src texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.srcTexturePath);
+
+						if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(
+							bake.second.srcTexturePath, srcDesc, srcShaderResourceViewDesc, DXGI_FORMAT_UNKNOWN,
+							Config::GetSingleton().GetIgnoreTextureSize() ? Config::GetSingleton().GetDefaultTextureWidth() : 0,
+							Config::GetSingleton().GetIgnoreTextureSize() ? Config::GetSingleton().GetDefaultTextureHeight() : 0,
+							srcTexture2D))
+						{
+							if (!Config::GetSingleton().GetIgnoreTextureSize() && Config::GetSingleton().GetTextureResize() != 1.0f)
+							{
+								srcDesc.Width = srcDesc.Width * Config::GetSingleton().GetTextureResize();
+								srcDesc.Height = srcDesc.Height * Config::GetSingleton().GetTextureResize();
+							}
+
+							dstWriteDesc = srcDesc;
+							dstDesc = srcDesc;
+							dstShaderResourceViewDesc = srcShaderResourceViewDesc;
 						}
 					}
 					if (!srcTexture2D)
@@ -688,75 +697,65 @@ namespace Mus {
 				if (!bake.second.overlayTexturePath.empty())
 				{
 					logger::info("{}::{}::{} : {} overlay texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.overlayTexturePath);
-					D3D11_TEXTURE2D_DESC overlayDesc;
 					D3D11_SHADER_RESOURCE_VIEW_DESC overlayShaderResourceViewDesc;
-					if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.overlayTexturePath, overlayDesc, overlayShaderResourceViewDesc, DXGI_FORMAT_R8G8B8A8_UNORM, overlayTexture2D))
+					if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.overlayTexturePath, overlayDesc, overlayShaderResourceViewDesc, DXGI_FORMAT_UNKNOWN, overlayTexture2D))
 					{
-						overlayShaderResourceViewDesc.Texture2D.MipLevels = 1;
 						hr = device->CreateShaderResourceView(overlayTexture2D.Get(), &overlayShaderResourceViewDesc, &overlayShaderResourceView);
 						if (FAILED(hr))
 						{
 							logger::error("{}::{}::{} : Failed to create overlay shader resource view ({}|{})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr, bake.second.overlayTexturePath);
-							return;
 						}
 					}
 				}
 
-				hr = device->CreateTexture2D(&dstDesc, nullptr, &dstTexture2D);
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> dstWriteTexture2D;
+				dstWriteDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+				dstWriteDesc.Usage = D3D11_USAGE_DEFAULT;
+				dstWriteDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
+				dstWriteDesc.MiscFlags = 0;
+				dstWriteDesc.MipLevels = 1;
+				dstWriteDesc.CPUAccessFlags = 0;
+				hr = device->CreateTexture2D(&dstWriteDesc, nullptr, &dstWriteTexture2D);
 				if (FAILED(hr))
 				{
 					logger::error("{}::{}::{} : Failed to create dst texture 2d ({})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr);
 					return;
 				}
 
-				hr = device->CreateShaderResourceView(dstTexture2D.Get(), &dstShaderResourceViewDesc, &dstShaderResourceView);
-				if (FAILED(hr))
-				{
-					logger::error("{}::{}::{} : Failed to create dst shader resource view ({})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr);
-					return;
-				}
-
-				hr = device->CreateUnorderedAccessView(dstTexture2D.Get(), &dstUnorderedViewDesc, &dstTextureUAV);
+				Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> dstWriteTextureUAV;
+				D3D11_UNORDERED_ACCESS_VIEW_DESC dstUnorderedViewDesc = {};
+				dstUnorderedViewDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+				dstUnorderedViewDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
+				dstUnorderedViewDesc.Texture2D.MipSlice = 0;
+				hr = device->CreateUnorderedAccessView(dstWriteTexture2D.Get(), &dstUnorderedViewDesc, &dstWriteTextureUAV);
 				if (FAILED(hr))
 				{
 					logger::error("{}::{}::{} : Failed to create dst unordered access view ({})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr);
 					return;
 				}
 
-				std::vector<uint32_t> triangleIndices;
-				std::vector<TileTriangleRange> tileRanges;
-				TileInfo tileInfo{
-					256,
-					dstDesc.Width,
-					dstDesc.Height
-				};
-				GenerateTileTriangleRanges(tileInfo, a_data, a_data.geometries[bakeIndex].second.indicesStart, a_data.geometries[bakeIndex].second.indicesEnd, triangleIndices, tileRanges);
-
 				//create buffers
 				struct ConstBufferData
 				{
 					UINT texWidth;
 					UINT texHeight;
-					UINT tileSize;
-					UINT tileCountX;
-					UINT tileOffsetX;
-					UINT tileOffsetY;
-					UINT tileIndex;
-					UINT triangleCount;
-					UINT margin;
-					UINT padding1;
-					UINT padding2;
-					UINT padding3;
+					UINT indicesOffset;
+					UINT indicesMax;
+					UINT srcWidth;
+					UINT srcHeight;
+					UINT overlayWidth;
+					UINT overlayHeight;
 				};
 				ConstBufferData cbData = {};
 				cbData.texWidth = dstDesc.Width;
 				cbData.texHeight = dstDesc.Height;
-				cbData.tileSize = tileInfo.TILE_SIZE;
-				cbData.tileCountX = tileInfo.TILE_COUNT_X();
-				cbData.tileOffsetX = 0;
-				cbData.tileOffsetY = 0;
-				cbData.tileIndex = 0;
-				cbData.triangleCount = a_data.geometries[bakeIndex].second.indicesCount() / 3;
+				cbData.indicesOffset = a_data.geometries[bakeIndex].second.indicesStart;
+				cbData.indicesMax = a_data.geometries[bakeIndex].second.indicesEnd;
+				cbData.srcWidth = srcShaderResourceView ? srcDesc.Width : 0;
+				cbData.srcHeight = srcShaderResourceView ? srcDesc.Height : 0;
+				cbData.overlayWidth = overlayShaderResourceView ? overlayDesc.Width : 0;
+				cbData.overlayHeight = overlayShaderResourceView ? overlayDesc.Height : 0;
+
 				D3D11_BUFFER_DESC cbDesc = {};
 				cbDesc.ByteWidth = sizeof(ConstBufferData);
 				cbDesc.Usage = D3D11_USAGE_DEFAULT;
@@ -788,16 +787,51 @@ namespace Mus {
 				if (!CreateStructuredBuffer(normals.data(), UINT(sizeof(DirectX::XMFLOAT3) * normals.size()), sizeof(DirectX::XMFLOAT3), normalBuffer, normalSRV))
 					return;
 
+				std::vector<DirectX::XMFLOAT3> tangents(a_data.tangents.begin() + a_data.geometries[bakeIndex].second.tangentStart, a_data.tangents.begin() + a_data.geometries[bakeIndex].second.tangentEnd);
+				Microsoft::WRL::ComPtr<ID3D11Buffer> tangentBuffer;
+				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> tangentSRV;
+				if (!CreateStructuredBuffer(tangents.data(), UINT(sizeof(DirectX::XMFLOAT3) * tangents.size()), sizeof(DirectX::XMFLOAT3), tangentBuffer, tangentSRV))
+					return;
+
+				std::vector<DirectX::XMFLOAT3> bitangents(a_data.bitangents.begin() + a_data.geometries[bakeIndex].second.bitangentStart, a_data.bitangents.begin() + a_data.geometries[bakeIndex].second.bitangentEnd);
+				Microsoft::WRL::ComPtr<ID3D11Buffer> bitangentBuffer;
+				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> bitangentSRV;
+				if (!CreateStructuredBuffer(bitangents.data(), UINT(sizeof(DirectX::XMFLOAT3) * bitangents.size()), sizeof(DirectX::XMFLOAT3), bitangentBuffer, bitangentSRV))
+					return;
+
 				std::vector<std::uint32_t> indices(a_data.indices.begin() + a_data.geometries[bakeIndex].second.indicesStart, a_data.indices.begin() + a_data.geometries[bakeIndex].second.indicesEnd);
 				Microsoft::WRL::ComPtr<ID3D11Buffer> indicesBuffer;
 				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> indicesSRV;
 				if (!CreateStructuredBuffer(indices.data(), UINT(sizeof(std::uint32_t) * indices.size()), sizeof(std::uint32_t), indicesBuffer, indicesSRV))
 					return;
 
-				Microsoft::WRL::ComPtr<ID3D11Buffer> tileRangeBuffer;
-				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> tileRangeSRV; 
-				if (!CreateStructuredBuffer(tileRanges.data(), tileRanges.size() * sizeof(TileTriangleRange), sizeof(TileTriangleRange), tileRangeBuffer, tileRangeSRV))
+				UINT pixelCount = dstDesc.Width * dstDesc.Height * 4;
+				D3D11_BUFFER_DESC flagsBufferDesc = {};
+				flagsBufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
+				flagsBufferDesc.ByteWidth = pixelCount;
+				flagsBufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
+				flagsBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+				flagsBufferDesc.CPUAccessFlags = 0;
+				flagsBufferDesc.StructureByteStride = 0;
+				Microsoft::WRL::ComPtr<ID3D11Buffer> flagsBuffer;
+				hr = device->CreateBuffer(&flagsBufferDesc, nullptr, &flagsBuffer);
+				if (FAILED(hr)) {
+					logger::error("{}::{}::{} : Failed to create flags buffer ({})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr);
 					return;
+				}
+
+				D3D11_UNORDERED_ACCESS_VIEW_DESC flagsBufferUAVDesc = {};
+				flagsBufferUAVDesc.Format = DXGI_FORMAT_R32_TYPELESS;
+				flagsBufferUAVDesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+				flagsBufferUAVDesc.Buffer.FirstElement = 0;
+				flagsBufferUAVDesc.Buffer.NumElements = pixelCount / 4;
+				flagsBufferUAVDesc.Buffer.Flags = D3D11_BUFFER_UAV_FLAG_RAW;
+				Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> flagsBufferUAV;
+				hr = device->CreateUnorderedAccessView(flagsBuffer.Get(), &flagsBufferUAVDesc, &flagsBufferUAV);
+				if (FAILED(hr)) {
+					logger::error("{}::{}::{} : Failed to create flags buffer unordered access view ({})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr);
+					return;
+				}
 
 				Microsoft::WRL::ComPtr<ID3D11SamplerState> samplerState = nullptr;
 				D3D11_SAMPLER_DESC samplerDesc = {};
@@ -821,7 +855,7 @@ namespace Mus {
 					return;
 				}
 
-				auto shader = Shader::ShaderManager::GetSingleton().GetComputeShader("UpdateNormalMap");
+				auto shader = Shader::ShaderManager::GetSingleton().GetComputeShader(UpdateObjectNormalMapShaderName.data());
 				if (!shader)
 				{
 					logger::error("{}::{} : Invalid shader", _func_, taskID.taskID);
@@ -836,11 +870,13 @@ namespace Mus {
 						context->CSGetShaderResources(0, 1, &vertexSRV);
 						context->CSGetShaderResources(1, 1, &uvSRV);
 						context->CSGetShaderResources(2, 1, &normalSRV);
-						context->CSGetShaderResources(3, 1, &indicesSRV);
-						context->CSGetShaderResources(4, 1, &tileRangeSRV);
-						context->CSGetShaderResources(5, 1, &srcSRV);
-						context->CSGetShaderResources(6, 1, &overlaySRV);
+						context->CSGetShaderResources(3, 1, &tangentSRV);
+						context->CSGetShaderResources(4, 1, &bitangentSRV);
+						context->CSGetShaderResources(5, 1, &indicesSRV);
+						context->CSGetShaderResources(6, 1, &srcSRV);
+						context->CSGetShaderResources(7, 1, &overlaySRV);
 						context->CSGetUnorderedAccessViews(0, 1, &dstUAV);
+						context->CSGetUnorderedAccessViews(1, 1, &flagsBufferUAV);
 						context->CSGetSamplers(0, 1, &samplerState);
 					}
 					void Revert(ID3D11DeviceContext* context) {
@@ -849,11 +885,13 @@ namespace Mus {
 						context->CSSetShaderResources(0, 1, vertexSRV.GetAddressOf());
 						context->CSSetShaderResources(1, 1, uvSRV.GetAddressOf());
 						context->CSSetShaderResources(2, 1, normalSRV.GetAddressOf());
-						context->CSSetShaderResources(3, 1, indicesSRV.GetAddressOf());
-						context->CSSetShaderResources(4, 1, tileRangeSRV.GetAddressOf());
-						context->CSSetShaderResources(5, 1, srcSRV.GetAddressOf());
-						context->CSSetShaderResources(6, 1, overlaySRV.GetAddressOf());
+						context->CSSetShaderResources(3, 1, tangentSRV.GetAddressOf());
+						context->CSSetShaderResources(4, 1, bitangentSRV.GetAddressOf());
+						context->CSSetShaderResources(5, 1, indicesSRV.GetAddressOf());
+						context->CSSetShaderResources(6, 1, srcSRV.GetAddressOf());
+						context->CSSetShaderResources(7, 1, overlaySRV.GetAddressOf());
 						context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
+						context->CSSetUnorderedAccessViews(1, 1, flagsBufferUAV.GetAddressOf(), nullptr);
 						context->CSSetSamplers(0, 1, samplerState.GetAddressOf());
 					}
 					Shader::ShaderManager::ComputeShader shader;
@@ -861,44 +899,84 @@ namespace Mus {
 					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> vertexSRV;
 					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> uvSRV;
 					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> normalSRV;
+					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> tangentSRV;
+					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> bitangentSRV;
 					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> indicesSRV;
-					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> tileRangeSRV;
 					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcSRV;
 					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> overlaySRV;
 					Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> dstUAV;
+					Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> flagsBufferUAV;
 					Microsoft::WRL::ComPtr<ID3D11SamplerState> samplerState;
 				private:
-				} shaderBackup;
+				} sb;
 
+				Shader::ShaderManager::GetSingleton().ShaderContextLock();
+				sb.Backup(context);
+				context->CSSetShader(shader.Get(), nullptr, 0);
+				context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
+				context->CSSetShaderResources(0, 1, vertexSRV.GetAddressOf());
+				context->CSSetShaderResources(1, 1, uvSRV.GetAddressOf());
+				context->CSSetShaderResources(2, 1, normalSRV.GetAddressOf());
+				context->CSSetShaderResources(3, 1, tangentSRV.GetAddressOf());
+				context->CSSetShaderResources(4, 1, bitangentSRV.GetAddressOf());
+				context->CSSetShaderResources(5, 1, indicesSRV.GetAddressOf());
+				context->CSSetShaderResources(6, 1, srcShaderResourceView.GetAddressOf());
+				context->CSSetShaderResources(7, 1, overlayShaderResourceView.GetAddressOf());
+				context->CSSetUnorderedAccessViews(0, 1, dstWriteTextureUAV.GetAddressOf(), nullptr);
+				context->CSSetUnorderedAccessViews(1, 1, flagsBufferUAV.GetAddressOf(), nullptr);
+				context->CSSetSamplers(0, 1, samplerState.GetAddressOf());
+				context->Dispatch((UINT)std::ceilf((float)a_data.geometries[bakeIndex].second.indicesCount() / 64), 1, 1);
+				sb.Revert(context);
+				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 
-				for (uint32_t tileY = 0; tileY < tileInfo.TILE_COUNT_Y(); tileY++)
+				if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 				{
-					for (uint32_t tileX = 0; tileX < tileInfo.TILE_COUNT_X(); tileX++)
-					{
-						ConstBufferData cbTileData = cbData;
-						cbTileData.tileOffsetX = tileX * tileInfo.TILE_SIZE;
-						cbTileData.tileOffsetY = tileY * tileInfo.TILE_SIZE;
-						cbTileData.tileIndex = tileY * tileInfo.TILE_COUNT_X() + tileX;
-
-						Shader::ShaderManager::GetSingleton().ShaderContextLock();
-						shaderBackup.Backup(context);
-						context->CSSetShader(shader.Get(), nullptr, 0);
-						context->UpdateSubresource(constBuffer.Get(), 0, nullptr, &cbTileData, 0, 0);
-						context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
-						context->CSSetShaderResources(0, 1, vertexSRV.GetAddressOf());
-						context->CSSetShaderResources(1, 1, uvSRV.GetAddressOf());
-						context->CSSetShaderResources(2, 1, normalSRV.GetAddressOf());
-						context->CSSetShaderResources(3, 1, indicesSRV.GetAddressOf());
-						context->CSSetShaderResources(4, 1, tileRangeSRV.GetAddressOf());
-						context->CSSetShaderResources(5, 1, srcShaderResourceView.GetAddressOf());
-						context->CSSetShaderResources(6, 1, overlayShaderResourceView.GetAddressOf());
-						context->CSSetUnorderedAccessViews(0, 1, dstTextureUAV.GetAddressOf(), nullptr);
-						context->CSSetSamplers(0, 1, samplerState.GetAddressOf());
-						context->Dispatch(tileInfo.TILE_SIZE / 8, tileInfo.TILE_SIZE / 8, 1);
-						shaderBackup.Revert(context);
-						Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-					}
+					logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
+					return;
 				}
+
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTexture2D;
+				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> dstShaderResourceView;
+
+				dstDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+				dstDesc.Usage = D3D11_USAGE_DEFAULT;
+				dstDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+				dstDesc.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+				dstDesc.MipLevels = 0;
+				dstDesc.ArraySize = 1;
+				dstDesc.CPUAccessFlags = 0;
+				dstDesc.SampleDesc.Count = 1;
+				hr = device->CreateTexture2D(&dstDesc, nullptr, &dstTexture2D);
+				if (FAILED(hr))
+				{
+					logger::error("{}::{} : Failed to create dst texture ({})", _func_, taskID.taskID, hr);
+					return;
+				}
+
+				Shader::ShaderManager::GetSingleton().ShaderContextLock();
+				context->CopySubresourceRegion(
+					dstTexture2D.Get(),
+					0,
+					0, 0, 0,
+					dstWriteTexture2D.Get(),
+					0,
+					nullptr);
+				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+
+				dstShaderResourceViewDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+				dstShaderResourceViewDesc.Texture2D.MostDetailedMip = 0;
+				dstShaderResourceViewDesc.Texture2D.MipLevels = -1;
+				hr = device->CreateShaderResourceView(dstTexture2D.Get(), &dstShaderResourceViewDesc, &dstShaderResourceView);
+				if (FAILED(hr)) {
+					logger::error("{}::{} : Failed to create ShaderResourceView ({})", _func_, taskID.taskID, hr);
+					return;
+				}
+
+				BleedTextureGPU(taskID, margin, dstShaderResourceView, dstTexture2D);
+
+				Shader::ShaderManager::GetSingleton().ShaderContextLock();
+				context->GenerateMips(dstShaderResourceView.Get());
+				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 
 				RE::NiPointer<RE::NiSourceTexture> output = nullptr;
 				bool texCreated = false;
@@ -969,60 +1047,6 @@ namespace Mus {
 	{
 		return ComputeBarycentric(px, py, a, b, c, out) || ComputeBarycentric(px + 1, py, a, b, c, out) 
 			|| ComputeBarycentric(px, py + 1, a, b, c, out) || ComputeBarycentric(px + 1, py + 1, a, b, c, out);
-	}
-
-	void ObjectNormalMapUpdater::GenerateTileTriangleRanges(TileInfo tileInfo, const GeometryData& a_data, const std::size_t indicesStartOffset, const std::size_t indicesEndOffset, std::vector<uint32_t>& outPackedTriangleIndices, std::vector<TileTriangleRange>& outTileRanges)
-	{
-		std::vector<std::vector<uint32_t>> tileTriangleLists(tileInfo.TILE_COUNT());
-
-		for (size_t i = indicesStartOffset; i < indicesEndOffset; i += 3)
-		{
-			std::size_t v0 = a_data.indices[i + 0];
-			std::size_t v1 = a_data.indices[i + 1];
-			std::size_t v2 = a_data.indices[i + 2];
-			const DirectX::XMFLOAT2& u0 = a_data.uvs[v0];
-			const DirectX::XMFLOAT2& u1 = a_data.uvs[v1];
-			const DirectX::XMFLOAT2& u2 = a_data.uvs[v2];
-
-			float minU = (std::min)({ u0.x, u1.x, u2.x });
-			float maxU = std::max({ u0.x, u1.x, u2.x });
-			float minV = (std::min)({ u0.y, u1.y, u2.y });
-			float maxV = std::max({ u0.y, u1.y, u2.y });
-
-			int minX = static_cast<int>(minU * tileInfo.TEX_WIDTH) / tileInfo.TILE_SIZE;
-			int maxX = static_cast<int>(maxU * tileInfo.TEX_WIDTH) / tileInfo.TILE_SIZE;
-			int minY = static_cast<int>(minV * tileInfo.TEX_HEIGHT) / tileInfo.TILE_SIZE;
-			int maxY = static_cast<int>(maxV * tileInfo.TEX_HEIGHT) / tileInfo.TILE_SIZE;
-
-			minX = std::clamp(minX, 0, int(tileInfo.TILE_COUNT_X() - 1));
-			maxX = std::clamp(maxX, 0, int(tileInfo.TILE_COUNT_X() - 1));
-			minY = std::clamp(minY, 0, int(tileInfo.TILE_COUNT_Y() - 1));
-			maxY = std::clamp(maxY, 0, int(tileInfo.TILE_COUNT_Y() - 1));
-
-			for (int ty = minY; ty <= maxY; ++ty)
-			{
-				for (int tx = minX; tx <= maxX; ++tx)
-				{
-					int tileIndex = ty * tileInfo.TILE_COUNT_X() + tx;
-					tileTriangleLists[tileIndex].push_back((uint32_t)i / 3);
-				}
-			}
-		}
-
-		outPackedTriangleIndices.clear();
-		outTileRanges.resize(tileInfo.TILE_COUNT());
-
-		for (uint32_t tileIndex = 0; tileIndex < tileInfo.TILE_COUNT(); ++tileIndex)
-		{
-			const auto& list = tileTriangleLists[tileIndex];
-			outTileRanges[tileIndex].startOffset = (uint32_t)outPackedTriangleIndices.size();
-			outTileRanges[tileIndex].count = (uint32_t)list.size();
-
-			for (uint32_t triIndex : list)
-			{
-				outPackedTriangleIndices.push_back(triIndex);
-			}
-		}
 	}
 
 	bool ObjectNormalMapUpdater::CreateStructuredBuffer(const void* data, UINT size, UINT stride, Microsoft::WRL::ComPtr<ID3D11Buffer>& bufferOut, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvOut)

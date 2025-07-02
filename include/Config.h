@@ -49,6 +49,12 @@ namespace Mus {
         [[nodiscard]] inline bool GetNPCEnable() const noexcept {
             return NPCEnable;
         }
+        [[nodiscard]] inline bool GetMaleEnable() const noexcept {
+            return MaleEnable;
+        }
+        [[nodiscard]] inline bool GetFemaleEnable() const noexcept {
+            return FemaleEnable;
+        }
         [[nodiscard]] inline bool GetHeadEnable() const noexcept {
             return HeadEnable;
         }
@@ -134,6 +140,8 @@ namespace Mus {
         //NormalmapBake
         bool PlayerEnable = true;
         bool NPCEnable = true;
+        bool MaleEnable = true;
+        bool FemaleEnable = true;
         bool HeadEnable = false;
 
         unsigned long PriorityCores = 0;
