@@ -274,7 +274,7 @@ namespace Mus {
 			if (!geo->GetGeometryRuntimeData().skinInstance)
 				continue;
 
-			bakeData.geoData.GetGeometryData(geo);
+			bakeData.geoData.CopyGeometryData(geo);
 			std::uint32_t slot = 0;
 			auto skinInstance = geo->GetGeometryRuntimeData().skinInstance.get();
 			auto dismember = netimmerse_cast<RE::BSDismemberSkinInstance*>(skinInstance);
@@ -304,11 +304,10 @@ namespace Mus {
 				newBakeTextureSet.srcTexturePath = texturePath;
 				newBakeTextureSet.overlayTexturePath = GetOverlayNormalMapPath(texturePath);
 				bakeData.bakeTextureSet.emplace(geoIndex, newBakeTextureSet);
-				logger::debug("{:x}::{} : {} - (vertices {} / uvs {} / tris {}) queue added on bake object normalmap", id, actorName,
-							  geo->name.c_str(), newBakeTextureSet.overlayTexturePath,
-							  bakeData.geoData.geometries[geoIndex].second.vertexCount(), bakeData.geoData.geometries[geoIndex].second.uvCount(), bakeData.geoData.geometries[geoIndex].second.indicesCount() / 3);
+				logger::debug("{:x}::{} : {} - queue added on bake object normalmap", id, actorName,
+							  geo->name.c_str(), newBakeTextureSet.overlayTexturePath);
 
-				auto found = lastNormalMap[id].find(bakeData.geoData.geometries[geoIndex].second.vertexCount());
+				auto found = lastNormalMap[id].find(bakeData.geoData.geometries[geoIndex].second.info.vertexCount);
 				if (found != lastNormalMap[id].end())
 					Shader::TextureLoadManager::CreateSourceTexture(found->second, material->normalTexture);
 			}
@@ -358,7 +357,7 @@ namespace Mus {
 			if (!geo->GetGeometryRuntimeData().skinInstance)
 				continue;
 
-			bakeData.geoData.GetGeometryData(geo);
+			bakeData.geoData.CopyGeometryData(geo);
 			std::uint32_t slot = 0;
 			auto skinInstance = geo->GetGeometryRuntimeData().skinInstance.get();
 			auto dismember = netimmerse_cast<RE::BSDismemberSkinInstance*>(skinInstance);
@@ -392,11 +391,10 @@ namespace Mus {
 				newBakeTextureSet.srcTexturePath = texturePath;
 				newBakeTextureSet.overlayTexturePath = GetOverlayNormalMapPath(texturePath);
 				bakeData.bakeTextureSet.emplace(geoIndex, newBakeTextureSet);
-				logger::debug("{:x}::{} : {} - (vertices {} / uvs {} / tris {}) queue added on bake object normalmap", id, actorName,
-							  geo->name.c_str(), newBakeTextureSet.overlayTexturePath,
-							  bakeData.geoData.geometries[geoIndex].second.vertexCount(), bakeData.geoData.geometries[geoIndex].second.uvCount(), bakeData.geoData.geometries[geoIndex].second.indicesCount() / 3);
+				logger::debug("{:x}::{} : {} - queue added on bake object normalmap", id, actorName,
+							  geo->name.c_str(), newBakeTextureSet.overlayTexturePath);
 
-				auto found = lastNormalMap[id].find(bakeData.geoData.geometries[geoIndex].second.vertexCount());
+				auto found = lastNormalMap[id].find(bakeData.geoData.geometries[geoIndex].second.info.vertexCount);
 				if (found != lastNormalMap[id].end())
 					Shader::TextureLoadManager::CreateSourceTexture(found->second, material->normalTexture);
 			}

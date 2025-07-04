@@ -5,7 +5,7 @@ namespace Mus {
 
 	GeometryData::GeometryData(RE::BSGeometry* a_geo)
 	{
-		GetGeometryData(a_geo);
+		CopyGeometryData(a_geo);
 	}
 
 	RE::BSFaceGenBaseMorphExtraData* GeometryData::GetMorphExtraData(RE::BSGeometry* a_geometry)
@@ -18,179 +18,193 @@ namespace Mus {
 		if (!a_geo || a_geo->name.empty())
 			return false;
 
-		RE::BSGraphics::VertexDesc desc = a_geo->GetGeometryRuntimeData().vertexDesc;
+		info.desc = a_geo->GetGeometryRuntimeData().vertexDesc;
 		info.name = a_geo->name.c_str();
-		info.hasVertices = a_geo->AsDynamicTriShape() ? true : desc.HasFlag(RE::BSGraphics::Vertex::VF_VERTEX);
-		info.hasUVs = desc.HasFlag(RE::BSGraphics::Vertex::VF_UV);
-		info.hasNormals = desc.HasFlag(RE::BSGraphics::Vertex::VF_NORMAL);
-		info.hasTangents = desc.HasFlag(RE::BSGraphics::Vertex::VF_TANGENT);
+		info.hasVertices = a_geo->AsDynamicTriShape() ? true : info.desc.HasFlag(RE::BSGraphics::Vertex::VF_VERTEX);
+		info.hasUVs = info.desc.HasFlag(RE::BSGraphics::Vertex::VF_UV);
+		info.hasNormals = info.desc.HasFlag(RE::BSGraphics::Vertex::VF_NORMAL);
+		info.hasTangents = info.desc.HasFlag(RE::BSGraphics::Vertex::VF_TANGENT);
 		info.hasBitangents = info.hasVertices && info.hasNormals && info.hasTangents;
 		return true;
 	}
-	bool GeometryData::GetGeometryData(RE::BSGeometry* a_geo)
+	bool GeometryData::CopyGeometryData(RE::BSGeometry* a_geo)
 	{
 		if (!a_geo || a_geo->name.empty())
 			return false;
 
-		GeometryInfo info;
-		if (!GetGeometryInfo(a_geo, info))
+		ObjectInfo newObjInfo;
+		if (!GetGeometryInfo(a_geo, newObjInfo.info))
 			return false;
 
 #ifdef GEOMETRY_TEST
-		PerformanceLog(std::string(__func__) + "::" + info.name, false, false);
+		PerformanceLog(std::string(__func__) + "::" + newObjInfo.info.name, false, false);
 #endif // GEOMETRY_TEST
+
 
 		const RE::BSDynamicTriShape* dynamicTriShape = a_geo->AsDynamicTriShape();
 		const RE::BSTriShape* triShape = a_geo->AsTriShape();
 		if (!triShape)
 			return false;
 
-		if (!info.hasVertices || !info.hasUVs)
+		if (!newObjInfo.info.hasVertices || !newObjInfo.info.hasUVs)
 			return false;
 
-		std::uint32_t vertexCount = triShape->GetTrishapeRuntimeData().vertexCount;
+		newObjInfo.info.vertexCount = triShape->GetTrishapeRuntimeData().vertexCount;
 		const RE::NiPointer<RE::NiSkinPartition> skinPartition = GetSkinPartition(a_geo);
 		if (!skinPartition)
 			return false;
 
-		RE::BSGraphics::VertexDesc desc = a_geo->GetGeometryRuntimeData().vertexDesc;
-
-		logger::debug("{}::{} : get geometry data...", __func__, info.name);
-
-		vertexCount = vertexCount ? vertexCount : skinPartition->vertexCount;
-		const std::size_t beforeVertexCount = vertices.size();
-		const std::size_t beforeUVCount = uvs.size();
-		const std::size_t beforeNormalCount = normals.size();
-		const std::size_t beforeTangentCount = tangents.size();
-		const std::size_t beforeBitangentCount = bitangents.size();
-		vertices.resize(beforeVertexCount + vertexCount);
-		uvs.resize(beforeUVCount + vertexCount);
-		/*if (info.hasNormals)
-			normals.resize(beforeNormalCount + vertexCount);
-		if (info.hasTangents)
-			tangents.resize(beforeTangentCount + vertexCount);
-		if (info.hasBitangents)
-			bitangents.resize(beforeBitangentCount + vertexCount);*/
-
-		const std::uint32_t vertexSize = desc.GetSize();
-		std::uint8_t* vertexBlock = skinPartition->partitions[0].buffData->rawVertexData;
-
-		RE::NiPoint3* dynamicVertex = nullptr;
+		newObjInfo.info.vertexCount = newObjInfo.info.vertexCount > 0 ? newObjInfo.info.vertexCount : skinPartition->vertexCount;
 		if (dynamicTriShape)
 		{
 			const auto morphData = GetMorphExtraData(a_geo);
 			if (morphData)
 			{
-				dynamicVertex = morphData->vertexData;
+				newObjInfo.dynamicBlockData.resize(newObjInfo.info.vertexCount);
+				std::memcpy(newObjInfo.dynamicBlockData.data(), morphData->vertexData, sizeof(RE::NiPoint3) * newObjInfo.info.vertexCount);
 			}
 		}
-
-		float colorConvert = 1.0f / 255.0f;
-		for (std::uint32_t i = 0; i < vertexCount; i++) {
-			std::uint8_t* block = &vertexBlock[i * vertexSize];
-			const std::uint32_t vi = beforeVertexCount + i;
-			const std::uint32_t ui = beforeUVCount + i;
-			const std::uint32_t ni = beforeNormalCount + i;
-			const std::uint32_t ti = beforeTangentCount + i;
-			const std::uint32_t bi = beforeBitangentCount + i;
-
-			if (dynamicVertex)
-			{
-				vertices[vi].x = dynamicVertex[i].x;
-				vertices[vi].y = dynamicVertex[i].y;
-				vertices[vi].z = dynamicVertex[i].z;
-			}
-			else
-			{
-				vertices[vi] = *reinterpret_cast<DirectX::XMFLOAT3*>(block);
-				block += 12;
-
-				/*if (info.hasBitangents)
-					bitangents[bi].x = *reinterpret_cast<float*>(block);*/
-				block += 4;
-			}
-
-			uvs[ui].x = DirectX::PackedVector::XMConvertHalfToFloat(*reinterpret_cast<std::uint16_t*>(block));
-			uvs[ui].y = DirectX::PackedVector::XMConvertHalfToFloat(*reinterpret_cast<std::uint16_t*>(block + 2));
-			block += 4;
-
-			/*if (info.hasNormals)
-			{
-				normals[ni].x = static_cast<float>(*block) * colorConvert;
-				normals[ni].y = static_cast<float>(*(block + 1)) * colorConvert;
-				normals[ni].z = static_cast<float>(*(block + 2)) * colorConvert;
-				block += 3;
-
-				if (info.hasBitangents)
-					bitangents[bi].y = static_cast<float>(*block);
-				block += 1;
-
-				if (info.hasTangents)
-				{
-					tangents[ti].x = static_cast<float>(*block) * colorConvert;
-					tangents[ti].y = static_cast<float>(*(block + 1)) * colorConvert;
-					tangents[ti].z = static_cast<float>(*(block + 2)) * colorConvert;
-					block += 3;
-
-					if (info.hasBitangents)
-						bitangents[bi].z = static_cast<float>(*block);
-				}
-			}*/
-		}
+		newObjInfo.geometryBlockData.resize(newObjInfo.info.vertexCount * newObjInfo.info.desc.GetSize());
+		std::memcpy(newObjInfo.geometryBlockData.data(), skinPartition->partitions[0].buffData->rawVertexData, sizeof(std::uint8_t) * newObjInfo.info.vertexCount * newObjInfo.info.desc.GetSize());
 
 		std::uint32_t indexOffset = 0;
 		for (auto& partition : skinPartition->partitions)
 		{
 			indexOffset += partition.triangles * 3;
 		}
-		const std::size_t beforeIndices = indices.size();
-		indices.resize(beforeIndices + indexOffset);
+		newObjInfo.indicesBlockData.resize(indexOffset);
 		indexOffset = 0;
 		for (auto& partition : skinPartition->partitions)
 		{
-			for (std::uint32_t t = 0; t < partition.triangles * 3; t += 3)
-			{
-				indices[beforeIndices + indexOffset + t + 0] = beforeVertexCount + partition.triList[t + 0];
-				indices[beforeIndices + indexOffset + t + 1] = beforeVertexCount + partition.triList[t + 1];
-				indices[beforeIndices + indexOffset + t + 2] = beforeVertexCount + partition.triList[t + 2];
-			}
+			std::memcpy(&newObjInfo.indicesBlockData[indexOffset], partition.triList, sizeof(std::uint16_t) * partition.triangles * 3);
 			indexOffset += partition.triangles * 3;
 		}
-
-		ObjectInfo newObjInfo;
-		newObjInfo.info = info;
-		newObjInfo.vertexStart = beforeVertexCount;
-		newObjInfo.vertexEnd = vertices.size();
-		newObjInfo.uvStart = beforeUVCount;
-		newObjInfo.uvEnd = uvs.size();
-		newObjInfo.normalStart = beforeNormalCount;
-		newObjInfo.normalEnd = normals.size();
-		newObjInfo.tangentStart = beforeTangentCount;
-		newObjInfo.tangentEnd = tangents.size();
-		newObjInfo.bitangentStart = beforeBitangentCount;
-		newObjInfo.bitangentEnd = bitangents.size();
-		newObjInfo.indicesStart = beforeIndices;
-		newObjInfo.indicesEnd = indices.size();
 		geometries.push_back(std::make_pair(std::string(a_geo->name.c_str()), newObjInfo));
 
-		mainInfo.hasVertices |= info.hasVertices;
-		mainInfo.hasUVs |= info.hasUVs;
-		mainInfo.hasNormals |= info.hasNormals;
-		mainInfo.hasTangents |= info.hasTangents;
-		mainInfo.hasBitangents |= info.hasBitangents;
+		mainInfo.hasVertices |= newObjInfo.info.hasVertices;
+		mainInfo.hasUVs |= newObjInfo.info.hasUVs;
+		mainInfo.hasNormals |= newObjInfo.info.hasNormals;
+		mainInfo.hasTangents |= newObjInfo.info.hasTangents;
+		mainInfo.hasBitangents |= newObjInfo.info.hasBitangents;
 
 		if (geometries.size() > 1) {
-			if (geometries[mainGeometryIndex].second.indicesCount() < geometries[geometries.size() - 1].second.indicesCount())
+			if (geometries[mainGeometryIndex].second.indicesBlockData.size() < geometries[geometries.size() - 1].second.indicesBlockData.size())
 				mainGeometryIndex = geometries.size() - 1;
 		}
 
 #ifdef GEOMETRY_TEST
-		PerformanceLog(std::string(__func__) + "::" + info.name, true, false);
+		PerformanceLog(std::string(__func__) + "::" + newObjInfo.info.name, true, false);
 #endif // GEOMETRY_TEST
 
-		logger::info("{}::{} : get geometry data {} => vertices {} / uvs {} / tris {}", __func__, a_geo->name.c_str(), geometries.size(),
-					 newObjInfo.vertexCount(), newObjInfo.uvCount(), newObjInfo.normalCount(), newObjInfo.tangentCount(), newObjInfo.indicesCount() / 3);
 		return true;
+	}
+	void GeometryData::GetGeometryData()
+	{
+#ifdef GEOMETRY_TEST
+		PerformanceLog(std::string(__func__) + "::" + mainInfo.name, false, false);
+#endif // GEOMETRY_TEST
+
+		for (auto& geo : geometries)
+		{
+			logger::debug("{}::{} : get geometry data...", __func__, geo.second.info.name);
+
+			const std::size_t beforeVertexCount = vertices.size();
+			const std::size_t beforeUVCount = uvs.size();
+			const std::size_t beforeNormalCount = normals.size();
+			const std::size_t beforeTangentCount = tangents.size();
+			const std::size_t beforeBitangentCount = bitangents.size();
+			vertices.resize(beforeVertexCount + geo.second.info.vertexCount);
+			uvs.resize(beforeUVCount + geo.second.info.vertexCount);
+			/*if (info.hasNormals)
+				normals.resize(beforeNormalCount + geo.second.info.vertexCount);
+			if (info.hasTangents)
+				tangents.resize(beforeTangentCount + geo.second.info.vertexCount);
+			if (info.hasBitangents)
+				bitangents.resize(beforeBitangentCount + geo.second.info.vertexCount);*/
+
+			const std::uint32_t vertexSize = geo.second.info.desc.GetSize();
+
+			float colorConvert = 1.0f / 255.0f;
+			for (std::uint32_t i = 0; i < geo.second.info.vertexCount; i++) {
+				std::uint8_t* block = &geo.second.geometryBlockData[i * vertexSize];
+				const std::uint32_t vi = beforeVertexCount + i;
+				const std::uint32_t ui = beforeUVCount + i;
+				const std::uint32_t ni = beforeNormalCount + i;
+				const std::uint32_t ti = beforeTangentCount + i;
+				const std::uint32_t bi = beforeBitangentCount + i;
+
+				if (!geo.second.dynamicBlockData.empty())
+				{
+					vertices[vi].x = geo.second.dynamicBlockData[i].x;
+					vertices[vi].y = geo.second.dynamicBlockData[i].y;
+					vertices[vi].z = geo.second.dynamicBlockData[i].z;
+				}
+				else
+				{
+					vertices[vi] = *reinterpret_cast<DirectX::XMFLOAT3*>(block);
+					block += 12;
+
+					/*if (info.hasBitangents)
+						bitangents[bi].x = *reinterpret_cast<float*>(block);*/
+					block += 4;
+				}
+
+				uvs[ui].x = DirectX::PackedVector::XMConvertHalfToFloat(*reinterpret_cast<std::uint16_t*>(block));
+				uvs[ui].y = DirectX::PackedVector::XMConvertHalfToFloat(*reinterpret_cast<std::uint16_t*>(block + 2));
+				block += 4;
+
+				/*if (info.hasNormals)
+				{
+					normals[ni].x = static_cast<float>(*block) * colorConvert;
+					normals[ni].y = static_cast<float>(*(block + 1)) * colorConvert;
+					normals[ni].z = static_cast<float>(*(block + 2)) * colorConvert;
+					block += 3;
+
+					if (info.hasBitangents)
+						bitangents[bi].y = static_cast<float>(*block);
+					block += 1;
+
+					if (info.hasTangents)
+					{
+						tangents[ti].x = static_cast<float>(*block) * colorConvert;
+						tangents[ti].y = static_cast<float>(*(block + 1)) * colorConvert;
+						tangents[ti].z = static_cast<float>(*(block + 2)) * colorConvert;
+						block += 3;
+
+						if (info.hasBitangents)
+							bitangents[bi].z = static_cast<float>(*block);
+					}
+				}*/
+			}
+
+			const std::size_t beforeIndices = indices.size();
+			indices.resize(beforeIndices + geo.second.indicesBlockData.size());
+			for (std::uint32_t t = 0; t < geo.second.indicesBlockData.size(); t += 3)
+			{
+				indices[beforeIndices + t + 0] = beforeVertexCount + geo.second.indicesBlockData[t + 0];
+				indices[beforeIndices + t + 1] = beforeVertexCount + geo.second.indicesBlockData[t + 1];
+				indices[beforeIndices + t + 2] = beforeVertexCount + geo.second.indicesBlockData[t + 2];
+			}
+
+			geo.second.vertexStart = beforeVertexCount;
+			geo.second.vertexEnd = vertices.size();
+			geo.second.uvStart = beforeUVCount;
+			geo.second.uvEnd = uvs.size();
+			geo.second.normalStart = beforeNormalCount;
+			geo.second.normalEnd = normals.size();
+			geo.second.tangentStart = beforeTangentCount;
+			geo.second.tangentEnd = tangents.size();
+			geo.second.bitangentStart = beforeBitangentCount;
+			geo.second.bitangentEnd = bitangents.size();
+			geo.second.indicesStart = beforeIndices;
+			geo.second.indicesEnd = indices.size();
+
+			logger::info("{}::{} : get geometry data {} => vertices {} / uvs {} / tris {}", __func__, geo.second.info.name.c_str(), geometries.size(),
+						 geo.second.vertexCount(), geo.second.uvCount(), geo.second.indicesCount() / 3);
+		}
+#ifdef GEOMETRY_TEST
+		PerformanceLog(std::string(__func__) + "::" + mainInfo.name, true, false);
+#endif // GEOMETRY_TEST
 	}
 
 	void GeometryData::UpdateMap() {
@@ -330,7 +344,7 @@ namespace Mus {
 #ifdef GEOMETRY_TEST
 		PerformanceLog(std::string(__func__) + "::" + std::to_string(normals.size()), false, false);
 #endif // GEOMETRY_TEST
-		const float smoothCos = cosf(DirectX::XMConvertToRadians(a_smooth));
+		const float smoothCos = std::cosf(DirectX::XMConvertToRadians(a_smooth));
 
 		concurrency::parallel_for(std::size_t(0), vertices.size(), [&](std::size_t i) {
 			const DirectX::XMFLOAT3& pos = vertices[i];

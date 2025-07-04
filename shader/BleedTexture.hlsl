@@ -20,11 +20,6 @@ static const int2 offsets[8] = {
     int2(1,  1)  // right down
 };
 
-bool IsValidPixel(float4 a_pixel)
-{
-    return a_pixel.a > 0.5f;
-}
-
 [numthreads(8, 8, 1)]
 void CSMain(uint3 threadID : SV_DispatchThreadID)
 {
@@ -34,7 +29,7 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
 
     float4 orgPixel = src.Load(int3(coord, mipLevel));
 
-    if (IsValidPixel(orgPixel))
+    if (orgPixel.a > 0.5f)
     {
         return;
     }
@@ -52,7 +47,7 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
 
         float4 nearPixel = src.Load(int3(nearCoord, mipLevel));
 
-        if (IsValidPixel(nearPixel))
+        if (nearPixel.a > 0.5f)
         {
             averageColor += nearPixel;
             validCount++;

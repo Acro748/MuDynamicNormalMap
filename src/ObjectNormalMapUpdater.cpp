@@ -12,6 +12,8 @@ namespace Mus {
 		PerformanceLog(std::string(_func_) + "::" + std::to_string(taskID.taskID), false, false);
 #endif // BAKE_TEST1
 
+		a_data.GetGeometryData();
+
 		BakeResult result;
 		if (a_data.vertices.empty() || a_data.indices.empty()
 			|| a_data.vertices.size() != a_data.uvs.size()
@@ -35,38 +37,38 @@ namespace Mus {
 		policy.SetPolicyValue(concurrency::TargetOversubscriptionFactor, 1);
 		concurrency::CurrentScheduler::Create(policy);*/
 
-		std::future<void> asyncResult;
-
-		//asyncResult = ThreadPool_TaskModule::GetSingleton().submitAsync( [&a_data]() { a_data.Subdivision(Config::GetSingleton().GetSubdivision()); });
-		//asyncResult.get();
-		/*a_data.Subdivision(Config::GetSingleton().GetSubdivision());
-		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
+		//ThreadPool_TaskModule::GetSingleton().submitAsync( [&a_data]() { a_data.Subdivision(Config::GetSingleton().GetSubdivision()); }).get();
+		/*if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 			return result;
 		}*/
 
-		asyncResult = ThreadPool_TaskModule::GetSingleton().submitAsync( [&a_data]() { a_data.UpdateMap(); });
-		asyncResult.get();
-		//a_data.UpdateMap();
+		ThreadPool_TaskModule::GetSingleton().submitAsync( [&a_data]() { a_data.UpdateMap(); }).get();
 		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 			return result;
 		}
 
-		//asyncResult = ThreadPool_TaskModule::GetSingleton().submitAsync( [&a_data]() { a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth()); });
-		//asyncResult.get();
-		/*a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
-		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
+		//ThreadPool_TaskModule::GetSingleton().submitAsync( [&a_data]() { a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth()); }).get();
+		//a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
+		/*if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 			return result;
+		}
+		if (Config::GetSingleton().GetVertexSmooth() > 0)
+		{
+			ThreadPool_TaskModule::GetSingleton().submitAsync([&a_data]() { a_data.UpdateMap(); }).get();
+			if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
+			{
+				logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
+				return result;
+			}
 		}*/
 
-		asyncResult = ThreadPool_TaskModule::GetSingleton().submitAsync([&a_data]() { a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree()); });
-		asyncResult.get();
-		//a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree());
+		ThreadPool_TaskModule::GetSingleton().submitAsync([&a_data]() { a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree()); }).get();
 		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
@@ -521,7 +523,7 @@ namespace Mus {
 
 				NormalMapResult newNormalMapResult;
 				newNormalMapResult.index = bakeIndex;
-				newNormalMapResult.vertexCount = a_data.geometries[bakeIndex].second.vertexCount();
+				newNormalMapResult.vertexCount = a_data.geometries[bakeIndex].second.info.vertexCount;
 				newNormalMapResult.geoName = a_bakeSet[bakeIndex].geometryName;
 				newNormalMapResult.textureName = a_bakeSet[bakeIndex].textureName;
 				newNormalMapResult.normalmap = output;
@@ -544,6 +546,8 @@ namespace Mus {
 #ifdef BAKE_TEST1
 		PerformanceLog(std::string(_func_) + "::" + std::to_string(taskID.taskID), false, false);
 #endif // BAKE_TEST1
+
+		a_data.GetGeometryData();
 
 		BakeResult result;
 		if (a_data.vertices.empty() || a_data.indices.empty()
@@ -568,39 +572,38 @@ namespace Mus {
 		policy.SetPolicyValue(concurrency::TargetOversubscriptionFactor, 1);
 		concurrency::CurrentScheduler::Create(policy);*/
 
-		std::future<void> asyncResult;
-
-		//asyncResult = ThreadPool_TaskModule::GetSingleton().submitAsync( [&a_data]() { a_data.Subdivision(Config::GetSingleton().GetSubdivision()); });
-		//asyncResult.get();
-		/*a_data.Subdivision(Config::GetSingleton().GetSubdivision());
-		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
+		//ThreadPool_TaskModule::GetSingleton().submitAsync( [&a_data]() { a_data.Subdivision(Config::GetSingleton().GetSubdivision()); }).get();
+		/*if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 			return result;
 		}*/
 
-		asyncResult = ThreadPool_TaskModule::GetSingleton().submitAsync([&a_data]() { a_data.UpdateMap(); });
-		asyncResult.get();
-		//a_data.UpdateMap();
-		//std::this_thread::yield();
+		ThreadPool_TaskModule::GetSingleton().submitAsync([&a_data]() { a_data.UpdateMap(); }).get();
 		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 			return result;
 		}
 
-		//asyncResult = ThreadPool_TaskModule::GetSingleton().submitAsync( [&a_data]() { a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth()); });
-		//asyncResult.get();
-		/*a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
-		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
+		//ThreadPool_TaskModule::GetSingleton().submitAsync( [&a_data]() { a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth()); }).get();
+		//a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
+		/*if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 			return result;
+		}
+		if (Config::GetSingleton().GetVertexSmooth() > 0)
+		{
+			ThreadPool_TaskModule::GetSingleton().submitAsync([&a_data]() { a_data.UpdateMap(); }).get();
+			if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
+			{
+				logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
+				return result;
+			}
 		}*/
 
-		asyncResult = ThreadPool_TaskModule::GetSingleton().submitAsync([&a_data]() { a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree()); });
-		asyncResult.get();
-		//a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree());
+		ThreadPool_TaskModule::GetSingleton().submitAsync([&a_data]() { a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree()); }).get();
 		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
@@ -632,7 +635,7 @@ namespace Mus {
 
 				Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture2D, overlayTexture2D;
 				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcShaderResourceView, overlayShaderResourceView;
-				D3D11_TEXTURE2D_DESC srcDesc, overlayDesc, dstDesc = {}, dstWriteDesc;
+				D3D11_TEXTURE2D_DESC srcDesc = {}, overlayDesc = {}, dstDesc = {}, dstWriteDesc = {};
 				D3D11_SHADER_RESOURCE_VIEW_DESC dstShaderResourceViewDesc = {};
 
 				if (!bake.second.srcTexturePath.empty())
@@ -986,7 +989,7 @@ namespace Mus {
 
 				NormalMapResult newNormalMapResult;
 				newNormalMapResult.index = bakeIndex;
-				newNormalMapResult.vertexCount = a_data.geometries[bakeIndex].second.vertexCount();
+				newNormalMapResult.vertexCount = a_data.geometries[bakeIndex].second.info.vertexCount;
 				newNormalMapResult.geoName = a_bakeSet[bakeIndex].geometryName;
 				newNormalMapResult.textureName = a_bakeSet[bakeIndex].textureName;
 				newNormalMapResult.normalmap = output;

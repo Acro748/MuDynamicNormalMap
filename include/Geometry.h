@@ -9,11 +9,13 @@ namespace Mus {
 
 		struct GeometryInfo {
 			std::string name;
+			RE::BSGraphics::VertexDesc desc;
 			bool hasVertices = false;
 			bool hasUVs = false;
 			bool hasNormals = false;
 			bool hasTangents = false;
 			bool hasBitangents = false;
+			std::uint32_t vertexCount;
 		};
 		struct ObjectInfo {
 			GeometryInfo info;
@@ -35,12 +37,16 @@ namespace Mus {
 			std::size_t indicesStart;
 			std::size_t indicesEnd;
 			std::size_t indicesCount() { return indicesEnd - indicesStart; }
+			std::vector<std::uint8_t> geometryBlockData;
+			std::vector<RE::NiPoint3> dynamicBlockData;
+			std::vector<std::uint16_t> indicesBlockData;
 		};
 
 		RE::BSFaceGenBaseMorphExtraData* GetMorphExtraData(RE::BSGeometry* a_geometry);
 
 		bool GetGeometryInfo(RE::BSGeometry* a_geo, GeometryInfo& info);
-		bool GetGeometryData(RE::BSGeometry* a_geo);
+		bool CopyGeometryData(RE::BSGeometry* a_geo);
+		void GetGeometryData();
 		void UpdateMap();
 		void RecalculateNormals(float a_smooth);
 		void Subdivision(std::uint32_t a_subCount);

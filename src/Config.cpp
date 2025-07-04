@@ -151,8 +151,7 @@ namespace Mus {
                 }
 				else if (variableName == "AutoTaskQ")
 				{
-                    AutoTaskQ = GetUIntValue(variableValue);
-                    AutoTaskQ = std::min(std::uint8_t(AutoTaskQList::Total - 1), AutoTaskQ);
+                    AutoTaskQ = std::min(std::uint32_t(AutoTaskQList::Total - 1), GetUIntValue(variableValue));
 				}
 				else if (variableName == "TaskQMax")
 				{
@@ -188,8 +187,7 @@ namespace Mus {
 				}
 				else if (variableName == "NormalSmoothDegree")
 				{
-                    NormalSmoothDegree = GetFloatValue(variableValue);
-                    NormalSmoothDegree = std::clamp(NormalSmoothDegree, 0.0f, 90.0f);
+                    NormalSmoothDegree = std::clamp(GetFloatValue(variableValue), 0.0f, 180.0f);
 				}
 				else if (variableName == "Subdivision")
 				{
