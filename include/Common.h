@@ -8,6 +8,7 @@ namespace Mus {
 	};
 
 	struct BakeTextureSet {
+		RE::BSGeometry* geometry;
 		std::string geometryName;
 		std::string textureName;
 		std::string srcTexturePath;

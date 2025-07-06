@@ -233,8 +233,6 @@ namespace Mus {
 							 a_data.geometries[bakeIndex].second.normalCount(),
 							 a_data.geometries[bakeIndex].second.indicesCount());
 
-				std::uint32_t totalTaskCount = a_data.geometries[bakeIndex].second.indicesCount() / 3;
-
 				D3D11_MAPPED_SUBRESOURCE srcMappedResource;
 				uint8_t* srcData = nullptr;
 				if (srcStagingTexture2D)
@@ -271,6 +269,8 @@ namespace Mus {
 					return;
 				}
 
+				std::uint32_t totalTaskCount = a_data.geometries[bakeIndex].second.indicesCount() / 3;
+
 				const UINT width = dstStagingDesc.Width;
 				const UINT height = dstStagingDesc.Height;
 				uint8_t* dstData = reinterpret_cast<uint8_t*>(mappedResource.pData);
@@ -283,7 +283,7 @@ namespace Mus {
 				const float overlayWidthF = overlayData ? (float)overlayStagingDesc.Width : 0.0f;
 
 				std::vector<std::future<void>> parallelTris;
-				const std::uint32_t subSize = std::max(UINT(1), ((width / 1024) + (height / 1024))) * std::pow(2, Config::GetSingleton().GetDivideTaskQ());
+				const std::uint32_t subSize = std::max(UINT(1), ((width / 1024) + (height / 1024))) * std::max(UINT(1), (totalTaskCount / 20000)) * std::pow(2, Config::GetSingleton().GetDivideTaskQ());
 				const std::uint32_t numSubTasks = (totalTaskCount + subSize - 1) / subSize;
 				for (std::size_t subIndex = 0; subIndex < subSize; subIndex++)
 				{
@@ -522,6 +522,7 @@ namespace Mus {
 					return;
 
 				NormalMapResult newNormalMapResult;
+				newNormalMapResult.geometry = bake.second.geometry;
 				newNormalMapResult.index = bakeIndex;
 				newNormalMapResult.vertexCount = a_data.geometries[bakeIndex].second.info.vertexCount;
 				newNormalMapResult.geoName = a_bakeSet[bakeIndex].geometryName;
@@ -988,6 +989,7 @@ namespace Mus {
 					return;
 
 				NormalMapResult newNormalMapResult;
+				newNormalMapResult.geometry = bake.second.geometry;
 				newNormalMapResult.index = bakeIndex;
 				newNormalMapResult.vertexCount = a_data.geometries[bakeIndex].second.info.vertexCount;
 				newNormalMapResult.geoName = a_bakeSet[bakeIndex].geometryName;

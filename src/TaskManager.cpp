@@ -299,6 +299,7 @@ namespace Mus {
 			if (bipedSlot & 1 << slot)
 			{
 				BakeTextureSet newBakeTextureSet;
+				newBakeTextureSet.geometry = geo;
 				newBakeTextureSet.textureName = GetTextureName(a_actor, slot, geo);
 				newBakeTextureSet.geometryName = geo->name.c_str();
 				newBakeTextureSet.srcTexturePath = texturePath;
@@ -323,9 +324,9 @@ namespace Mus {
 		QUpdateNormalMap(taskIDsrc, id, actorName, bakeData);
 		return true;
 	}
-	bool TaskManager::QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::unordered_set<std::string> a_updateTargets)
+	bool TaskManager::QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::unordered_set<RE::BSGeometry*> a_updateTargets)
 	{
-		if (!a_actor || a_srcGeometies.empty())
+		if (!a_actor || a_srcGeometies.empty() || a_updateTargets.empty())
 		{
 			logger::error("{} : Invalid parameters", __func__);
 			return false;
@@ -379,13 +380,14 @@ namespace Mus {
 				slot = RE::BIPED_OBJECT::kHead;
 			}
 
-			if (a_updateTargets.find(geo->name.c_str()) != a_updateTargets.end())
+			if (a_updateTargets.find(geo) != a_updateTargets.end())
 			{
 				if (!(bipedSlot & 1 << slot))
 				{
 					bipedSlot += 1 << slot;
 				}
 				BakeTextureSet newBakeTextureSet;
+				newBakeTextureSet.geometry = geo;
 				newBakeTextureSet.textureName = GetTextureName(a_actor, slot, geo);
 				newBakeTextureSet.geometryName = geo->name.c_str();
 				newBakeTextureSet.srcTexturePath = texturePath;
@@ -440,38 +442,35 @@ namespace Mus {
 				}
 				auto root = refr->loadedData->data3D.get();
 
-				for (auto& result : textures)
-				{
+				RE::BSVisit::TraverseScenegraphGeometries(root, [&](RE::BSGeometry* geo) -> RE::BSVisit::BSVisitControl {
 					using State = RE::BSGeometry::States;
 					using Feature = RE::BSShaderMaterial::Feature;
 					if (!IsValidTaskID(taskIDsrc))
 					{
 						logger::error("{:x}::{}::{} : invalid task queue. so cancel all current queue for bake object normalmap", id, actorName, taskIDsrc.taskID);
-						return;
+						return RE::BSVisit::BSVisitControl::kStop;
 					}
-					auto obj = root->GetObjectByName(result.geoName.c_str());
-					auto geo = obj ? obj->AsGeometry() : nullptr;
-					if (!geo)
-					{
-						logger::error("{:x}::{}::{} : {} invalid geometry. so cancel bake object normalmap for this geoemtry", id, actorName, taskIDsrc.taskID, result.geoName.c_str());
-						return;
-					}
+					if (!geo || geo->name.empty())
+						return RE::BSVisit::BSVisitControl::kContinue;
+					auto found = std::find_if(textures.begin(), textures.end(), [&geo](ObjectNormalMapUpdater::NormalMapResult normalmap) {
+						return normalmap.geometry == geo;
+					});
+					if (found == textures.end())
+						return RE::BSVisit::BSVisitControl::kContinue;
 					auto effect = geo->GetGeometryRuntimeData().properties[State::kEffect].get();
 					if (!effect)
-						return;
+						return RE::BSVisit::BSVisitControl::kContinue;
 					auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
 					if (!lightingShader || !lightingShader->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
-						return;
+						return RE::BSVisit::BSVisitControl::kContinue;
 					RE::BSLightingShaderMaterialBase* material = skyrim_cast<RE::BSLightingShaderMaterialBase*>(lightingShader->material);
 					if (!material || !material->normalTexture)
-						return;
-
-					//material->diffuseTexture = result.normalmap;
-					material->normalTexture = result.normalmap;
-
-					lastNormalMap[id][result.vertexCount] = result.textureName;
+						return RE::BSVisit::BSVisitControl::kContinue;
+					//material->textureSet->SetTexturePath(RE::BSTextureSet::Texture::kNormal, found->textureName.c_str());
+					material->normalTexture = found->normalmap;
+					lastNormalMap[id][found->vertexCount] = found->textureName;
 					logger::info("{:x}::{}::{} : {} bake object normalmap done", id, actorName, taskIDsrc.taskID, geo->name.c_str());
-				}
+				});
 			});
 		});
 	}

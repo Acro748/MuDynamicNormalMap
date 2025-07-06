@@ -69,7 +69,7 @@ namespace Mus {
 
 		void QUpdateNormalMap(RE::Actor* a_actor, std::uint32_t bipedSlot);
 		bool QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::uint32_t bipedSlot);
-		bool QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::unordered_set<std::string> a_updateTargets);
+		bool QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::unordered_set<RE::BSGeometry*> a_updateTargets);
 		void QUpdateNormalMap(TaskID& taskIDsrc, RE::FormID& id, std::string& actorName, BakeData& bakeData);
 
 		std::int64_t GenerateUniqueID();

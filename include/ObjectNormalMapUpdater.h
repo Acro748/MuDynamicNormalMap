@@ -12,6 +12,7 @@ namespace Mus {
 		}
 
 		struct NormalMapResult {
+			RE::BSGeometry* geometry;
 			std::size_t index;
 			std::string geoName;
 			std::string textureName;
