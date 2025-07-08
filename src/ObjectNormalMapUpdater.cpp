@@ -75,6 +75,15 @@ namespace Mus {
 			return result;
 		}
 
+		if (a_data.vertices.size() != a_data.uvs.size() ||
+			a_data.vertices.size() != a_data.normals.size() || 
+			a_data.vertices.size() != a_data.tangents.size() || 
+			a_data.vertices.size() != a_data.bitangents.size())
+		{
+			logger::error("{}::{} : Invalid geometry", _func_, taskID.taskID);
+			return result;
+		}
+
 		HRESULT hr;
 		auto device = Shader::ShaderManager::GetSingleton().GetDevice();
 		auto context = Shader::ShaderManager::GetSingleton().GetContext();
@@ -292,7 +301,7 @@ namespace Mus {
 					const std::uint32_t chunkSize = 8;
 					const std::uint32_t chunkCount = (localTaskCount + chunkSize - 1) / chunkSize;
 
-					parallelTris.push_back(ThreadPool_TaskModule::GetSingleton().submitAsync([&, subOffset, chunkSize, chunkCount]() {
+					parallelTris.push_back(ThreadPool_TaskModule::GetSingleton().submitAsync([&, bakeIndex, subOffset, chunkSize, chunkCount, totalTaskCount]() {
 						concurrency::parallel_for(std::uint32_t(0), chunkCount, [&, subOffset, chunkSize](std::uint32_t taskIndex) {
 							std::uint32_t start = taskIndex * chunkSize + subOffset;
 							std::uint32_t end = (std::min)(start + chunkSize, totalTaskCount);

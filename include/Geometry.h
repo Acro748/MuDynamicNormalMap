@@ -19,30 +19,30 @@ namespace Mus {
 		};
 		struct ObjectInfo {
 			GeometryInfo info;
-			std::size_t vertexStart;
-			std::size_t vertexEnd;
+			std::size_t vertexStart = 0;
+			std::size_t vertexEnd = 0;
 			std::size_t vertexCount() { return info.hasVertices ? vertexEnd - vertexStart : 0; }
-			std::size_t uvStart;
-			std::size_t uvEnd;
+			std::size_t uvStart = 0;
+			std::size_t uvEnd = 0;
 			std::size_t uvCount() { return info.hasUVs ? uvEnd - uvStart : 0; }
-			std::size_t normalStart;
-			std::size_t normalEnd;
+			std::size_t normalStart = 0;
+			std::size_t normalEnd = 0;
 			std::size_t normalCount() { return info.hasNormals ? normalEnd - normalStart : 0; }
-			std::size_t tangentStart;
-			std::size_t tangentEnd;
+			std::size_t tangentStart = 0;
+			std::size_t tangentEnd = 0;
 			std::size_t tangentCount() { return info.hasTangents ? tangentEnd - tangentStart : 0; }
-			std::size_t bitangentStart;
-			std::size_t bitangentEnd;
+			std::size_t bitangentStart = 0;
+			std::size_t bitangentEnd = 0;
 			std::size_t bitangentCount() { return info.hasBitangents ? bitangentEnd - bitangentStart : 0; }
-			std::size_t indicesStart;
-			std::size_t indicesEnd;
+			std::size_t indicesStart = 0;
+			std::size_t indicesEnd = 0;
 			std::size_t indicesCount() { return indicesEnd - indicesStart; }
 			std::vector<std::uint8_t> geometryBlockData;
-			std::vector<RE::NiPoint3> dynamicBlockData;
+			std::vector<RE::NiPoint3> dynamicBlockData1; //without expression
+			std::vector<DirectX::XMVECTOR> dynamicBlockData2; //with expression
 			std::vector<std::uint16_t> indicesBlockData;
 		};
-
-		RE::BSFaceGenBaseMorphExtraData* GetMorphExtraData(RE::BSGeometry* a_geometry);
+		static RE::BSFaceGenBaseMorphExtraData* GetMorphExtraData(RE::BSGeometry* a_geometry);
 
 		bool GetGeometryInfo(RE::BSGeometry* a_geo, GeometryInfo& info);
 		bool CopyGeometryData(RE::BSGeometry* a_geo);

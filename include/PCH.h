@@ -116,6 +116,7 @@
 #include <vector>
 #include <version>
 #include <wrl/client.h>
+#include <xxhash.h>
 
 #include <ShlObj_core.h>
 #include <Windows.h>
@@ -159,6 +160,7 @@ namespace util {
 #include "ShaderManager.h"
 
 #include "ObjectNormalMapUpdater.h"
+#include "ActorVertexHasher.h"
 #include "TaskManager.h"
 #include "PapyrusScripts.h"
 

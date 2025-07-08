@@ -15,6 +15,7 @@
         "jsoncpp",
         "xbyak",
         "detours",
+        "xxhash",
         "directxtk",
         "directxtex"
       ]

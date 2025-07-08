@@ -138,6 +138,14 @@ namespace Mus {
 				{
                     HeadEnable = GetBoolValue(variableValue);
 				}
+                else if (variableName == "RealtimeDetect")
+				{
+                    RealtimeDetect = GetBoolValue(variableValue);
+				}
+                else if (variableName == "RealtimeDetectHead")
+				{
+                    RealtimeDetectHead = GetUIntValue(variableValue);
+				}
                 else if (variableName == "PriorityCores")
 				{
                     auto list = split(variableValue, ',');

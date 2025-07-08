@@ -58,6 +58,13 @@ namespace Mus {
         [[nodiscard]] inline bool GetHeadEnable() const noexcept {
             return HeadEnable;
         }
+        [[nodiscard]] inline bool GetRealtimeDetect() const noexcept {
+            return RealtimeDetect;
+        }
+        [[nodiscard]] inline std::uint8_t GetRealtimeDetectHead() const noexcept {
+            return RealtimeDetectHead;
+        }
+
         [[nodiscard]] inline unsigned long GetPriorityCores() const noexcept {
             return PriorityCores;
         }
@@ -137,12 +144,13 @@ namespace Mus {
 		float TextureResize = 1.0f;
 		bool IgnoreTextureSize = false;
 
-        //NormalmapBake
         bool PlayerEnable = true;
         bool NPCEnable = true;
         bool MaleEnable = true;
         bool FemaleEnable = true;
         bool HeadEnable = false;
+        bool RealtimeDetect = true;
+        std::uint8_t RealtimeDetectHead = 1; //0 disable, 1 morph data only, all data
 
         unsigned long PriorityCores = 0;
         unsigned long PriorityCoreCount = 0;

@@ -22,6 +22,14 @@ namespace Mus {
 		std::uint32_t bipedSlot = BipedObjectSlot::kHead;
 		std::string delayTaskID = GetDelayTaskID(id, bipedSlot);
 
+		if (isPlayer(id) && !Config::GetSingleton().GetPlayerEnable())
+			return;
+		if (!isPlayer(id) && !Config::GetSingleton().GetNPCEnable())
+			return;
+		if (GetSex(actor) == RE::SEX::kMale && !Config::GetSingleton().GetMaleEnable())
+			return;
+		if (GetSex(actor) == RE::SEX::kFemale && !Config::GetSingleton().GetFemaleEnable())
+			return;
 		if (Config::GetSingleton().GetHeadEnable())
 		{
 			RegisterDelayTask(delayTaskID, Config::GetSingleton().GetUpdateDelayTick(), [this, id, name, bipedSlot, delayTaskID]() {
@@ -33,6 +41,7 @@ namespace Mus {
 				}
 				QUpdateNormalMap(actor, bipedSlot);
 			});
+			//ActorVertexHasher::GetSingleton().Register(actor, RE::BIPED_OBJECT::kHead);
 		}
 	}
 	void TaskManager::onEvent(const ActorChangeHeadPartEvent& e) 
@@ -45,6 +54,14 @@ namespace Mus {
 		std::uint32_t bipedSlot = BipedObjectSlot::kHead;
 		std::string delayTaskID = GetDelayTaskID(id, bipedSlot);
 
+		if (isPlayer(id) && !Config::GetSingleton().GetPlayerEnable())
+			return;
+		if (!isPlayer(id) && !Config::GetSingleton().GetNPCEnable())
+			return;
+		if (GetSex(e.actor) == RE::SEX::kMale && !Config::GetSingleton().GetMaleEnable())
+			return;
+		if (GetSex(e.actor) == RE::SEX::kFemale && !Config::GetSingleton().GetFemaleEnable())
+			return;
 		if (Config::GetSingleton().GetHeadEnable())
 		{
 			RegisterDelayTask(delayTaskID, Config::GetSingleton().GetUpdateDelayTick(), [this, id, name, bipedSlot, delayTaskID]() {
@@ -56,6 +73,7 @@ namespace Mus {
 				}
 				QUpdateNormalMap(actor, bipedSlot);
 			});
+			//ActorVertexHasher::GetSingleton().Register(e.actor, RE::BIPED_OBJECT::kHead);
 		}
 	}
 	void TaskManager::onEvent(const ArmorAttachEvent& e)
@@ -70,6 +88,14 @@ namespace Mus {
 		std::uint32_t bipedSlot = 1 << e.bipedSlot;
 		std::string delayTaskID = GetDelayTaskID(id, bipedSlot);
 
+		if (isPlayer(id) && !Config::GetSingleton().GetPlayerEnable())
+			return;
+		if (!isPlayer(id) && !Config::GetSingleton().GetNPCEnable())
+			return;
+		if (GetSex(e.actor) == RE::SEX::kMale && !Config::GetSingleton().GetMaleEnable())
+			return;
+		if (GetSex(e.actor) == RE::SEX::kFemale && !Config::GetSingleton().GetFemaleEnable())
+			return;
 		RegisterDelayTask(delayTaskID, Config::GetSingleton().GetUpdateDelayTick(), [this, id, name, bipedSlot, delayTaskID]() {
 			RE::Actor* actor = GetFormByID<RE::Actor*>(id);
 			if (!actor || !actor->loadedData || !actor->loadedData->data3D)
@@ -79,6 +105,7 @@ namespace Mus {
 			}
 			QUpdateNormalMap(actor, bipedSlot);
 		});
+		//ActorVertexHasher::GetSingleton().Register(e.actor, RE::BIPED_OBJECT(e.bipedSlot));
 	}
 
 	void TaskManager::RunDelayTask()
@@ -121,84 +148,59 @@ namespace Mus {
 		auto slots = SubBipedObjectSlots(bipedSlot);
 		for (auto& slot : slots)
 		{
-			if (slot & std::to_underlying(RE::BIPED_MODEL::BipedObjectSlot::kHead))
-			{
-				auto root = a_actor->GetFaceNode();
-				if (!root)
-					continue;
-				RE::BSVisit::TraverseScenegraphGeometries(root, [&geometries](RE::BSGeometry* geometry) -> RE::BSVisit::BSVisitControl {
-					using State = RE::BSGeometry::States;
-					using Feature = RE::BSShaderMaterial::Feature;
-					if (!geometry || geometry->name.empty())
-						return RE::BSVisit::BSVisitControl::kContinue;
-					if (IsContainString(geometry->name.c_str(), "[Ovl") || IsContainString(geometry->name.c_str(), "[SOvl") || IsContainString(geometry->name.c_str(), "overlay")) //without overlay
-						return RE::BSVisit::BSVisitControl::kContinue;
-					if (!geometry->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
-						return RE::BSVisit::BSVisitControl::kContinue;
-					auto effect = geometry->GetGeometryRuntimeData().properties[State::kEffect].get();
-					if (!effect)
-						return RE::BSVisit::BSVisitControl::kContinue;
-					auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
-					if (!lightingShader || !lightingShader->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
-						return RE::BSVisit::BSVisitControl::kContinue;
-					geometries.insert(geometry);
+			bool isHead = slot & std::to_underlying(RE::BIPED_MODEL::BipedObjectSlot::kHead);
+			auto root = a_actor->loadedData->data3D.get();
+			if (!root)
+				continue;
+			RE::BSVisit::TraverseScenegraphGeometries(root, [&geometries, slot, isHead](RE::BSGeometry* geometry) -> RE::BSVisit::BSVisitControl {
+				using State = RE::BSGeometry::States;
+				using Feature = RE::BSShaderMaterial::Feature;
+				if (!geometry || geometry->name.empty())
 					return RE::BSVisit::BSVisitControl::kContinue;
-				});
-			}
-			else
-			{
-				auto root = a_actor->loadedData->data3D.get();
-				if (!root)
-					continue;
-				RE::BSVisit::TraverseScenegraphGeometries(root, [&geometries, slot](RE::BSGeometry* geometry) -> RE::BSVisit::BSVisitControl {
-					using State = RE::BSGeometry::States;
-					using Feature = RE::BSShaderMaterial::Feature;
-					if (!geometry || geometry->name.empty())
-						return RE::BSVisit::BSVisitControl::kContinue;
-					if (auto dynamicTri = geometry->AsDynamicTriShape(); dynamicTri)
-						return RE::BSVisit::BSVisitControl::kContinue;
-					if (IsContainString(geometry->name.c_str(), "[Ovl") || IsContainString(geometry->name.c_str(), "[SOvl") || IsContainString(geometry->name.c_str(), "overlay")) //without overlay
-						return RE::BSVisit::BSVisitControl::kContinue;
-					if (!geometry->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
-						return RE::BSVisit::BSVisitControl::kContinue;
-					auto effect = geometry->GetGeometryRuntimeData().properties[State::kEffect].get();
-					if (!effect)
-						return RE::BSVisit::BSVisitControl::kContinue;
-					auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
-					if (!lightingShader || !lightingShader->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
-						return RE::BSVisit::BSVisitControl::kContinue;
+				if (IsContainString(geometry->name.c_str(), "[Ovl") || IsContainString(geometry->name.c_str(), "[SOvl") || IsContainString(geometry->name.c_str(), "overlay")) //without overlay
+					return RE::BSVisit::BSVisitControl::kContinue;
+				if (!geometry->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
+					return RE::BSVisit::BSVisitControl::kContinue;
+				auto effect = geometry->GetGeometryRuntimeData().properties[State::kEffect].get();
+				if (!effect)
+					return RE::BSVisit::BSVisitControl::kContinue;
+				auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
+				if (!lightingShader || !lightingShader->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
+					return RE::BSVisit::BSVisitControl::kContinue;
 
+				if (geometry->AsDynamicTriShape() && isHead)
+				{
+					geometries.insert(geometry);
+				}
+				else
+				{
 					std::uint32_t pslot = 0;
 					auto skinInstance = geometry->GetGeometryRuntimeData().skinInstance.get();
 					auto dismember = netimmerse_cast<RE::BSDismemberSkinInstance*>(skinInstance);
-					if (dismember)
-					{
-						bool found = false;
-						for (std::uint32_t p = 0; p < dismember->GetRuntimeData().numPartitions; p++)
-						{
-							auto& partition = dismember->GetRuntimeData().partitions[p];
-							if (partition.slot < 30 || partition.slot >= RE::BIPED_OBJECT::kEditorTotal + 30)
-								return RE::BSVisit::BSVisitControl::kContinue; //unknown slot
-							else
-								pslot = 1 << (partition.slot - 30);
-							if (slot & pslot)
-							{
-								found = true;
-								break;
-							}
-						}
-						if (!found)
-							return RE::BSVisit::BSVisitControl::kContinue;
-					}
-					else //maybe it's just skinInstance in headpart
+					if (!dismember) //maybe it's just skinInstance in headpart
 						return RE::BSVisit::BSVisitControl::kContinue;
-
+					bool found = false;
+					for (std::uint32_t p = 0; p < dismember->GetRuntimeData().numPartitions; p++)
+					{
+						auto& partition = dismember->GetRuntimeData().partitions[p];
+						if (partition.slot < 30 || partition.slot >= RE::BIPED_OBJECT::kEditorTotal + 30)
+							return RE::BSVisit::BSVisitControl::kContinue; //unknown slot
+						else
+							pslot = 1 << (partition.slot - 30);
+						if (slot & pslot)
+						{
+							found = true;
+							break;
+						}
+					}
+					if (!found)
+						return RE::BSVisit::BSVisitControl::kContinue;
 					geometries.insert(geometry);
-					return RE::BSVisit::BSVisitControl::kContinue;
-				});
-				if (!geometries.empty())
-					continue;
-			}
+				}
+				return RE::BSVisit::BSVisitControl::kContinue;
+			});
+			if (!geometries.empty())
+				continue;
 		}
 		return geometries;
 	}
@@ -218,27 +220,18 @@ namespace Mus {
 		if (GetSex(a_actor) == RE::SEX::kFemale && !Config::GetSingleton().GetFemaleEnable())
 			return;
 
-		std::string delayTaskID = GetDelayTaskID(id, bipedSlot);
-		RegisterDelayTask(delayTaskID, Config::GetSingleton().GetUpdateDelayTick(), [this, id, actorName, bipedSlot, delayTaskID]() {
-			RE::Actor* actor = GetFormByID<RE::Actor*>(id);
-			if (!actor || !actor->loadedData || !actor->loadedData->data3D)
-			{
-				logger::error("{:x}::{} : invalid reference. so skip", id, actorName);
+		std::unordered_set<RE::BSGeometry*> geometries;
+		if (bipedSlot & BipedObjectSlot::kSkinWithHeadAndGenital)
+		{
+			geometries = GetGeometries(a_actor, bipedSlot);
+			if (geometries.empty())
 				return;
-			}
-			std::unordered_set<RE::BSGeometry*> geometries;
-			if (bipedSlot & BipedObjectSlot::kSkinWithHeadAndGenital)
-			{
-				geometries = GetGeometries(actor, bipedSlot);
-				if (geometries.empty())
-					return;
-				std::uint32_t mergeSlots = bipedSlot | BipedObjectSlot::kSkinWithHeadAndGenital;
-				geometries = GetGeometries(actor, mergeSlots);
-			}
-			else
-				geometries = GetGeometries(actor, bipedSlot);
-			QUpdateNormalMap(actor, geometries, bipedSlot);
-		});
+			std::uint32_t mergeSlots = bipedSlot | BipedObjectSlot::kSkinWithHeadAndGenital;
+			geometries = GetGeometries(a_actor, mergeSlots);
+		}
+		else
+			geometries = GetGeometries(a_actor, bipedSlot);
+		QUpdateNormalMap(a_actor, geometries, bipedSlot);
 	}
 
 	bool TaskManager::QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::uint32_t bipedSlot)
@@ -311,6 +304,8 @@ namespace Mus {
 				auto found = lastNormalMap[id].find(bakeData.geoData.geometries[geoIndex].second.info.vertexCount);
 				if (found != lastNormalMap[id].end())
 					Shader::TextureLoadManager::CreateSourceTexture(found->second, material->normalTexture);
+
+				ActorVertexHasher::GetSingleton().Register(a_actor, RE::BIPED_OBJECT(slot));
 			}
 			geoIndex++;
 		}
@@ -399,6 +394,8 @@ namespace Mus {
 				auto found = lastNormalMap[id].find(bakeData.geoData.geometries[geoIndex].second.info.vertexCount);
 				if (found != lastNormalMap[id].end())
 					Shader::TextureLoadManager::CreateSourceTexture(found->second, material->normalTexture);
+
+				ActorVertexHasher::GetSingleton().Register(a_actor, RE::BIPED_OBJECT(slot));
 			}
 			geoIndex++;
 		}
@@ -470,6 +467,7 @@ namespace Mus {
 					material->normalTexture = found->normalmap;
 					lastNormalMap[id][found->vertexCount] = found->textureName;
 					logger::info("{:x}::{}::{} : {} bake object normalmap done", id, actorName, taskIDsrc.taskID, geo->name.c_str());
+					return RE::BSVisit::BSVisitControl::kContinue;
 				});
 			});
 		});

@@ -57,11 +57,22 @@ namespace Mus {
 		newObjInfo.info.vertexCount = newObjInfo.info.vertexCount > 0 ? newObjInfo.info.vertexCount : skinPartition->vertexCount;
 		if (dynamicTriShape)
 		{
-			const auto morphData = GetMorphExtraData(a_geo);
-			if (morphData)
+			if (Config::GetSingleton().GetRealtimeDetectHead() < 2)
 			{
-				newObjInfo.dynamicBlockData.resize(newObjInfo.info.vertexCount);
-				std::memcpy(newObjInfo.dynamicBlockData.data(), morphData->vertexData, sizeof(RE::NiPoint3) * newObjInfo.info.vertexCount);
+				const auto morphData = GetMorphExtraData(a_geo);
+				if (morphData)
+				{
+					newObjInfo.dynamicBlockData1.resize(newObjInfo.info.vertexCount);
+					std::memcpy(newObjInfo.dynamicBlockData1.data(), morphData->vertexData, sizeof(RE::NiPoint3) * newObjInfo.info.vertexCount);
+				}
+			}
+			else
+			{
+				if (dynamicTriShape->GetDynamicTrishapeRuntimeData().dynamicData)
+				{
+					newObjInfo.dynamicBlockData2.resize(newObjInfo.info.vertexCount);
+					std::memcpy(newObjInfo.dynamicBlockData2.data(), dynamicTriShape->GetDynamicTrishapeRuntimeData().dynamicData, sizeof(DirectX::XMVECTOR) * newObjInfo.info.vertexCount);
+				}
 			}
 		}
 		newObjInfo.geometryBlockData.resize(newObjInfo.info.vertexCount * newObjInfo.info.desc.GetSize());
@@ -115,11 +126,11 @@ namespace Mus {
 			const std::size_t beforeBitangentCount = bitangents.size();
 			vertices.resize(beforeVertexCount + geo.second.info.vertexCount);
 			uvs.resize(beforeUVCount + geo.second.info.vertexCount);
-			/*if (info.hasNormals)
+			/*if (geo.second.info.hasNormals)
 				normals.resize(beforeNormalCount + geo.second.info.vertexCount);
-			if (info.hasTangents)
+			if (geo.second.info.hasTangents)
 				tangents.resize(beforeTangentCount + geo.second.info.vertexCount);
-			if (info.hasBitangents)
+			if (geo.second.info.hasBitangents)
 				bitangents.resize(beforeBitangentCount + geo.second.info.vertexCount);*/
 
 			const std::uint32_t vertexSize = geo.second.info.desc.GetSize();
@@ -133,18 +144,24 @@ namespace Mus {
 				const std::uint32_t ti = beforeTangentCount + i;
 				const std::uint32_t bi = beforeBitangentCount + i;
 
-				if (!geo.second.dynamicBlockData.empty())
+				if (!geo.second.dynamicBlockData1.empty())
 				{
-					vertices[vi].x = geo.second.dynamicBlockData[i].x;
-					vertices[vi].y = geo.second.dynamicBlockData[i].y;
-					vertices[vi].z = geo.second.dynamicBlockData[i].z;
+					vertices[vi].x = geo.second.dynamicBlockData1[i].x;
+					vertices[vi].y = geo.second.dynamicBlockData1[i].y;
+					vertices[vi].z = geo.second.dynamicBlockData1[i].z;
+				}
+				else if (!geo.second.dynamicBlockData2.empty())
+				{
+					DirectX::XMStoreFloat3(&vertices[vi], geo.second.dynamicBlockData2[i]);
+					/*if (geo.second.info.hasBitangents)
+						bitangents[bi].x = geo.second.dynamicBlockData[i].m128_f32[3];*/
 				}
 				else
 				{
 					vertices[vi] = *reinterpret_cast<DirectX::XMFLOAT3*>(block);
 					block += 12;
 
-					/*if (info.hasBitangents)
+					/*if (geo.second.info.hasBitangents)
 						bitangents[bi].x = *reinterpret_cast<float*>(block);*/
 					block += 4;
 				}
@@ -153,25 +170,25 @@ namespace Mus {
 				uvs[ui].y = DirectX::PackedVector::XMConvertHalfToFloat(*reinterpret_cast<std::uint16_t*>(block + 2));
 				block += 4;
 
-				/*if (info.hasNormals)
+				/*if (geo.second.info.hasNormals)
 				{
 					normals[ni].x = static_cast<float>(*block) * colorConvert;
 					normals[ni].y = static_cast<float>(*(block + 1)) * colorConvert;
 					normals[ni].z = static_cast<float>(*(block + 2)) * colorConvert;
 					block += 3;
 
-					if (info.hasBitangents)
+					if (geo.second.info.hasBitangents)
 						bitangents[bi].y = static_cast<float>(*block);
 					block += 1;
 
-					if (info.hasTangents)
+					if (geo.second.info.hasTangents)
 					{
 						tangents[ti].x = static_cast<float>(*block) * colorConvert;
 						tangents[ti].y = static_cast<float>(*(block + 1)) * colorConvert;
 						tangents[ti].z = static_cast<float>(*(block + 2)) * colorConvert;
 						block += 3;
 
-						if (info.hasBitangents)
+						if (geo.second.info.hasBitangents)
 							bitangents[bi].z = static_cast<float>(*block);
 					}
 				}*/
@@ -301,44 +318,29 @@ namespace Mus {
 		if (!mainInfo.hasVertices || vertices.empty() || indices.empty())
 			return;
 
-		if (!mainInfo.hasNormals)
-		{
-			mainInfo.hasNormals = true;
-			for (auto& geo : geometries) {
-				geo.second.info.hasNormals = true;
-				geo.second.normalStart = geo.second.vertexStart;
-				geo.second.normalEnd = geo.second.vertexEnd;
-			}
-			normals.resize(vertices.size());
+		mainInfo.hasNormals = true;
+		for (auto& geo : geometries) {
+			geo.second.info.hasNormals = true;
+			geo.second.normalStart = geo.second.vertexStart;
+			geo.second.normalEnd = geo.second.vertexEnd;
 		}
-		else if (vertices.size() != normals.size())
-			return;
+		normals.resize(vertices.size());
 
-		if (!mainInfo.hasTangents)
-		{
-			mainInfo.hasTangents = true;
-			for (auto& geo : geometries) {
-				geo.second.info.hasTangents = true;
-				geo.second.tangentStart = geo.second.vertexStart;
-				geo.second.tangentEnd = geo.second.vertexEnd;
-			}
-			tangents.resize(vertices.size());
+		mainInfo.hasTangents = true;
+		for (auto& geo : geometries) {
+			geo.second.info.hasTangents = true;
+			geo.second.tangentStart = geo.second.vertexStart;
+			geo.second.tangentEnd = geo.second.vertexEnd;
 		}
-		else if (vertices.size() != tangents.size())
-			return;
+		tangents.resize(vertices.size());
 
-		if (!mainInfo.hasBitangents)
-		{
-			mainInfo.hasBitangents = true;
-			for (auto& geo : geometries) {
-				geo.second.info.hasBitangents = true;
-				geo.second.bitangentStart = geo.second.vertexStart;
-				geo.second.bitangentEnd = geo.second.vertexEnd;
-			}
-			bitangents.resize(vertices.size());
+		mainInfo.hasBitangents = true;
+		for (auto& geo : geometries) {
+			geo.second.info.hasBitangents = true;
+			geo.second.bitangentStart = geo.second.vertexStart;
+			geo.second.bitangentEnd = geo.second.vertexEnd;
 		}
-		else if (vertices.size() != bitangents.size())
-			return;
+		bitangents.resize(vertices.size());
 
 		logger::debug("{} : normals {} re-calculate...", __func__, normals.size());
 #ifdef GEOMETRY_TEST
