@@ -71,7 +71,7 @@
 #include <limits>
 #include <locale>
 #define MAGIC_ENUM_RANGE_MIN -128
-#define MAGIC_ENUM_RANGE_MAX 4096
+#define MAGIC_ENUM_RANGE_MAX 2048
 #include <magic_enum.hpp>
 #include <map>
 #include <memory>
@@ -151,6 +151,7 @@ namespace util {
 #include "nifUtil.h"
 #include "Utility.hpp"
 
+#include "Condition.h"
 #include "Config.h"
 
 #include "Hook.h"

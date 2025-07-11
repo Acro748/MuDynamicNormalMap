@@ -112,18 +112,16 @@ namespace Mus {
             return;
 
         lastTickTime = now;
-        tasksProcessed = 0;
         if (tasks.empty())
             return;
 
         std::lock_guard<std::mutex> mlg(mainMutex);
         mainTask = std::make_unique<std::function<void()>>([this]{
             std::lock_guard<std::mutex> qlg(queueMutex);
-            while (tasksProcessed < taskQMaxCount && currentTasks.size() < taskQMaxCount && !tasks.empty()) {
+            while (currentTasks.size() < taskQMaxCount && !tasks.empty()) {
                 currentTasks.push(std::move(tasks.front()));
                 cv.notify_one();
                 tasks.pop();
-                tasksProcessed++;
             }
         });
         maincv.notify_one();

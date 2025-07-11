@@ -264,10 +264,6 @@ namespace Mus {
 				const bool hasSrcData = (srcData != nullptr);
 				const bool hasOverlayData = (overlayData != nullptr);
 
-#ifdef BAKE_TEST2
-				PerformanceLog(std::string(_func_) + "::" + std::to_string(taskID.taskID) + "::" + "Run", false, false);
-#endif // BAKE_TEST2
-
 				D3D11_MAPPED_SUBRESOURCE mappedResource;
 				Shader::ShaderManager::GetSingleton().ShaderContextLock();
 				hr = context->Map(dstStagingTexture2D.Get(), 0, D3D11_MAP_READ_WRITE, 0, &mappedResource);
@@ -302,6 +298,9 @@ namespace Mus {
 					const std::uint32_t chunkCount = (localTaskCount + chunkSize - 1) / chunkSize;
 
 					parallelTris.push_back(ThreadPool_TaskModule::GetSingleton().submitAsync([&, bakeIndex, subOffset, chunkSize, chunkCount, totalTaskCount]() {
+#ifdef BAKE_TEST2
+						PerformanceLog(std::string(_func_) + "::" + std::to_string(taskID.taskID) + "::" + std::to_string(bakeIndex) + "::" + std::to_string(subOffset), false, false);
+#endif // BAKE_TEST2
 						concurrency::parallel_for(std::uint32_t(0), chunkCount, [&, subOffset, chunkSize](std::uint32_t taskIndex) {
 							std::uint32_t start = taskIndex * chunkSize + subOffset;
 							std::uint32_t end = (std::min)(start + chunkSize, totalTaskCount);
@@ -442,6 +441,9 @@ namespace Mus {
 								}
 							}
 						});
+#ifdef BAKE_TEST2
+						PerformanceLog(std::string(_func_) + "::" + std::to_string(taskID.taskID) + "::" + std::to_string(bakeIndex) + "::" + std::to_string(subOffset), true, false);
+#endif // BAKE_TEST2
 					}));
 				}
 				for (auto& parallelTri : parallelTris) {
@@ -456,10 +458,6 @@ namespace Mus {
 				Shader::ShaderManager::GetSingleton().ShaderContextLock();
 				context->Unmap(dstStagingTexture2D.Get(), 0);
 				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-
-#ifdef BAKE_TEST2
-				PerformanceLog(std::string(_func_) + "::" + std::to_string(taskID.taskID) + "::" + "Run", true, false);
-#endif // BAKE_TEST2
 
 				if (srcStagingTexture2D)
 				{

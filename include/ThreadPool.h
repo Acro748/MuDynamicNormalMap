@@ -98,7 +98,6 @@ namespace Mus {
         std::atomic<bool> stop;
 
         std::clock_t lastTickTime = 0;
-        int tasksProcessed = 0;
 
         const unsigned long priorityCoreMask = 0;
         const std::clock_t taskQTick = 0;

@@ -66,6 +66,7 @@ namespace Mus {
 		std::string GetDelayTaskID(RE::FormID refrID, std::uint32_t bipedSlot);
 
 		std::unordered_set<RE::BSGeometry*> GetGeometries(RE::Actor* a_actor, std::uint32_t bipedSlot);
+		std::unordered_set<RE::BSGeometry*> GetAllGeometries(RE::Actor* a_actor);
 
 		void QUpdateNormalMap(RE::Actor* a_actor, std::uint32_t bipedSlot);
 		bool QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::uint32_t bipedSlot);

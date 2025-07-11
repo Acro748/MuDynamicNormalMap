@@ -40,6 +40,7 @@ set(headers
         include/ThreadPool.h
         include/MiniBenchMark.h
         include/ActorVertexHasher.h
+        include/Condition.h
         include/Interface/Interface.h
         include/Interface/InterfaceImpl.h
 )
@@ -57,6 +58,7 @@ set(sources
         src/Geometry.cpp
         src/InputManager.cpp
         src/ActorVertexHasher.cpp
+        src/Condition.cpp
         src/ThreadPool.cpp
         src/Main.cpp
 

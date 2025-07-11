@@ -157,6 +157,9 @@ namespace {
     }
     void kDataloadedFunction()
     {
+        Mus::ConditionManager::GetSingleton().InitialConditionMap();
+        static_cast<Mus::MultipleConfig*>(&Mus::Config::GetSingleton())->LoadConditionFile();
+
         if (Mus::Config::GetSingleton().GetAutoTaskQ() > 0)
         {
             float benchMarkResult = Mus::miniBenchMark();
@@ -219,8 +222,6 @@ namespace {
         std::uint32_t bakingThreads = std::max(2.0f, ceil((float)coreCount / 4.0f * 3.0f));
         Mus::bakingThreads = std::make_unique<Mus::ThreadPool_ParallelModule>(bakingThreads);
         logger::info("set bakingThreads {}", bakingThreads);
-
-        Mus::ThreadPool_TaskModule::GetSingleton();
     }
 
     void kNewGameFunction()

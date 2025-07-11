@@ -559,6 +559,57 @@ namespace Mus {
         return tokens;
     }
 
+    inline std::vector<std::string> split(const std::string& s, std::string delimiter)
+    {
+        size_t pos_start = 0, pos_end, delim_len = delimiter.length();
+        std::string token;
+        std::vector<std::string> res;
+
+        while ((pos_end = s.find(delimiter, pos_start)) != std::string::npos)
+        {
+            token = s.substr(pos_start, pos_end - pos_start);
+            trim(token);
+            pos_start = pos_end + delim_len;
+            res.emplace_back(token);
+        }
+
+        std::string lasttoken = s.substr(pos_start);
+        trim(lasttoken);
+        res.emplace_back(lasttoken);
+        return res;
+    }
+
+    inline std::vector<std::string> splitMulti(const std::string& s, std::string delimiters)
+    {
+        std::string str = trim_copy(s);
+
+        std::vector<std::string> tokens;
+        std::stringstream stringStream(str);
+        std::string line;
+        while (std::getline(stringStream, line))
+        {
+            std::size_t prev = 0, pos;
+            while ((pos = line.find_first_of(delimiters, prev)) != std::string::npos)
+            {
+                if (pos > prev)
+                {
+                    std::string token = line.substr(prev, pos - prev);
+                    trim(token);
+                    tokens.emplace_back(token);
+                }
+
+                prev = pos + 1;
+            }
+            if (prev < line.length())
+            {
+                std::string token = line.substr(prev, std::string::npos);
+                trim(token);
+                tokens.emplace_back(token);
+            }
+        }
+        return tokens;
+    }
+
     inline bool IsNumber(std::string str)
     {
         for (auto s : str)

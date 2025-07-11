@@ -10,7 +10,7 @@
     "plugin": {
       "description": "Build the SKSE plugin.",
       "dependencies": [
-        "commonlibsse-ng",
+        "commonlibsse-ng-flatrim",
         "magic-enum",
         "jsoncpp",
         "xbyak",

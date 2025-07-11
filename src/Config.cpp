@@ -6,7 +6,8 @@ namespace Mus {
     bool Config::LoadLogging()
     {
         std::string configPath = GetRuntimeSKSEDirectory();
-        configPath += "MuDynamicNormalMap.ini";
+        configPath += SKSE::PluginDeclaration::GetSingleton()->GetName().data();
+        configPath += +".ini";
 
         std::ifstream file(configPath);
 
@@ -269,6 +270,55 @@ namespace Mus {
         }
 
         return true;
+    }
+
+    bool MultipleConfig::LoadConditionFile()
+    {
+        std::string conditionPath = GetRuntimeSKSEDirectory();
+        conditionPath += SKSE::PluginDeclaration::GetSingleton()->GetName().data();
+        auto files = GetAllFiles(conditionPath);
+        concurrency::parallel_for_each(files.begin(), files.end(), [&](auto& file) {
+            std::u8string filename_utf8 = file.filename().u8string();
+            std::string filename(filename_utf8.begin(), filename_utf8.end());
+            if (filename == "." || filename == "..")
+                return;
+            if (!stringEndsWith(filename, ".ini"))
+                return;
+            std::ifstream ifile(file);
+            if (!ifile.is_open())
+                return;
+
+            logger::info("File found: {}", filename);
+
+            ConditionManager::Condition condition;
+            condition.fileName = filename;
+
+            std::string line;
+            while (std::getline(ifile, line))
+            {
+                skipComments(line);
+                trim(line);
+                if (line.length() > 0)
+                {
+                    std::string variableName;
+                    std::string variableValue = GetConfigSetting(line, variableName);
+                    if (variableName == "Enable")
+                    {
+                        condition.Enable = GetBoolValue(variableValue);
+                    }
+                    else if (variableName == "HeadEnable")
+                    {
+                        condition.HeadEnable = GetBoolValue(variableValue);
+                    }
+                    else
+                    {
+                        condition.originalCondition += " " + variableValue;
+                    }
+                }
+            }
+            ConditionManager::GetSingleton().RegisterCondition(condition);
+        });
+        return false;
     }
 }
 

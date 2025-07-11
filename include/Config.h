@@ -277,6 +277,8 @@ namespace Mus {
 
     class MultipleConfig : public Config {
     public:
+        bool LoadConditionFile();
+
         static inline std::vector<std::filesystem::path> GetAllFiles(std::string folder)
         {
             std::vector<std::filesystem::path> files;
