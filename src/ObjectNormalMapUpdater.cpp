@@ -116,22 +116,12 @@ namespace Mus {
 					Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture2D = nullptr;
 					D3D11_TEXTURE2D_DESC srcDesc;
 					D3D11_SHADER_RESOURCE_VIEW_DESC srcShaderResourceViewDesc;
-					if (std::string tangentNormalMapPath = GetTangentNormalMapPath(bake.second.srcTexturePath); IsExistFile(tangentNormalMapPath))
+					if (IsTangentNormalMap(bake.second.srcTexturePath))
 					{
-						logger::info("{}::{}::{} : {} src texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, tangentNormalMapPath);
+						logger::info("{}::{}::{} : {} src texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.srcTexturePath);
 
-						if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(
-							tangentNormalMapPath, srcDesc, srcShaderResourceViewDesc, DXGI_FORMAT_R8G8B8A8_UNORM,
-							Config::GetSingleton().GetIgnoreTextureSize() ? Config::GetSingleton().GetDefaultTextureWidth() : 0,
-							Config::GetSingleton().GetIgnoreTextureSize() ? Config::GetSingleton().GetDefaultTextureHeight() : 0,
-							srcTexture2D))
+						if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.srcTexturePath, srcDesc, srcShaderResourceViewDesc, DXGI_FORMAT_R8G8B8A8_UNORM, srcTexture2D))
 						{
-							if (!Config::GetSingleton().GetIgnoreTextureSize() && Config::GetSingleton().GetTextureResize() != 1.0f)
-							{
-								srcDesc.Width = srcDesc.Width * Config::GetSingleton().GetTextureResize();
-								srcDesc.Height = srcDesc.Height * Config::GetSingleton().GetTextureResize();
-							}
-
 							dstDesc = srcDesc;
 
 							srcStagingDesc = srcDesc;
@@ -145,7 +135,7 @@ namespace Mus {
 							hr = device->CreateTexture2D(&srcStagingDesc, nullptr, &srcStagingTexture2D);
 							if (FAILED(hr))
 							{
-								logger::error("{}::{} : Failed to create src staging texture ({}|{})", _func_, taskID.taskID, hr, tangentNormalMapPath);
+								logger::error("{}::{} : Failed to create src staging texture ({}|{})", _func_, taskID.taskID, hr, bake.second.srcTexturePath);
 								srcStagingTexture2D = nullptr;
 							}
 
@@ -158,18 +148,8 @@ namespace Mus {
 					{
 						logger::info("{}::{}::{} : {} src texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.srcTexturePath);
 
-						if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(
-							bake.second.srcTexturePath, srcDesc, srcShaderResourceViewDesc, DXGI_FORMAT_R8G8B8A8_UNORM,
-							Config::GetSingleton().GetIgnoreTextureSize() ? Config::GetSingleton().GetDefaultTextureWidth() : 0,
-							Config::GetSingleton().GetIgnoreTextureSize() ? Config::GetSingleton().GetDefaultTextureHeight() : 0,
-							srcTexture2D))
+						if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.srcTexturePath, srcDesc, srcShaderResourceViewDesc, DXGI_FORMAT_R8G8B8A8_UNORM, srcTexture2D))
 						{
-							if (!Config::GetSingleton().GetIgnoreTextureSize() && Config::GetSingleton().GetTextureResize() != 1.0f)
-							{
-								srcDesc.Width = srcDesc.Width * Config::GetSingleton().GetTextureResize();
-								srcDesc.Height = srcDesc.Height * Config::GetSingleton().GetTextureResize();
-							}
-
 							dstDesc = srcDesc;
 							dstShaderResourceViewDesc = srcShaderResourceViewDesc;
 						}
@@ -179,6 +159,11 @@ namespace Mus {
 						logger::error("{}::{}::{} : There is no Normalmap! {}", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.srcTexturePath);
 						return;
 					}
+				}
+				else
+				{
+					logger::error("{}::{}::{} : There is no Normalmap! {}", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.srcTexturePath);
+					return;
 				}
 
 				if (!bake.second.overlayTexturePath.empty())
@@ -649,22 +634,12 @@ namespace Mus {
 				if (!bake.second.srcTexturePath.empty())
 				{
 					D3D11_SHADER_RESOURCE_VIEW_DESC srcShaderResourceViewDesc;
-					if (std::string tangentNormalMapPath = GetTangentNormalMapPath(bake.second.srcTexturePath); IsExistFile(tangentNormalMapPath))
+					if (IsTangentNormalMap(bake.second.srcTexturePath))
 					{
-						logger::info("{}::{}::{} : {} src texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, tangentNormalMapPath);
+						logger::info("{}::{}::{} : {} src texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.srcTexturePath);
 
-						if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(
-							tangentNormalMapPath, srcDesc, srcShaderResourceViewDesc, DXGI_FORMAT_UNKNOWN,
-							Config::GetSingleton().GetIgnoreTextureSize() ? Config::GetSingleton().GetDefaultTextureWidth() : 0,
-							Config::GetSingleton().GetIgnoreTextureSize() ? Config::GetSingleton().GetDefaultTextureHeight() : 0,
-							srcTexture2D))
+						if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.srcTexturePath, srcDesc, srcShaderResourceViewDesc, DXGI_FORMAT_UNKNOWN, srcTexture2D))
 						{
-							if (!Config::GetSingleton().GetIgnoreTextureSize() && Config::GetSingleton().GetTextureResize() != 1.0f)
-							{
-								srcDesc.Width = srcDesc.Width * Config::GetSingleton().GetTextureResize();
-								srcDesc.Height = srcDesc.Height * Config::GetSingleton().GetTextureResize();
-							}
-
 							dstWriteDesc = srcDesc;
 							dstDesc = srcDesc;
 							dstShaderResourceViewDesc = srcShaderResourceViewDesc;
@@ -672,7 +647,7 @@ namespace Mus {
 							hr = device->CreateShaderResourceView(srcTexture2D.Get(), &srcShaderResourceViewDesc, &srcShaderResourceView);
 							if (FAILED(hr))
 							{
-								logger::error("{}::{}::{} : Failed to create src shader resource view ({}|{})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr, tangentNormalMapPath);
+								logger::error("{}::{}::{} : Failed to create src shader resource view ({}|{})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr, bake.second.srcTexturePath);
 								return;
 							}
 						}
@@ -681,18 +656,8 @@ namespace Mus {
 					{
 						logger::info("{}::{}::{} : {} src texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.srcTexturePath);
 
-						if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(
-							bake.second.srcTexturePath, srcDesc, srcShaderResourceViewDesc, DXGI_FORMAT_UNKNOWN,
-							Config::GetSingleton().GetIgnoreTextureSize() ? Config::GetSingleton().GetDefaultTextureWidth() : 0,
-							Config::GetSingleton().GetIgnoreTextureSize() ? Config::GetSingleton().GetDefaultTextureHeight() : 0,
-							srcTexture2D))
+						if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.srcTexturePath, srcDesc, srcShaderResourceViewDesc, DXGI_FORMAT_UNKNOWN, srcTexture2D))
 						{
-							if (!Config::GetSingleton().GetIgnoreTextureSize() && Config::GetSingleton().GetTextureResize() != 1.0f)
-							{
-								srcDesc.Width = srcDesc.Width * Config::GetSingleton().GetTextureResize();
-								srcDesc.Height = srcDesc.Height * Config::GetSingleton().GetTextureResize();
-							}
-
 							dstWriteDesc = srcDesc;
 							dstDesc = srcDesc;
 							dstShaderResourceViewDesc = srcShaderResourceViewDesc;
@@ -703,6 +668,11 @@ namespace Mus {
 						logger::error("{}::{}::{} : There is no Normalmap! {}", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.srcTexturePath);
 						return;
 					}
+				}
+				else
+				{
+					logger::error("{}::{}::{} : There is no Normalmap! {}", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.srcTexturePath);
+					return;
 				}
 
 				if (!bake.second.overlayTexturePath.empty())
@@ -1015,6 +985,19 @@ namespace Mus {
 		return result;
 	}
 
+	bool ObjectNormalMapUpdater::IsTangentNormalMap(std::string a_normalMapPath)
+	{
+		constexpr std::string_view prefix = "Textures\\";
+		constexpr std::string_view n_suffix = "_n";
+		if (a_normalMapPath.empty())
+			return false;
+		if (!stringStartsWith(a_normalMapPath, prefix.data()))
+			a_normalMapPath = prefix.data() + a_normalMapPath;
+		std::filesystem::path file(a_normalMapPath);
+		std::string filename = file.stem().string();
+		return stringEndsWith(filename, n_suffix.data());
+	}
+
 	bool ObjectNormalMapUpdater::ComputeBarycentric(float px, float py, DirectX::XMINT2 a, DirectX::XMINT2 b, DirectX::XMINT2 c, DirectX::XMFLOAT3& out)
 	{
 		DirectX::SimpleMath::Vector2 v0 = { (float)(b.x - a.x), (float)(b.y - a.y) };
@@ -1097,28 +1080,6 @@ namespace Mus {
 		srvOut = srv;
 		return true;
 	};
-
-	std::string ObjectNormalMapUpdater::GetTangentNormalMapPath(std::string a_normalMapPath)
-	{
-		constexpr std::string_view prefix = "Textures\\";
-		constexpr std::string_view msn_suffix = "_msn";
-		constexpr std::string_view n_suffix = "_n";
-		if (a_normalMapPath.empty())
-			return "";
-		if (!stringStartsWith(a_normalMapPath, prefix.data()))
-			a_normalMapPath = prefix.data() + a_normalMapPath;
-		std::filesystem::path file(a_normalMapPath);
-		std::string filename = file.stem().string();
-		if (stringEndsWith(filename, msn_suffix.data())) //_msn -> _n
-		{
-			filename = stringRemoveEnds(filename, msn_suffix.data());
-			filename += n_suffix;
-			return (file.parent_path() / (filename + ".dds")).string();
-		}
-		else if (stringEndsWith(filename, n_suffix.data())) //_n
-			return a_normalMapPath;
-		return "";
-	}
 
 	bool ObjectNormalMapUpdater::IsValidPixel(const std::uint32_t a_pixel)
 	{

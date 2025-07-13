@@ -92,8 +92,11 @@ namespace Mus {
 
 		std::string GetTextureName(RE::Actor* a_actor, std::uint32_t a_bipedSlot, RE::BSGeometry* a_geo); // ActorID + Armor/SkinID + BipedSlot + GeometryName + VertexCount
 		bool GetTextureInfo(std::string a_textureName, TextureInfo& a_textureInfo); // ActorID + GeometryName + VertexCount
-
+		
+		std::string GetTangentNormalMapPath(std::string a_normalMapPath);
+		std::string GetTangentNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder);
 		std::string GetOverlayNormalMapPath(std::string a_normalMapPath);
+		std::string GetOverlayNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder);
 
 		std::unordered_map<RE::FormID, std::unordered_map<std::string, std::int64_t>> updateObjectNormalMapCounter; // ActorID, GeometryName, BakeID
 		std::mutex updateObjectNormalMapCounterLock;

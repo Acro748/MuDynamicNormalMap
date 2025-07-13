@@ -231,6 +231,7 @@ namespace Mus {
 		std::string actorName = a_actor->GetName();
 		BakeData bakeData;
 		std::size_t geoIndex = 0;
+		auto condition = ConditionManager::GetSingleton().GetCondition(a_actor);
 		for (auto& geo : a_srcGeometies)
 		{
 			using State = RE::BSGeometry::States;
@@ -280,8 +281,8 @@ namespace Mus {
 				newBakeTextureSet.geometry = geo;
 				newBakeTextureSet.textureName = GetTextureName(a_actor, slot, geo);
 				newBakeTextureSet.geometryName = geo->name.c_str();
-				newBakeTextureSet.srcTexturePath = texturePath;
-				newBakeTextureSet.overlayTexturePath = GetOverlayNormalMapPath(texturePath);
+				newBakeTextureSet.srcTexturePath = GetTangentNormalMapPath(texturePath, condition.ProxyTangentTextureFolder);
+				newBakeTextureSet.overlayTexturePath = GetOverlayNormalMapPath(texturePath, condition.ProxyOverlayTextureFolder);
 				bakeData.bakeTextureSet.emplace(geoIndex, newBakeTextureSet);
 				logger::debug("{:x}::{} : {} - queue added on bake object normalmap", id, actorName,
 							  geo->name.c_str(), newBakeTextureSet.overlayTexturePath);
@@ -317,6 +318,7 @@ namespace Mus {
 		BakeData bakeData;
 		std::size_t geoIndex = 0;
 		std::uint32_t bipedSlot = 0;
+		auto condition = ConditionManager::GetSingleton().GetCondition(a_actor);
 		for (auto& geo : a_srcGeometies)
 		{
 			using State = RE::BSGeometry::States;
@@ -370,8 +372,8 @@ namespace Mus {
 				newBakeTextureSet.geometry = geo;
 				newBakeTextureSet.textureName = GetTextureName(a_actor, slot, geo);
 				newBakeTextureSet.geometryName = geo->name.c_str();
-				newBakeTextureSet.srcTexturePath = texturePath;
-				newBakeTextureSet.overlayTexturePath = GetOverlayNormalMapPath(texturePath);
+				newBakeTextureSet.srcTexturePath = GetTangentNormalMapPath(texturePath, condition.ProxyTangentTextureFolder);
+				newBakeTextureSet.overlayTexturePath = GetOverlayNormalMapPath(texturePath, condition.ProxyOverlayTextureFolder);
 				bakeData.bakeTextureSet.emplace(geoIndex, newBakeTextureSet);
 				logger::debug("{:x}::{} : {} - queue added on bake object normalmap", id, actorName,
 							  geo->name.c_str(), newBakeTextureSet.overlayTexturePath);
@@ -397,11 +399,6 @@ namespace Mus {
 	void TaskManager::QUpdateNormalMap(TaskID& taskIDsrc, RE::FormID& id, std::string& actorName, BakeData& bakeData)
 	{
 		actorThreads->submitAsync([this, id, actorName, bakeData, taskIDsrc]() {
-			struct textureResult {
-				std::string geometryName;
-				RE::NiPointer<RE::NiSourceTexture> texture;
-			};
-
 			if (!IsValidTaskID(taskIDsrc))
 			{
 				logger::info("{:x}::{}::{} : cancel queue for bake object normalmap", id, actorName, taskIDsrc.taskID);
@@ -458,6 +455,48 @@ namespace Mus {
 		});
 	}
 
+	std::string TaskManager::GetTangentNormalMapPath(std::string a_normalMapPath)
+	{
+		constexpr std::string_view prefix = "Textures\\";
+		constexpr std::string_view msn_suffix = "_msn";
+		constexpr std::string_view n_suffix = "_n";
+		if (a_normalMapPath.empty())
+			return "";
+		if (!stringStartsWith(a_normalMapPath, prefix.data()))
+			a_normalMapPath = prefix.data() + a_normalMapPath;
+		std::filesystem::path file(a_normalMapPath);
+		std::string filename = file.stem().string();
+		if (stringEndsWith(filename, msn_suffix.data())) //_msn -> _n
+		{
+			filename = stringRemoveEnds(filename, msn_suffix.data());
+			filename += n_suffix;
+			std::string fullPath = (file.parent_path() / (filename + ".dds")).string();
+			if (IsExistFile(fullPath, ExistType::textures))
+				return fullPath;
+		}
+		else if (stringEndsWith(filename, n_suffix.data())) //_n
+		{
+			if (IsExistFile(a_normalMapPath, ExistType::textures))
+				return a_normalMapPath;
+		}
+		return "";
+	}
+	std::string TaskManager::GetTangentNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder)
+	{
+		std::string result = GetTangentNormalMapPath(a_normalMapPath);
+		if (!result.empty() || a_proxyFolder.empty())
+			return result;
+		std::filesystem::path file(a_normalMapPath);
+		std::string filename = file.stem().string();
+		for (auto& folder : a_proxyFolder)
+		{
+			result = GetTangentNormalMapPath(folder + "\\" + filename + ".dds");
+			if (!result.empty())
+				return result;
+		}
+		return a_normalMapPath;
+	}
+
 	std::string TaskManager::GetOverlayNormalMapPath(std::string a_normalMapPath)
 	{
 		constexpr std::string_view prefix = "Textures\\";
@@ -491,6 +530,22 @@ namespace Mus {
 		{
 			if (IsExistFile(a_normalMapPath, ExistType::textures))
 				return a_normalMapPath;
+		}
+		return "";
+	}
+	std::string TaskManager::GetOverlayNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder)
+	{
+		std::string result = GetOverlayNormalMapPath(a_normalMapPath);
+		if (!result.empty() || a_proxyFolder.empty())
+			return result;
+		std::filesystem::path file(a_normalMapPath);
+		std::string filename = file.stem().string();
+		for (auto& folder : a_proxyFolder)
+		{
+			a_normalMapPath = folder + "\\" + filename + ".dds";
+			result = GetOverlayNormalMapPath(a_normalMapPath);
+			if (!result.empty())
+				return result;
 		}
 		return "";
 	}

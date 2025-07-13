@@ -31,18 +31,6 @@ namespace Mus {
         }
 
         //General
-		[[nodiscard]] inline std::uint32_t GetDefaultTextureHeight() const noexcept {
-			return DefaultTextureHeight;
-		}
-		[[nodiscard]] inline std::uint32_t GetDefaultTextureWidth() const noexcept {
-			return DefaultTextureWidth;
-		}
-		[[nodiscard]] inline float GetTextureResize() const noexcept {
-			return TextureResize;
-		}
-        [[nodiscard]] inline bool GetIgnoreTextureSize() const noexcept {
-            return IgnoreTextureSize;
-        }
         [[nodiscard]] inline bool GetPlayerEnable() const noexcept {
             return PlayerEnable;
         }
@@ -139,11 +127,6 @@ namespace Mus {
         spdlog::level::level_enum flushLevel{ spdlog::level::level_enum::trace };
 
         //General
-        std::uint32_t DefaultTextureHeight = 2048.0f;
-        std::uint32_t DefaultTextureWidth = 2048.0f;
-		float TextureResize = 1.0f;
-		bool IgnoreTextureSize = false;
-
         bool PlayerEnable = true;
         bool NPCEnable = true;
         bool MaleEnable = true;

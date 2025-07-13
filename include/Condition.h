@@ -48,8 +48,12 @@ namespace Mus {
 			std::vector<ConditionItemOr> AND;
 			bool Enable = true;
 			bool HeadEnable = true;
+			std::vector<std::string> ProxyTangentTextureFolder;
+			std::vector<std::string> ProxyOverlayTextureFolder;
+			std::int32_t Priority;
 		};
 		bool RegisterCondition(Condition condition);
+		void SortConditions();
 
 		const Condition GetCondition(RE::Actor* a_actor);
 
