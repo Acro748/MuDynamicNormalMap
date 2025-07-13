@@ -159,6 +159,7 @@ namespace {
     {
         Mus::ConditionManager::GetSingleton().InitialConditionMap();
         static_cast<Mus::MultipleConfig*>(&Mus::Config::GetSingleton())->LoadConditionFile();
+        Mus::ConditionManager::GetSingleton().SortConditions();
 
         if (Mus::Config::GetSingleton().GetAutoTaskQ() > 0)
         {
@@ -207,7 +208,7 @@ namespace {
         Mus::weldDistanceMult = 1.0f / Mus::weldDistance;
 		Mus::g_frameEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_frameEventDispatcher.addListener(&Mus::ActorVertexHasher::GetSingleton());
-		Mus::g_frameEventDispatcher.addListener(&Mus::ThreadPool_TaskModule::GetSingleton());
+        Mus::g_frameEventDispatcher.addListener(&Mus::ThreadPool_TaskModule::GetSingleton());
 		Mus::g_armorAttachEventEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_facegenNiNodeEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_actorChangeHeadPartEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());

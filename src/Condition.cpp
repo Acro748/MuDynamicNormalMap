@@ -47,6 +47,13 @@ namespace Mus {
 		return true;
 	}
 
+	void ConditionManager::SortConditions()
+	{
+		std::sort(ConditionList.begin(), ConditionList.end(), [](Condition& a, Condition& b) {
+			return a.Priority > b.Priority;
+		});
+	}
+
 	const ConditionManager::Condition ConditionManager::ParseConditions(Condition condition)
 	{
 		std::vector<std::string> splittedANDs = split(condition.originalCondition, "AND");

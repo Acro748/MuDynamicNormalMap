@@ -103,23 +103,7 @@ namespace Mus {
             }
             else if (currentSetting == "[General]")
             {
-                if (variableName == "DefaultTextureWidth")
-                {
-                    DefaultTextureWidth = GetUIntValue(variableValue);
-                }
-                else if (variableName == "DefaultTextureHeight")
-                {
-                    DefaultTextureHeight = GetUIntValue(variableValue);
-                }
-				else if (variableName == "TextureResize")
-				{
-					TextureResize = GetFloatValue(variableValue);
-				}
-				else if (variableName == "IgnoreTextureSize")
-				{
-					IgnoreTextureSize = GetBoolValue(variableValue);
-				}
-                else if (variableName == "PlayerEnable")
+                if (variableName == "PlayerEnable")
 				{
                     PlayerEnable = GetBoolValue(variableValue);
 				}
@@ -309,6 +293,30 @@ namespace Mus {
                     else if (variableName == "HeadEnable")
                     {
                         condition.HeadEnable = GetBoolValue(variableValue);
+                    }
+                    else if (variableName == "ProxyTangentTextureFolder")
+                    {
+                        if (!variableValue.empty())
+                        {
+                            for (auto& value : split(variableValue, ','))
+                            {
+                                condition.ProxyTangentTextureFolder.push_back(value);
+                            }
+                        }
+                    }
+                    else if (variableName == "ProxyOverlayTextureFolder")
+                    {
+                        if (!variableValue.empty())
+                        {
+                            for (auto& value : split(variableValue, ','))
+                            {
+                                condition.ProxyOverlayTextureFolder.push_back(value);
+                            }
+                        }
+                    }
+                    else if (variableName == "Priority")
+                    {
+                        condition.Priority = GetIntValue(variableValue);
                     }
                     else
                     {
