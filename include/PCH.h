@@ -155,7 +155,6 @@ namespace util {
 #include "Config.h"
 
 #include "Hook.h"
-#include "HookEvent.h"
 #include "ThreadPool.h"
 
 #include "ShaderManager.h"

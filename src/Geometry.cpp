@@ -402,12 +402,12 @@ namespace Mus {
 
 			DirectX::XMVECTOR t = DirectX::XMVectorGetX(DirectX::XMVector3Length(tSum)) > floatPrecision ? DirectX::XMVector3Normalize(tSum) : DirectX::XMVectorZero();
 			DirectX::XMVECTOR b = DirectX::XMVectorGetX(DirectX::XMVector3Length(bSum)) > floatPrecision ? DirectX::XMVector3Normalize(bSum) : DirectX::XMVectorZero();
-			DirectX::XMVECTOR n = DirectX::XMVector3Normalize(nSum);
+			const DirectX::XMVECTOR n = DirectX::XMVector3Normalize(nSum);
 
 			if (!DirectX::XMVector3Equal(t, DirectX::XMVectorZero())) {
 				t = DirectX::XMVector3Normalize(DirectX::XMVectorSubtract(t, DirectX::XMVectorScale(n, DirectX::XMVectorGetX(DirectX::XMVector3Dot(n, t)))));
-				DirectX::XMVECTOR cross = DirectX::XMVector3Cross(n, t);
-				float handedness = (DirectX::XMVectorGetX(DirectX::XMVector3Dot(cross, b)) < 0.0f) ? -1.0f : 1.0f;
+				const DirectX::XMVECTOR cross = DirectX::XMVector3Cross(n, t);
+				const float handedness = (DirectX::XMVectorGetX(DirectX::XMVector3Dot(cross, b)) < 0.0f) ? -1.0f : 1.0f;
 				b = DirectX::XMVector3Normalize(DirectX::XMVectorScale(cross, handedness));
 			}
 

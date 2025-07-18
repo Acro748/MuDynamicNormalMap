@@ -53,6 +53,9 @@ namespace Mus {
             return RealtimeDetectHead;
         }
 
+        [[nodiscard]] inline bool GetGPUEnable() const noexcept {
+            return GPUEnable;
+        }
         [[nodiscard]] inline unsigned long GetPriorityCores() const noexcept {
             return PriorityCores;
         }
@@ -104,6 +107,9 @@ namespace Mus {
         [[nodiscard]] inline bool GetTextureMarginGPU() const noexcept {
             return TextureMarginGPU;
         }
+        [[nodiscard]] inline bool GetTangentZCorrection() const noexcept {
+            return TangentZCorrection;
+        }
 
         inline void SetTaskQMax(std::uint8_t newTaskQMax) {
             TaskQMax = newTaskQMax;
@@ -135,6 +141,7 @@ namespace Mus {
         bool RealtimeDetect = true;
         std::uint8_t RealtimeDetectHead = 1; //0 disable, 1 morph data only, all data
 
+        bool GPUEnable = true;
         unsigned long PriorityCores = 0;
         unsigned long PriorityCoreCount = 0;
 
@@ -157,6 +164,7 @@ namespace Mus {
 
         std::uint32_t TextureMargin = 2;
         bool TextureMarginGPU = true;
+        bool TangentZCorrection = true;
 
     public:
         inline std::string getCurrentSettingValue(std::string s)

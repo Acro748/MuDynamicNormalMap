@@ -8,6 +8,7 @@ namespace Mus {
 	extern std::atomic<bool> IsRaceSexMenu;
 	extern std::atomic<bool> IsMainMenu;
 	extern std::atomic<bool> IsGamePaused;
+	extern std::atomic<bool> IsSaveLoading;
 
 	extern bool PerformanceCheck;
 	extern bool PerformanceCheckAverage;
@@ -32,4 +33,6 @@ namespace Mus {
 	constexpr float floatPrecision = 1e-6f;
 	extern float weldDistance;
 	extern std::uint32_t weldDistanceMult;
+
+	constexpr std::uint32_t pixelGroup = 2048 * 2048;
 }

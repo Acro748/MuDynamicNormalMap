@@ -6,7 +6,7 @@ message("Using toolchain file ${CMAKE_TOOLCHAIN_FILE}.")
 ########################################################################################################################
 project(
         MuDynamicNormalMap
-        VERSION 0.4.0
+        VERSION 0.5.0
         DESCRIPTION "MuDynamicNormalMap by Acro."
         LANGUAGES CXX
 )
@@ -31,7 +31,6 @@ set(headers
         include/ObjectNormalMapUpdater.h
         include/TaskManager.h
         include/Hook.h
-        include/HookEvent.h
         include/Store.h
         include/Common.h
         include/Geometry.h
@@ -53,7 +52,6 @@ set(sources
         src/ObjectNormalMapUpdater.cpp
         src/TaskManager.cpp
         src/Hook.cpp
-        src/HookEvent.cpp
         src/Store.cpp
         src/Geometry.cpp
         src/InputManager.cpp
@@ -143,7 +141,7 @@ install(TARGETS ${PROJECT_NAME}
 ## Shader Script
 ########################################################################################################################
 set(compute_shader_sources 
-   ${CMAKE_CURRENT_SOURCE_DIR}/shader/UpdateObjectNormalMap.hlsl
+   ${CMAKE_CURRENT_SOURCE_DIR}/shader/UpdateNormalMap.hlsl
    ${CMAKE_CURRENT_SOURCE_DIR}/shader/BleedTexture.hlsl
 )
 set(vertex_shader_sources 
