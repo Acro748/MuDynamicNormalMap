@@ -339,7 +339,7 @@ namespace Mus {
 						buffers[subIndex][bufferIndex].maxY = maxY;
 
 						pixels.local() += (maxX - minX) * (maxY - minY);
-											  });
+					});
 
 					std::uint32_t totalPixels = pixels.combine(std::plus<std::uint32_t>());
 
@@ -463,11 +463,11 @@ namespace Mus {
 										*dstPixel = dstColor.GetReverse() | 0xFF000000;
 									}
 								}
-													  });
+							});
 #ifdef BAKE_TEST2
 							PerformanceLog(std::string(_func_) + "::" + std::to_string(taskID.taskID) + "::" + a_data.geometries[bakeIndex].second.info.name, true, false);
 #endif // BAKE_TEST2
-																								 }));
+						}));
 					}
 				}
 				for (auto& parallelTri : parallelTris) {
@@ -777,6 +777,7 @@ namespace Mus {
 						hr = device->CreateShaderResourceView(overlayTexture2D.Get(), &overlayShaderResourceViewDesc, overlayShaderResourceView.ReleaseAndGetAddressOf());
 						if (FAILED(hr))
 						{
+							overlayShaderResourceView = nullptr;
 							logger::error("{}::{}::{} : Failed to create overlay shader resource view ({}|{})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr, bake.second.overlayTexturePath);
 						}
 					}
@@ -819,14 +820,10 @@ namespace Mus {
 					UINT indicesStart;
 					UINT indicesEnd;
 
-					bool hasSrcTexture;
-					bool hasOverlayTexture;
-					bool tangentZCorrection;
-					bool padding0;
-
-					UINT padding1;
-					UINT padding2;
-					UINT padding3;
+					UINT hasSrcTexture;
+					UINT hasOverlayTexture;
+					UINT tangentZCorrection;
+					UINT padding0;
 				};
 				static_assert(sizeof(ConstBufferData) % 16 == 0, "Constant buffer must be 16-byte aligned.");
 				ConstBufferData cbData = {};
@@ -834,9 +831,9 @@ namespace Mus {
 				cbData.texHeight = dstDesc.Height;
 				cbData.indicesStart = a_data.geometries[bakeIndex].second.indicesStart;
 				cbData.indicesEnd = a_data.geometries[bakeIndex].second.indicesEnd;
-				cbData.hasSrcTexture = isTangentNormalMap;
-				cbData.hasOverlayTexture = overlayShaderResourceView ? true : false;
-				cbData.tangentZCorrection = Config::GetSingleton().GetTangentZCorrection();
+				cbData.hasSrcTexture = isTangentNormalMap ? 1 : 0;
+				cbData.hasOverlayTexture = overlayShaderResourceView ? 1 : 0;
+				cbData.tangentZCorrection = Config::GetSingleton().GetTangentZCorrection() ? 1 : 0;
 
 				D3D11_BUFFER_DESC cbDesc = {};
 				cbDesc.ByteWidth = sizeof(ConstBufferData);
