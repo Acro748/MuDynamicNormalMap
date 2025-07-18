@@ -752,7 +752,20 @@ namespace Mus {
 				if (funcAverageCount[funcStr] >= 100)
                 {
 					auto average = funcAverageTime[funcStr] / funcAverageCount[funcStr];
-					logger::info("{} average time: {}ns{}=> {:.6f}%", funcStr, average, 
+                    auto unit = "ns";
+                    if (average >= 1000000)
+                    {
+                        average /= 1000000;
+						tick /= 1000000;
+                        unit = "ms";
+                    }
+                    else if (average >= 1000)
+                    {
+                        average /= 1000;
+						tick /= 1000;
+                        unit = "us";
+					}
+					logger::info("{} average time: {}{}{}=> {:.6f}%", funcStr, average, unit,
                                  funcAverageArgs[funcStr] > 0 ? (std::string(" with average count ") + std::to_string(funcAverageArgs[funcStr] / funcAverageCount[funcStr]) + " ") : " ",
                                  (double)average / tick * 100
                     );
@@ -760,7 +773,7 @@ namespace Mus {
                     {
                         auto Console = RE::ConsoleLog::GetSingleton();
                         if (Console)
-                            Console->Print("%s average time: %lldns%s=> %.6f%%", funcStr.c_str(), average,
+                            Console->Print("%s average time: %lld%s%s=> %.6f%%", funcStr.c_str(), average, unit,
                                            funcAverageArgs[funcStr] > 0 ? (std::string(" with average count ") + std::to_string(funcAverageArgs[funcStr] / funcAverageCount[funcStr]) + " ").c_str() : " ",
                                            (double)average / tick * 100
                             );
@@ -772,7 +785,20 @@ namespace Mus {
 			}
             else
             {
-                logger::info("{} time: {}ns{}=> {:.6f}%", funcStr, duration_ns, 
+                auto unit = "ns";
+                if (duration_ns >= 1000000)
+                {
+                    duration_ns /= 1000000;
+					tick /= 1000000;
+                    unit = "ms";
+                }
+                else if (duration_ns >= 1000)
+                {
+                    duration_ns /= 1000;
+					tick /= 1000;
+                    unit = "us";
+                }
+                logger::info("{} time: {}{}{}=> {:.6f}%", funcStr, duration_ns, unit,
                              args > 0 ? (std::string(" with count ") + std::to_string(args) + " ") : " ",
                              (double)duration_ns / tick * 100
                 ); 
@@ -780,7 +806,7 @@ namespace Mus {
                 {
                     auto Console = RE::ConsoleLog::GetSingleton();
                     if (Console)
-                        Console->Print("%s time: %lld ns%s=> %.6f%%", funcStr.c_str(), duration_ns,
+                        Console->Print("%s time: %lld%s%s=> %.6f%%", funcStr.c_str(), duration_ns, unit,
                                        args > 0 ? (std::string(" with count ") + std::to_string(args) + " ").c_str() : " ",
                                        (double)duration_ns / tick * 100
                         );

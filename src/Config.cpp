@@ -131,6 +131,10 @@ namespace Mus {
 				{
                     RealtimeDetectHead = GetUIntValue(variableValue);
 				}
+                else if (variableName == "GPUEnable")
+                {
+					GPUEnable = GetBoolValue(variableValue);
+                }
                 else if (variableName == "PriorityCores")
 				{
                     auto list = split(variableValue, ',');
@@ -201,6 +205,10 @@ namespace Mus {
 				else if (variableName == "TextureMarginGPU")
 				{
                     TextureMarginGPU = GetBoolValue(variableValue);
+				}
+				else if (variableName == "TangentZCorrection")
+				{
+                    TangentZCorrection = GetBoolValue(variableValue);
 				}
 			}
         }

@@ -107,13 +107,15 @@ namespace Mus {
 
     void ThreadPool_TaskModule::onEvent(const FrameEvent& e)
     {
+        if (tasks.empty())
+            return;
+        if (currentTasks.size() >= taskQMaxCount)
+            return;
+
         auto now = std::clock();
         if (now - lastTickTime < taskQTick)
             return;
-
         lastTickTime = now;
-        if (tasks.empty())
-            return;
 
         std::lock_guard<std::mutex> mlg(mainMutex);
         mainTask = std::make_unique<std::function<void()>>([this]{

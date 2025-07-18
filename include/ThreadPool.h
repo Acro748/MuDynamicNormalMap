@@ -64,7 +64,16 @@ namespace Mus {
                 std::unique_lock lock(queueMutex);
                 if (directTaskQ && taskQMaxCount > currentTasks.size())
                 {
-                    currentTasks.emplace([task]() { (*task)(); });
+                    if (tasks.empty())
+                    {
+                        currentTasks.emplace([task]() { (*task)(); });
+                    }
+                    else
+                    {
+                        tasks.emplace([task]() { (*task)(); });
+                        currentTasks.push(std::move(tasks.front()));
+                        tasks.pop();
+                    }
                     isCurrentTask = true;
                 }
                 else

@@ -4,6 +4,7 @@ namespace Mus {
 	std::atomic<bool> IsRaceSexMenu = false;
 	std::atomic<bool> IsMainMenu = false;
 	std::atomic<bool> IsGamePaused = false;
+	std::atomic<bool> IsSaveLoading = false;
 
 	bool PerformanceCheck = true;
 	bool PerformanceCheckAverage = false;

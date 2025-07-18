@@ -1,12 +1,25 @@
 #include "TaskManager.h"
 
 namespace Mus {
-	void TaskManager::Init()
+	void TaskManager::Init(bool dataLoaded)
 	{
+		if (!dataLoaded)
+		{
+			if (const auto NiNodeEvent = SKSE::GetNiNodeUpdateEventSource(); NiNodeEvent)
+				NiNodeEvent->AddEventSink<SKSE::NiNodeUpdateEvent>(this);
+		}
+		else
+		{
+			if (auto inputManager = RE::BSInputDeviceManager::GetSingleton(); inputManager)
+				inputManager->AddEventSink<RE::InputEvent*>(this);
+		}
 	}
 
 	void TaskManager::onEvent(const FrameEvent& e)
 	{
+		if (IsSaveLoading.load())
+			return;
+
 		RunDelayTask();
 	}
 	void TaskManager::onEvent(const FacegenNiNodeEvent& e)
@@ -144,7 +157,7 @@ namespace Mus {
 		auto root = a_actor->loadedData->data3D.get();
 		if (!root)
 			return geometries;
-		bool isHeadInclude = std::find(slots.begin(), slots.end(), std::to_underlying(RE::BIPED_MODEL::BipedObjectSlot::kHead)) != slots.end();
+		bool isHeadInclude = std::find(slots.begin(), slots.end(), std::to_underlying(BipedObjectSlot::kHead)) != slots.end();
 		RE::BSVisit::TraverseScenegraphGeometries(root, [&geometries, &slots, isHeadInclude](RE::BSGeometry* geometry) -> RE::BSVisit::BSVisitControl {
 			using State = RE::BSGeometry::States;
 			using Feature = RE::BSShaderMaterial::Feature;
@@ -215,7 +228,7 @@ namespace Mus {
 		if (!condition.Enable)
 			return;
 		if (!condition.HeadEnable)
-			bipedSlot &= ~std::to_underlying(RE::BIPED_MODEL::BipedObjectSlot::kHead);
+			bipedSlot &= ~std::to_underlying(BipedObjectSlot::kHead);
 		QUpdateNormalMap(a_actor, GetAllGeometries(a_actor), bipedSlot);
 	}
 
@@ -404,7 +417,11 @@ namespace Mus {
 				logger::info("{:x}::{}::{} : cancel queue for bake object normalmap", id, actorName, taskIDsrc.taskID);
 				return;
 			}
-			auto textures = ObjectNormalMapUpdater::GetSingleton().UpdateObjectNormalMap(taskIDsrc, bakeData.geoData, bakeData.bakeTextureSet);
+			ObjectNormalMapUpdater::BakeResult textures;
+			if (Config::GetSingleton().GetGPUEnable())
+				textures = ObjectNormalMapUpdater::GetSingleton().UpdateObjectNormalMapGPU(taskIDsrc, bakeData.geoData, bakeData.bakeTextureSet);
+			else
+				textures = ObjectNormalMapUpdater::GetSingleton().UpdateObjectNormalMap(taskIDsrc, bakeData.geoData, bakeData.bakeTextureSet);
 			if (textures.empty())
 			{
 				logger::error("{:x}::{}::{} : Failed to bake object normalmap", id, actorName, taskIDsrc.taskID);
@@ -446,6 +463,7 @@ namespace Mus {
 					if (!material || !material->normalTexture)
 						return RE::BSVisit::BSVisitControl::kContinue;
 					//material->textureSet->SetTexturePath(RE::BSTextureSet::Texture::kNormal, found->textureName.c_str());
+					//material->diffuseTexture = found->normalmap;
 					material->normalTexture = found->normalmap;
 					lastNormalMap[id][found->vertexCount] = found->textureName;
 					logger::info("{:x}::{}::{} : {} bake object normalmap done", id, actorName, taskIDsrc.taskID, geo->name.c_str());
@@ -624,5 +642,87 @@ namespace Mus {
 		a_textureInfo.geoName = frag[3];
 		a_textureInfo.vertexCount = Config::GetIntValue(frag[4]);
 		return true;
+	}
+
+	EventResult TaskManager::ProcessEvent(const SKSE::NiNodeUpdateEvent* evn, RE::BSTEventSource<SKSE::NiNodeUpdateEvent>*)
+	{
+		if (!evn || !evn->reference)
+			return EventResult::kContinue;
+		auto actor = skyrim_cast<RE::Actor*>(evn->reference);
+		if (!actor || !actor->loadedData || !actor->loadedData->data3D)
+			return EventResult::kContinue;
+		QUpdateNormalMap(actor, BipedObjectSlot::kAll);
+		return EventResult::kContinue;
+	}
+
+	EventResult TaskManager::ProcessEvent(RE::InputEvent* const* evn, RE::BSTEventSource<RE::InputEvent*>*)
+	{
+		if (!evn || !*evn)
+			return EventResult::kContinue;
+
+		for (RE::InputEvent* input = *evn; input != nullptr; input = input->next)
+		{
+			if (input->eventType.all(RE::INPUT_EVENT_TYPE::kButton))
+			{
+				RE::ButtonEvent* button = input->AsButtonEvent();
+				if (!button)
+					continue;
+
+				using namespace InputManager;
+				std::uint32_t keyCode = 0;
+				std::uint32_t keyMask = button->idCode;
+				if (button->device.all(RE::INPUT_DEVICE::kMouse))
+					keyCode = InputMap::kMacro_MouseButtonOffset + keyMask;
+				else if (REL::Module::IsVR() &&
+						 button->device.underlying() >= INPUT_DEVICE_CROSS_VR::kVirtualKeyboard &&
+						 button->device.underlying() <= INPUT_DEVICE_CROSS_VR::kDeviceType_WindowsMRSecondary) {
+					keyCode = GetDeviceOffsetForDevice(button->device.underlying()) + keyMask;
+				}
+				else if (button->device.all(RE::INPUT_DEVICE::kGamepad))
+					keyCode = InputMap::GamepadMaskToKeycode(keyMask);
+				else
+					keyCode = keyMask;
+
+				if (!REL::Module::IsVR())
+				{
+					if (keyCode >= InputMap::kMaxMacros)
+						continue;
+				}
+				else
+				{
+					if (keyCode >= InputMap::kMaxMacrosVR)
+						continue;
+				}
+
+				if (keyCode == Config::GetSingleton().GetHotKey1())
+				{
+					isPressedHotKey1 = button->IsPressed();
+				}
+				else if (keyCode == Config::GetSingleton().GetHotKey2())
+				{
+					if (isPressedHotKey1 || Config::GetSingleton().GetHotKey1() == 0)
+					{
+						RE::Actor* target = nullptr;
+						if (auto crossHair = RE::CrosshairPickData::GetSingleton(); crossHair && crossHair->targetActor)
+						{
+#ifndef ENABLE_SKYRIM_VR
+							target = skyrim_cast<RE::Actor*>(crossHair->targetActor.get().get());
+#else
+							for (std::uint32_t i = 0; i < RE::VRControls::VR_DEVICE::kTotal; i++)
+							{
+								target = skyrim_cast<RE::Actor*>(crossHair->targetActor[i].get().get());
+								if (target)
+									break;
+							}
+#endif
+						}
+						if (!target)
+							target = RE::PlayerCharacter::GetSingleton();
+						QUpdateNormalMap(target, BipedObjectSlot::kAll);
+					}
+				}
+			}
+		}
+		return EventResult::kContinue;
 	}
 }

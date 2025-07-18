@@ -1,11 +1,14 @@
 #pragma once
 
 namespace Mus {
+	using EventResult = RE::BSEventNotifyControl;
 	class TaskManager :
 		public IEventListener<FrameEvent>,
 		public IEventListener<FacegenNiNodeEvent>,
 		public IEventListener<ActorChangeHeadPartEvent>,
-		public IEventListener<ArmorAttachEvent> {
+		public IEventListener<ArmorAttachEvent>,
+		public RE::BSTEventSink<SKSE::NiNodeUpdateEvent>, 
+		public RE::BSTEventSink<RE::InputEvent*> {
 	public:
 		TaskManager() {};
 		~TaskManager() {};
@@ -15,7 +18,7 @@ namespace Mus {
 			return instance;
 		}
 
-		void Init();
+		void Init(bool dataLoaded);
 
 		enum BipedObjectSlot : std::uint32_t
 		{
@@ -85,10 +88,14 @@ namespace Mus {
 		void onEvent(const FacegenNiNodeEvent& e) override;
 		void onEvent(const ActorChangeHeadPartEvent& e) override;
 		void onEvent(const ArmorAttachEvent& e) override;
+		EventResult ProcessEvent(const SKSE::NiNodeUpdateEvent* evn, RE::BSTEventSource<SKSE::NiNodeUpdateEvent>*) override;
+		EventResult ProcessEvent(RE::InputEvent* const* evn, RE::BSTEventSource<RE::InputEvent*>*) override;
 
 	private:
 		std::unordered_map<std::string, std::function<void()>> delayTask; //id, task;
 		std::mutex delayTaskLock;
+
+		bool isPressedHotKey1 = false;
 
 		std::string GetTextureName(RE::Actor* a_actor, std::uint32_t a_bipedSlot, RE::BSGeometry* a_geo); // ActorID + Armor/SkinID + BipedSlot + GeometryName + VertexCount
 		bool GetTextureInfo(std::string a_textureName, TextureInfo& a_textureInfo); // ActorID + GeometryName + VertexCount
