@@ -5,14 +5,10 @@ cbuffer ConstBuffer : register(b0)
     uint indicesStart;
     uint indicesEnd;
 
-	bool hasSrcTexture;
-    bool hasOverlayTexture;
-	bool tangentZCorrection;
-	bool padding0;
-
-    uint padding1;
-    uint padding2;
-    uint padding3;
+    uint hasSrcTexture;
+    uint hasOverlayTexture;
+    uint tangentZCorrection;
+    uint padding0;
 };
 
 StructuredBuffer<float3> vertices   : register(t0); // a_data.vertices
@@ -121,7 +117,7 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
 
             float4 dstColor;
             float4 overlayColor = float4(1.0f, 1.0f, 1.0f, 0.0f);
-            if (hasOverlayTexture)
+            if (hasOverlayTexture > 0)
             {
                 overlayColor = overlayTexture.SampleLevel(samplerState, uv, 0);
             }
@@ -131,7 +127,7 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
                 float3 n = normalize(n0 * bary.x + n1 * bary.y + n2 * bary.z);
 
                 float4 srcColor = float4(0.5f, 0.5f, 1.0f, 0.0f);
-                if (hasSrcTexture)
+                if (hasSrcTexture > 0)
                 {
                     srcColor = srcTexture.SampleLevel(samplerState, uv, 0);
                 }
