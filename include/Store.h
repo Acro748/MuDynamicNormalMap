@@ -15,8 +15,6 @@ namespace Mus {
 	extern bool PerformanceCheckConsolePrint;
 	extern bool PerformanceCheckTick;
 
-	constexpr std::string_view tempTexture = "Textures\\TextureManager\\Temp.dds";
-
 	#define MATH_PI       3.14159265358979323846
 	constexpr float toDegree = 180 / MATH_PI;
 	constexpr float toRadian = MATH_PI / 180;
