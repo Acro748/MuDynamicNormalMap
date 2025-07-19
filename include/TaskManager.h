@@ -105,8 +105,8 @@ namespace Mus {
 		std::string GetOverlayNormalMapPath(std::string a_normalMapPath);
 		std::string GetOverlayNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder);
 
-		std::unordered_map<RE::FormID, std::unordered_map<std::string, std::int64_t>> updateObjectNormalMapCounter; // ActorID, GeometryName, BakeID
-		std::mutex updateObjectNormalMapCounterLock;
+		std::unordered_map<RE::FormID, std::unordered_map<std::string, std::int64_t>> updateNormalMapTaskID; // ActorID, GeometryName, BakeID
+		std::shared_mutex updateNormalMapLock;
 		concurrency::concurrent_unordered_map<RE::FormID, concurrency::concurrent_unordered_map<std::uint32_t, std::string>> lastNormalMap; // ActorID, VertexCount, TextureName>
 	};
 }

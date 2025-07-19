@@ -578,9 +578,10 @@ namespace Mus {
 	{
 		if (taskIDsrc.refrID == 0 || taskIDsrc.taskName.empty())
 			return -1;
-		std::lock_guard<std::mutex> lg(updateObjectNormalMapCounterLock);
 		auto taskID = GenerateUniqueID();
-		updateObjectNormalMapCounter[taskIDsrc.refrID][taskIDsrc.taskName] = taskID;
+		updateNormalMapLock.lock();
+		updateNormalMapTaskID[taskIDsrc.refrID][taskIDsrc.taskName] = taskID;
+		updateNormalMapLock.unlock();
 		taskIDsrc.taskID = taskID;
 		return taskID;
 	}
@@ -588,25 +589,30 @@ namespace Mus {
 	{
 		if (taskIDsrc.refrID == 0 || taskIDsrc.taskName.empty())
 			return;
-		std::lock_guard<std::mutex> lg(updateObjectNormalMapCounterLock);
-		if (updateObjectNormalMapCounter[taskIDsrc.refrID][taskIDsrc.taskName] == a_ownID)
-			updateObjectNormalMapCounter[taskIDsrc.refrID].erase(taskIDsrc.taskName);
+		updateNormalMapLock.lock();
+		if (updateNormalMapTaskID[taskIDsrc.refrID][taskIDsrc.taskName] == a_ownID)
+			updateNormalMapTaskID[taskIDsrc.refrID].erase(taskIDsrc.taskName);
+		updateNormalMapLock.unlock();
 	}
 	void TaskManager::ReleaseTaskID(TaskID taskIDsrc) 
 	{
 		if (taskIDsrc.refrID == 0 || taskIDsrc.taskName.empty())
 			return;
-		std::lock_guard<std::mutex> lg(updateObjectNormalMapCounterLock);
-		updateObjectNormalMapCounter[taskIDsrc.refrID].erase(taskIDsrc.taskName);
+		updateNormalMapLock.lock();
+		updateNormalMapTaskID[taskIDsrc.refrID].erase(taskIDsrc.taskName);
+		updateNormalMapLock.unlock();
 	}
 	std::uint64_t TaskManager::GetCurrentTaskID(TaskID taskIDsrc) 
 	{
 		if (taskIDsrc.refrID == 0 || taskIDsrc.taskName.empty())
 			return -1;
-		std::lock_guard<std::mutex> lg(updateObjectNormalMapCounterLock);
-		auto taskID = updateObjectNormalMapCounter[taskIDsrc.refrID][taskIDsrc.taskName];
-		if (taskID != taskIDsrc.taskID)
-			return -1;
+		std::uint64_t taskID = -1;
+		updateNormalMapLock.lock_shared();
+		if (auto found1 = updateNormalMapTaskID.find(taskIDsrc.refrID); found1 != updateNormalMapTaskID.end()) {
+			if (auto found2 = found1->second.find(taskIDsrc.taskName); found2 != found1->second.end())
+				taskID = found2->second;
+		}
+		updateNormalMapLock.unlock_shared();
 		return taskID;
 	}
 	bool TaskManager::IsValidTaskID(TaskID taskIDsrc) 

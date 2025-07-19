@@ -37,21 +37,21 @@ namespace Mus {
 		//policy.SetPolicyValue(concurrency::TargetOversubscriptionFactor, 1);
 		concurrency::CurrentScheduler::Create(policy);
 
-		//ThreadPool_TaskModule::GetSingleton().submitAsync( [&a_data]() { a_data.Subdivision(Config::GetSingleton().GetSubdivision()); }).get();
+		//cpuTask->submitAsync( [&a_data]() { a_data.Subdivision(Config::GetSingleton().GetSubdivision()); }).get();
 		/*if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 			return result;
 		}*/
 
-		ThreadPool_TaskModule::GetSingleton().submitAsync( [&a_data]() { a_data.UpdateMap(); }).get();
+		cpuTask->submitAsync( [&a_data]() { a_data.UpdateMap(); }).get();
 		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 			return result;
 		}
 
-		//ThreadPool_TaskModule::GetSingleton().submitAsync( [&a_data]() { a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth()); }).get();
+		//cpuTask->submitAsync( [&a_data]() { a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth()); }).get();
 		//a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
 		/*if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
@@ -60,7 +60,7 @@ namespace Mus {
 		}
 		if (Config::GetSingleton().GetVertexSmooth() > 0)
 		{
-			ThreadPool_TaskModule::GetSingleton().submitAsync([&a_data]() { a_data.UpdateMap(); }).get();
+			cpuTask->submitAsync([&a_data]() { a_data.UpdateMap(); }).get();
 			if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 			{
 				logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
@@ -68,7 +68,7 @@ namespace Mus {
 			}
 		}*/
 
-		ThreadPool_TaskModule::GetSingleton().submitAsync([&a_data]() { a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree()); }).get();
+		cpuTask->submitAsync([&a_data]() { a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree()); }).get();
 		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
@@ -95,7 +95,7 @@ namespace Mus {
 
 		const std::int32_t margin = Config::GetSingleton().GetTextureMargin();
 
-		std::vector<std::future<void>> parallelBakings;;
+		std::vector<std::future<void>> parallelBakings;
 		for (auto& bake : a_bakeSet)
 		{
 			parallelBakings.push_back(bakingThreads->submitAsync([&, bake]() {
@@ -350,7 +350,7 @@ namespace Mus {
 					{
 						const std::uint32_t subPixelOffset = subPixelIndex * numSubPixels;
 						const std::uint32_t localPixelMax = std::min(numSubTris, subPixelOffset + numSubPixels);
-						parallelTris.push_back(ThreadPool_TaskModule::GetSingleton().submitAsync([&, subIndex, subPixelOffset, localPixelMax]() {
+						parallelTris.push_back(cpuTask->submitAsync([&, subIndex, subPixelOffset, localPixelMax]() {
 #ifdef BAKE_TEST2
 							PerformanceLog(std::string(_func_) + "::" + std::to_string(taskID.taskID) + "::" + a_data.geometries[bakeIndex].second.info.name, false, false);
 #endif // BAKE_TEST2
@@ -476,9 +476,7 @@ namespace Mus {
 
 				if (!Config::GetSingleton().GetTextureMarginGPU() || Shader::ShaderManager::GetSingleton().IsFailedShader(BleedTextureShaderName.data()))
 				{
-					ThreadPool_TaskModule::GetSingleton().submitAsync([&]() {
-						BleedTexture(dstData, dstStagingDesc.Width, dstStagingDesc.Height, mappedResource.RowPitch, margin);
-																	  }).get();
+					BleedTexture(dstData, dstStagingDesc.Width, dstStagingDesc.Height, mappedResource.RowPitch, margin);
 				}
 
 				Shader::ShaderManager::GetSingleton().ShaderContextLock();
@@ -548,6 +546,12 @@ namespace Mus {
 				context->GenerateMips(dstShaderResourceView.Get());
 				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 
+				if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
+				{
+					logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
+					return;
+				}
+
 				RE::NiPointer<RE::NiSourceTexture> output = nullptr;
 				bool texCreated = false;
 				Shader::TextureLoadManager::GetSingleton().CreateNiTexture(a_bakeSet[bakeIndex].textureName, a_bakeSet[bakeIndex].srcTexturePath.empty() ? "None" : a_bakeSet[bakeIndex].srcTexturePath, dstTexture2D, dstShaderResourceView, output, texCreated);
@@ -605,21 +609,21 @@ namespace Mus {
 		//policy.SetPolicyValue(concurrency::TargetOversubscriptionFactor, 1);
 		concurrency::CurrentScheduler::Create(policy);
 
-		//ThreadPool_TaskModule::GetSingleton().submitAsync( [&a_data]() { a_data.Subdivision(Config::GetSingleton().GetSubdivision()); }).get();
+		//cpuTask->submitAsync( [&a_data]() { a_data.Subdivision(Config::GetSingleton().GetSubdivision()); }).get();
 		/*if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 			return result;
 		}*/
 
-		ThreadPool_TaskModule::GetSingleton().submitAsync( [&a_data]() { a_data.UpdateMap(); }).get();
+		cpuTask->submitAsync( [&a_data]() { a_data.UpdateMap(); }).get();
 		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 			return result;
 		}
 
-		//ThreadPool_TaskModule::GetSingleton().submitAsync( [&a_data]() { a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth()); }).get();
+		//cpuTask->submitAsync( [&a_data]() { a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth()); }).get();
 		//a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
 		/*if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
@@ -628,7 +632,7 @@ namespace Mus {
 		}
 		if (Config::GetSingleton().GetVertexSmooth() > 0)
 		{
-			ThreadPool_TaskModule::GetSingleton().submitAsync([&a_data]() { a_data.UpdateMap(); }).get();
+			cpuTask->submitAsync([&a_data]() { a_data.UpdateMap(); }).get();
 			if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 			{
 				logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
@@ -636,7 +640,7 @@ namespace Mus {
 			}
 		}*/
 
-		ThreadPool_TaskModule::GetSingleton().submitAsync([&a_data]() { a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree()); }).get();
+		cpuTask->submitAsync([&a_data]() { a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree()); }).get();
 		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
@@ -704,7 +708,7 @@ namespace Mus {
 		if (!CreateStructuredBuffer(indices.data(), UINT(sizeof(std::uint32_t) * indices.size()), sizeof(std::uint32_t), indicesBuffer, indicesSRV))
 			return result;
 
-		std::vector<std::future<void>> parallelBakings;;
+		std::vector<std::future<void>> parallelBakings;
 		for (auto& bake : a_bakeSet)
 		{
 			parallelBakings.push_back(bakingThreads->submitAsync([&, bake]() {
@@ -955,7 +959,7 @@ namespace Mus {
 				private:
 				} sb;
 
-				ThreadPool_TaskModule::GetSingleton().submitAsync([&]() {
+				gpuTask->submitAsync([&]() {
 #ifdef BAKE_TEST2
 					GPUPerformanceLog(std::string(_func_) + "::" + std::to_string(taskID.taskID) + "::" + a_data.geometries[bakeIndex].second.info.name, false, false);
 #endif // BAKE_TEST2
@@ -1030,6 +1034,12 @@ namespace Mus {
 				Shader::ShaderManager::GetSingleton().ShaderContextLock();
 				context->GenerateMips(dstShaderResourceView.Get());
 				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+
+				if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
+				{
+					logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
+					return;
+				}
 
 				RE::NiPointer<RE::NiSourceTexture> output = nullptr;
 				bool texCreated = false;
@@ -1168,7 +1178,7 @@ namespace Mus {
 
 		for (std::uint32_t m = 0; m < margin; m++)
 		{
-			ThreadPool_TaskModule::GetSingleton().submitAsync([&]() {
+			cpuTask->submitAsync([&]() {
 				concurrency::concurrent_unordered_map<std::uint32_t*, RGBA> resultColorMap;
 				concurrency::parallel_for(UINT(0), height, [&](UINT y) {
 					std::uint8_t* rowData = pData + y * RowPitch;
@@ -1210,7 +1220,7 @@ namespace Mus {
 				{
 					*map.first = map.second.GetReverse();
 				}
-			});
+			}).get();
 		}
 
 #ifdef BLEED_TEST1
@@ -1339,7 +1349,7 @@ namespace Mus {
 		{
 			const std::uint32_t subOffset = subIndex * numSubMargins;
 			const std::uint32_t localMarginMax = std::min(margin, subOffset + numSubMargins);
-			ThreadPool_TaskModule::GetSingleton().submitAsync([&, subOffset, localMarginMax]() {
+			gpuTask->submitAsync([&, subOffset, localMarginMax]() {
 #ifdef BLEED_TEST2
 				GPUPerformanceLog(std::string(_func_) + "::" + std::to_string(width) + "|" + std::to_string(height), false, false);
 #endif // BLEED_TEST2

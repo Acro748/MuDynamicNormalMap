@@ -147,7 +147,6 @@ namespace Mus {
 
 	bool ConditionManager::GetConditionFunction(ConditionItem& item)
 	{
-		bool isLeft = true;
 		switch (item.type) {
 		case ConditionType::HasKeyword:
 			item.conditionFunction = std::make_shared<ConditionFragment::HasKeyword>();

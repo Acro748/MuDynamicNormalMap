@@ -4,6 +4,7 @@ namespace Mus {
     class ThreadPool_ParallelModule
     {
     public:
+        ThreadPool_ParallelModule() = delete;
         ThreadPool_ParallelModule(std::uint32_t threadSize);
         ~ThreadPool_ParallelModule();
 
@@ -45,10 +46,9 @@ namespace Mus {
         : public IEventListener<FrameEvent>
     {
     public:
-        ThreadPool_TaskModule();
+        ThreadPool_TaskModule() = delete;
+        ThreadPool_TaskModule(std::uint8_t a_taskQTick, bool a_directTaskQ, std::uint8_t a_taskQMax);
         ~ThreadPool_TaskModule();
-
-        static ThreadPool_TaskModule& GetSingleton();
 
         template<typename F, typename... Args>
         auto submitAsync(F&& f, Args&&... args)
@@ -116,4 +116,6 @@ namespace Mus {
         void mainWorkerLoop();
         void workerLoop();
     };
+    extern std::unique_ptr<ThreadPool_TaskModule> cpuTask;
+    extern std::unique_ptr<ThreadPool_TaskModule> gpuTask;
 }

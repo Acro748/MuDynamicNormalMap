@@ -40,16 +40,14 @@ namespace Mus {
         }
     }
 
-    ThreadPool_TaskModule& ThreadPool_TaskModule::GetSingleton() {
-        static ThreadPool_TaskModule instance;
-        return instance;
-    }
+    std::unique_ptr<ThreadPool_TaskModule> cpuTask;
+    std::unique_ptr<ThreadPool_TaskModule> gpuTask;
 
-    ThreadPool_TaskModule::ThreadPool_TaskModule()
-        : stop(false), taskQTick(Config::GetSingleton().GetTaskQTick())
-        , directTaskQ(Config::GetSingleton().GetDirectTaskQ())
+    ThreadPool_TaskModule::ThreadPool_TaskModule(std::uint8_t a_taskQTick, bool a_directTaskQ, std::uint8_t a_taskQMax)
+        : stop(false), taskQTick(a_taskQTick)
+        , directTaskQ(a_directTaskQ)
         , priorityCoreMask(Config::GetSingleton().GetPriorityCores())
-        , taskQMaxCount(std::max(std::uint8_t(1), Config::GetSingleton().GetTaskQMax()))
+        , taskQMaxCount(std::max(std::uint8_t(1), a_taskQMax))
     {
         mainWorker = std::make_unique<std::thread>([this] { mainWorkerLoop(); });
         for (std::uint8_t i = 0; i < taskQMaxCount + 1; i++) {
