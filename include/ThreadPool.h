@@ -94,7 +94,7 @@ namespace Mus {
 
     private:
         std::unique_ptr<std::thread> mainWorker;
-        std::unique_ptr<std::function<void()>> mainTask;
+        bool mainTask;
         std::mutex mainMutex;
         std::condition_variable maincv;
 
