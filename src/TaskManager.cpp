@@ -436,16 +436,16 @@ namespace Mus {
 					DetachTaskID(taskIDsrc, taskIDsrc.taskID);
 					return;
 				}
+				if (!IsValidTaskID(taskIDsrc))
+				{
+					logger::error("{:x}::{}::{} : invalid task queue. so cancel all current queue for bake object normalmap", id, actorName, taskIDsrc.taskID);
+					return;
+				}
 				auto root = refr->loadedData->data3D.get();
 
 				RE::BSVisit::TraverseScenegraphGeometries(root, [&](RE::BSGeometry* geo) -> RE::BSVisit::BSVisitControl {
 					using State = RE::BSGeometry::States;
 					using Feature = RE::BSShaderMaterial::Feature;
-					if (!IsValidTaskID(taskIDsrc))
-					{
-						logger::error("{:x}::{}::{} : invalid task queue. so cancel all current queue for bake object normalmap", id, actorName, taskIDsrc.taskID);
-						return RE::BSVisit::BSVisitControl::kStop;
-					}
 					if (!geo || geo->name.empty())
 						return RE::BSVisit::BSVisitControl::kContinue;
 					auto found = std::find_if(textures.begin(), textures.end(), [&geo](ObjectNormalMapUpdater::NormalMapResult normalmap) {
@@ -706,25 +706,33 @@ namespace Mus {
 				}
 				else if (keyCode == Config::GetSingleton().GetHotKey2())
 				{
-					if (isPressedHotKey1 || Config::GetSingleton().GetHotKey1() == 0)
+					if (button->IsUp())
 					{
-						RE::Actor* target = nullptr;
-						if (auto crossHair = RE::CrosshairPickData::GetSingleton(); crossHair && crossHair->targetActor)
+						if (isPressedHotKey1 || Config::GetSingleton().GetHotKey1() == 0)
 						{
-#ifndef ENABLE_SKYRIM_VR
-							target = skyrim_cast<RE::Actor*>(crossHair->targetActor.get().get());
-#else
-							for (std::uint32_t i = 0; i < RE::VRControls::VR_DEVICE::kTotal; i++)
+							RE::Actor* target = nullptr;
+							if (auto crossHair = RE::CrosshairPickData::GetSingleton(); crossHair && crossHair->targetActor)
 							{
-								target = skyrim_cast<RE::Actor*>(crossHair->targetActor[i].get().get());
-								if (target)
-									break;
-							}
+#ifndef ENABLE_SKYRIM_VR
+								target = skyrim_cast<RE::Actor*>(crossHair->targetActor.get().get());
+#else
+								for (std::uint32_t i = 0; i < RE::VRControls::VR_DEVICE::kTotal; i++)
+								{
+									target = skyrim_cast<RE::Actor*>(crossHair->targetActor[i].get().get());
+									if (target)
+										break;
+								}
 #endif
+							}
+							if (!target)
+								target = RE::PlayerCharacter::GetSingleton();
+							QUpdateNormalMap(target, BipedObjectSlot::kAll);
 						}
-						if (!target)
-							target = RE::PlayerCharacter::GetSingleton();
-						QUpdateNormalMap(target, BipedObjectSlot::kAll);
+					}
+					else if (button->HeldDuration() >= 3.0f) //forced reset
+					{
+						cpuTask = std::make_unique<ThreadPool_TaskModule>(Config::GetSingleton().GetTaskQTick(), Config::GetSingleton().GetDirectTaskQ(), Config::GetSingleton().GetTaskQMax());
+						gpuTask = std::make_unique<ThreadPool_TaskModule>(0, Config::GetSingleton().GetDirectTaskQ(), Config::GetSingleton().GetTaskQMax());
 					}
 				}
 			}

@@ -69,18 +69,21 @@ namespace Mus {
         if (priorityCoreMask > 0)
             SetThreadAffinityMask(GetCurrentThread(), priorityCoreMask);
         while (true) {
-            std::function<void()> task;
             {
                 std::unique_lock lock(mainMutex);
                 maincv.wait(lock, [this] { 
-                    return stop.load() || mainTask != nullptr;
+                    return stop.load() || mainTask;
                 });
-                if (stop.load() && mainTask == nullptr)
+                if (stop.load())
                     return;
-                task = std::move(*mainTask);
-                mainTask = nullptr;
+                std::lock_guard<std::mutex> qlg(queueMutex);
+                while (currentTasks.size() < taskQMaxCount && !tasks.empty()) {
+                    currentTasks.push(std::move(tasks.front()));
+                    cv.notify_one();
+                    tasks.pop();
+                }
+                mainTask = false;
             }
-            task();
         }
     }
     void ThreadPool_TaskModule::workerLoop() {
@@ -115,15 +118,7 @@ namespace Mus {
             return;
         lastTickTime = now;
 
-        std::lock_guard<std::mutex> mlg(mainMutex);
-        mainTask = std::make_unique<std::function<void()>>([this]{
-            std::lock_guard<std::mutex> qlg(queueMutex);
-            while (currentTasks.size() < taskQMaxCount && !tasks.empty()) {
-                currentTasks.push(std::move(tasks.front()));
-                cv.notify_one();
-                tasks.pop();
-            }
-        });
+        mainTask = true;
         maincv.notify_one();
     }
 }
