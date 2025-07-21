@@ -150,7 +150,13 @@ namespace Mus {
 
 					if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.detailTexturePath, detailDesc, detailShaderResourceViewDesc, DXGI_FORMAT_R8G8B8A8_UNORM, detailTexture2D))
 					{
+						auto tmpDesc = dstDesc;
 						dstDesc = detailDesc;
+						if ((std::uint64_t)detailDesc.Width * (std::uint64_t)detailDesc.Height < (std::uint64_t)tmpDesc.Width * (std::uint64_t)tmpDesc.Height)
+						{
+							dstDesc.Width = tmpDesc.Width;
+							dstDesc.Height = tmpDesc.Height;
+						}
 
 						detailStagingDesc = detailDesc;
 						detailStagingDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -331,6 +337,8 @@ namespace Mus {
 				const float invHeight = 1.0f / HeightF;
 				const float srcWidthF = hasSrcData ? (float)srcStagingDesc.Width : 0.0f;
 				const float srcHeightF = hasSrcData ? (float)srcStagingDesc.Height : 0.0f;
+				const float detailWidthF = hasDetailData ? (float)detailStagingDesc.Width : 0.0f;
+				const float detailHeightF = hasDetailData ? (float)detailStagingDesc.Height : 0.0f;
 				const float overlayWidthF = hasOverlayData ? (float)overlayStagingDesc.Width : 0.0f;
 				const float overlayHeightF = hasOverlayData ? (float)overlayStagingDesc.Height : 0.0f;
 				const float maskWidthF = hasMaskData ? (float)maskStagingDesc.Width : 0.0f;
@@ -436,7 +444,7 @@ namespace Mus {
 									uint8_t* detailRowData = nullptr;
 									if (hasDetailData)
 									{
-										const float detailY = mY * HeightF;
+										const float detailY = mY * detailHeightF;
 										detailRowData = detailData + (UINT)detailY * detailMappedResource.RowPitch;
 									}
 
@@ -485,7 +493,7 @@ namespace Mus {
 												RGBA detailColor(0.5f, 0.5f, 1.0f, 0.5f);
 												if (hasDetailData)
 												{
-													const float detailX = mX * WidthF;
+													const float detailX = mX * detailWidthF;
 													const std::uint32_t* detailPixel = reinterpret_cast<std::uint32_t*>(detailRowData + (UINT)detailX * 4);
 													detailColor.SetReverse(*detailPixel);
 													detailColor = RGBA::lerp(RGBA(0.5f, 0.5f, 1.0f, detailColor.a), detailColor, detailStrength);
@@ -856,8 +864,16 @@ namespace Mus {
 					logger::info("{}::{}::{} : {} detail texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.detailTexturePath);
 					if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.detailTexturePath, detailDesc, detailShaderResourceViewDesc, DXGI_FORMAT_UNKNOWN, detailTexture2D))
 					{
+						auto tmpDesc = dstDesc;
 						dstWriteDesc = detailDesc;
 						dstDesc = detailDesc;
+						if ((std::uint64_t)detailDesc.Width * (std::uint64_t)detailDesc.Height < (std::uint64_t)tmpDesc.Width * (std::uint64_t)tmpDesc.Height)
+						{
+							dstWriteDesc.Width = tmpDesc.Width;
+							dstWriteDesc.Height = tmpDesc.Height;
+							dstDesc.Width = tmpDesc.Width;
+							dstDesc.Height = tmpDesc.Height;
+						}
 						dstShaderResourceViewDesc = detailShaderResourceViewDesc;
 
 						detailShaderResourceViewDesc.Texture2D.MipLevels = 1;

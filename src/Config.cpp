@@ -333,7 +333,7 @@ namespace Mus {
                         condition.DetailStrength = GetFloatValue(variableValue);
                         isNormalConditionFile = true;
                     }
-                    else if (variableName == "ProxyDetailTextureFolder")
+                    else if (variableName == "ProxyDetailTextureFolder" || variableName == "ProxyTangentTextureFolder")
                     {
                         if (!variableValue.empty())
                         {
