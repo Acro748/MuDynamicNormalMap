@@ -304,6 +304,9 @@ namespace Mus {
 			condition.HeadEnable = GetHeadEnable();
 			condition.DetailStrength = GetDetailStrength();
 
+            bool isNormalConditionFile = false;
+            bool isConditionState = false;
+
             std::string line;
             while (std::getline(ifile, line))
             {
@@ -313,19 +316,24 @@ namespace Mus {
                 {
                     std::string variableName;
                     std::string variableValue = GetConfigSetting(line, variableName);
+                    isConditionState = variableValue == "Condition";
+
                     if (variableName == "Enable")
                     {
                         condition.Enable = GetBoolValue(variableValue);
+                        isNormalConditionFile = true;
                     }
                     else if (variableName == "HeadEnable")
                     {
                         condition.HeadEnable = GetBoolValue(variableValue);
+                        isNormalConditionFile = true;
                     }
                     else if (variableName == "DetailStrength")
                     {
                         condition.DetailStrength = GetFloatValue(variableValue);
+                        isNormalConditionFile = true;
                     }
-                    else if (variableName == "ProxyDetailTextureFolder")
+                    else if (variableName == "ProxyDetailTextureFolder" || variableName == "ProxyTangentTextureFolder")
                     {
                         if (!variableValue.empty())
                         {
@@ -334,6 +342,7 @@ namespace Mus {
                                 condition.ProxyDetailTextureFolder.push_back(value);
                             }
                         }
+                        isNormalConditionFile = true;
                     }
                     else if (variableName == "ProxyOverlayTextureFolder")
                     {
@@ -344,6 +353,7 @@ namespace Mus {
                                 condition.ProxyOverlayTextureFolder.push_back(value);
                             }
                         }
+                        isNormalConditionFile = true;
                     }
                     else if (variableName == "ProxyMaskTextureFolder")
                     {
@@ -354,18 +364,27 @@ namespace Mus {
                                 condition.ProxyMaskTextureFolder.push_back(value);
                             }
                         }
+                        isNormalConditionFile = true;
                     }
                     else if (variableName == "Priority")
                     {
                         condition.Priority = GetIntValue(variableValue);
+                        isNormalConditionFile = true;
+                    }
+                    else if (variableValue == "Condition")
+                    {
+                        condition.originalCondition = variableValue;
+                        isNormalConditionFile = true;
                     }
                     else
                     {
-                        condition.originalCondition += " " + variableValue;
+                        if (isConditionState)
+                            condition.originalCondition += " " + variableValue;
                     }
                 }
             }
-            ConditionManager::GetSingleton().RegisterCondition(condition);
+            if (isNormalConditionFile)
+                ConditionManager::GetSingleton().RegisterCondition(condition);
         });
         return false;
     }

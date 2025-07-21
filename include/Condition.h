@@ -54,7 +54,7 @@ namespace Mus {
 			std::vector<std::string> ProxyDetailTextureFolder;
 			std::vector<std::string> ProxyOverlayTextureFolder;
 			std::vector<std::string> ProxyMaskTextureFolder;
-			std::int32_t Priority;
+			std::int32_t Priority = 0;
 		};
 		bool RegisterCondition(Condition condition);
 		void SortConditions();
