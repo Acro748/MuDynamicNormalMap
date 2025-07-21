@@ -316,7 +316,7 @@ namespace Mus {
                 {
                     std::string variableName;
                     std::string variableValue = GetConfigSetting(line, variableName);
-                    isConditionState = variableValue == "Condition";
+                    isConditionState = variableName == "Condition";
 
                     if (variableName == "Enable")
                     {
@@ -371,7 +371,7 @@ namespace Mus {
                         condition.Priority = GetIntValue(variableValue);
                         isNormalConditionFile = true;
                     }
-                    else if (variableValue == "Condition")
+                    else if (variableName == "Condition")
                     {
                         condition.originalCondition = variableValue;
                         isNormalConditionFile = true;
