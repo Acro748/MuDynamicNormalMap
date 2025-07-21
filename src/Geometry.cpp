@@ -308,6 +308,8 @@ namespace Mus {
 			positionMap[{ p1 }].push_back(i1);
 			positionMap[{ p2 }].push_back(i2);
 		});
+		logger::debug("{}::{} : vertex map updated, vertices {} / uvs {} / tris {}", __func__,
+					 mainInfo.name, vertices.size(), uvs.size(), indices.size() / 3);
 #ifdef GEOMETRY_TEST
 		PerformanceLog(std::string(__func__) + "::" + std::to_string(indices.size()), true, false);
 #endif // GEOMETRY_TEST
@@ -421,7 +423,7 @@ namespace Mus {
 #ifdef GEOMETRY_TEST
 		PerformanceLog(std::string(__func__) + "::" + std::to_string(normals.size()), true, false);
 #endif // GEOMETRY_TEST
-		logger::debug("{} : normals {} re-calculated", __func__, normals.size());
+		logger::debug("{}::{} : normals {} re-calculated", __func__, mainInfo.name, normals.size());
 		return;
 	}
 

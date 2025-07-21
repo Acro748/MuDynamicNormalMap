@@ -93,11 +93,6 @@ namespace Mus {
         void onEvent(const FrameEvent& e) override;
 
     private:
-        std::unique_ptr<std::thread> mainWorker;
-        bool mainTask;
-        std::mutex mainMutex;
-        std::condition_variable maincv;
-
         std::vector<std::thread> workers;
         std::queue<std::function<void()>> tasks;
         std::queue<std::function<void()>> currentTasks;
@@ -113,7 +108,6 @@ namespace Mus {
         const std::uint8_t taskQMaxCount = 1;
         const bool directTaskQ = false;
 
-        void mainWorkerLoop();
         void workerLoop();
     };
     extern std::unique_ptr<ThreadPool_TaskModule> cpuTask;

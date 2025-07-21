@@ -138,6 +138,8 @@ namespace util {
     using SKSE::stl::report_and_fail;
 }
 
+using EventResult = RE::BSEventNotifyControl;
+
 #include "B/BSFaceGenBaseMorphExtraData.h"
 
 #include "MiniBenchmark.h"

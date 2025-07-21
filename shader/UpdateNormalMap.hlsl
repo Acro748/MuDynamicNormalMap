@@ -6,9 +6,14 @@ cbuffer ConstBuffer : register(b0)
     uint indicesEnd;
 
     uint hasSrcTexture;
+    uint hasDetailTexture;
     uint hasOverlayTexture;
+    uint hasMaskTexture;
+
     uint tangentZCorrection;
-    uint padding0;
+    float detailStrength;
+    uint padding1;
+    uint padding2;
 };
 
 StructuredBuffer<float3> vertices   : register(t0); // a_data.vertices
@@ -19,7 +24,9 @@ StructuredBuffer<float3> bitangent  : register(t4); // a_data.bitangent
 StructuredBuffer<uint>   indices    : register(t5); // a_data.indices
 
 Texture2D<float4> srcTexture        : register(t6);
-Texture2D<float4> overlayTexture    : register(t7);
+Texture2D<float4> detailTexture     : register(t7);
+Texture2D<float4> overlayTexture    : register(t8);
+Texture2D<float4> maskTexture       : register(t9);
 
 RWTexture2D<float4> dstTexture      : register(u0);
 RWByteAddressBuffer pixelLock       : register(u1);
@@ -51,12 +58,6 @@ bool ComputeBarycentric(float2 p, float2 a, float2 b, float2 c, out float3 bary)
 
     bary = float3(u, v, w);
     return true;
-}
-
-bool ComputeBarycentrics(float2 p, float2 a, float2 b, float2 c, out float3 bary)
-{
-    return ComputeBarycentric(p, a, b, c, bary) || ComputeBarycentric(p + float2(1.0f, 0.0f), a, b, c, bary) ||
-        ComputeBarycentric(p + float2(0.0f, 1.0f), a, b, c, bary) || ComputeBarycentric(p + float2(1.0f, 1.0f), a, b, c, bary);
 }
 
 [numthreads(64, 1, 1)]
@@ -104,7 +105,7 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
         {
             uint2 xy = uint2(x, y);
             float3 bary;
-            if (!ComputeBarycentrics(float2(xy), p0, p1, p2, bary))
+            if (!ComputeBarycentric(float2(xy) + float2(0.5f, 0.5f), p0, p1, p2, bary))
                 continue;
 
             uint addr = (y * texWidth + x) * 4;
@@ -124,43 +125,57 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
 
             if (overlayColor.a < 1.0f)
             {
-                float3 n = normalize(n0 * bary.x + n1 * bary.y + n2 * bary.z);
-
-                float4 srcColor = float4(0.5f, 0.5f, 1.0f, 0.0f);
-                if (hasSrcTexture > 0)
+                float4 maskColor = float4(1.0f, 1.0f, 1.0f, 0.0f);
+                if (hasMaskTexture > 0 && hasSrcTexture > 0)
                 {
-                    srcColor = srcTexture.SampleLevel(samplerState, uv, 0);
+                    maskColor = maskTexture.SampleLevel(samplerState, uv, 0);
                 }
-
-                float3 normalResult;
-                if (srcColor.a > 0.0f)
+                if (maskColor.a < 1.0f)
                 {
-                    float3 t = normalize(t0 * bary.x + t1 * bary.y + t2 * bary.z);
-                    float3 b = normalize(b0 * bary.x + b1 * bary.y + b2 * bary.z);
+                    float3 n = normalize(n0 * bary.x + n1 * bary.y + n2 * bary.z);
 
-                    float3 ft = normalize(t - n * dot(n, t).x);
-                    float3 cr = cross(n, ft);
-                    float handedness = (dot(cr, b).x < 0.0f) ? -1.0f : 1.0f;
-                    float3 fb = normalize(cr * handedness);
-
-                    float3x3 tbn = float3x3(ft, fb, n);
-
-                    float3 srcN = float3(srcColor.rgb * 2.0f - 1.0f);
-                    if (tangentZCorrection)
+                    float4 detailColor = float4(0.5f, 0.5f, 1.0f, 0.5f);
+                    if (hasDetailTexture > 0)
                     {
-                        srcN.z = sqrt(max(0.0f, 1.0f - srcN.x * srcN.x - srcN.y * srcN.y));
+                        detailColor = detailTexture.SampleLevel(samplerState, uv, 0);
+                        detailColor = lerp(float4(0.5f, 0.5f, 1.0f, detailColor.a), detailColor, detailStrength);
                     }
 
-                    float3 detailNormal = normalize(mul(srcN, tbn));
-                    normalResult = normalize(lerp(n, detailNormal, srcColor.a));
-                }
-                else
-                {
-                    normalResult = n;
-                }
+                    float3 normalResult;
+                    if (detailColor.a > 0.0f)
+                    {
+                        float3 t = normalize(t0 * bary.x + t1 * bary.y + t2 * bary.z);
+                        float3 b = normalize(b0 * bary.x + b1 * bary.y + b2 * bary.z);
 
-                float3 finalNormal = normalResult * 0.5f + 0.5f;
-                dstColor.rgb = finalNormal.xzy;
+                        float3 ft = normalize(t - n * dot(n, t).x);
+                        float3 cr = cross(n, ft);
+                        float handedness = (dot(cr, b).x < 0.0f) ? -1.0f : 1.0f;
+                        float3 fb = normalize(cr * handedness);
+
+                        float3x3 tbn = float3x3(ft, fb, n);
+
+                        float3 srcN = float3(detailColor.rgb * 2.0f - 1.0f);
+                        if (tangentZCorrection)
+                        {
+                            srcN.z = sqrt(max(0.0f, 1.0f - srcN.x * srcN.x - srcN.y * srcN.y));
+                        }
+
+                        float3 detailNormal = normalize(mul(srcN, tbn));
+                        normalResult = normalize(lerp(n, detailNormal, detailColor.a));
+                    }
+                    else
+                    {
+                        normalResult = n;
+                    }
+
+                    float3 finalNormal = normalResult * 0.5f + 0.5f;
+                    dstColor.rgb = finalNormal.xzy;
+                }
+                if (maskColor.a > 0.0f && hasSrcTexture > 0)
+                {
+					float4 srcColor = srcTexture.SampleLevel(samplerState, uv, 0);
+					dstColor.rgb = lerp(dstColor.rgb, srcColor.rgb, maskColor.a);
+                }
             }
 
             if (overlayColor.a > 0.0f)

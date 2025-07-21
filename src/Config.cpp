@@ -131,6 +131,19 @@ namespace Mus {
 				{
                     RealtimeDetectHead = GetUIntValue(variableValue);
 				}
+                else if (variableName == "RealtimeDetectHead")
+				{
+                    RealtimeDetectOnBackGround = GetBoolValue(variableValue);
+				}
+                else if (variableName == "DetectDistance")
+				{
+                    float value = GetFloatValue(variableValue);
+                    DetectDistance = value * value;
+				}
+                else if (variableName == "DetectTick")
+				{
+                    DetectTick = GetIntValue(variableValue);
+				}
                 else if (variableName == "GPUEnable")
                 {
 					GPUEnable = GetBoolValue(variableValue);
@@ -210,6 +223,10 @@ namespace Mus {
 				{
                     TangentZCorrection = GetBoolValue(variableValue);
 				}
+				else if (variableName == "DetailStrength")
+				{
+                    DetailStrength = std::clamp(GetFloatValue(variableValue), 0.0f, 1.0f);
+				}
 			}
         }
 
@@ -284,6 +301,8 @@ namespace Mus {
 
             ConditionManager::Condition condition;
             condition.fileName = filename;
+			condition.HeadEnable = GetHeadEnable();
+			condition.DetailStrength = GetDetailStrength();
 
             std::string line;
             while (std::getline(ifile, line))
@@ -302,13 +321,17 @@ namespace Mus {
                     {
                         condition.HeadEnable = GetBoolValue(variableValue);
                     }
-                    else if (variableName == "ProxyTangentTextureFolder")
+                    else if (variableName == "DetailStrength")
+                    {
+                        condition.DetailStrength = GetFloatValue(variableValue);
+                    }
+                    else if (variableName == "ProxyDetailTextureFolder")
                     {
                         if (!variableValue.empty())
                         {
                             for (auto& value : split(variableValue, ','))
                             {
-                                condition.ProxyTangentTextureFolder.push_back(value);
+                                condition.ProxyDetailTextureFolder.push_back(value);
                             }
                         }
                     }
@@ -319,6 +342,16 @@ namespace Mus {
                             for (auto& value : split(variableValue, ','))
                             {
                                 condition.ProxyOverlayTextureFolder.push_back(value);
+                            }
+                        }
+                    }
+                    else if (variableName == "ProxyMaskTextureFolder")
+                    {
+                        if (!variableValue.empty())
+                        {
+                            for (auto& value : split(variableValue, ','))
+                            {
+                                condition.ProxyMaskTextureFolder.push_back(value);
                             }
                         }
                     }

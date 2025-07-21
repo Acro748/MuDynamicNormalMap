@@ -208,28 +208,25 @@ namespace Mus {
 		return geometries;
 	}
 
-	void TaskManager::QUpdateNormalMap(RE::Actor* a_actor, std::uint32_t bipedSlot)
+	bool TaskManager::QUpdateNormalMap(RE::Actor* a_actor, std::uint32_t bipedSlot)
 	{
 		if (!a_actor)
-			return;
+			return false;
 		RE::FormID id = a_actor->formID;
 		std::string actorName = a_actor->GetName();
+		if (GetCurrentTaskID(TaskID{ id, std::to_string(bipedSlot) }) != 0)
+			return false;
 		if (isPlayer(id) && !Config::GetSingleton().GetPlayerEnable())
-			return;
+			return true;
 		if (!isPlayer(id) && !Config::GetSingleton().GetNPCEnable())
-			return;
+			return true;
 		if (GetSex(a_actor) == RE::SEX::kMale && !Config::GetSingleton().GetMaleEnable())
-			return;
+			return true;
 		if (GetSex(a_actor) == RE::SEX::kFemale && !Config::GetSingleton().GetFemaleEnable())
-			return;
+			return true;
 		if (!Config::GetSingleton().GetHeadEnable())
-			return;
-		auto condition = ConditionManager::GetSingleton().GetCondition(a_actor);
-		if (!condition.Enable)
-			return;
-		if (!condition.HeadEnable)
-			bipedSlot &= ~std::to_underlying(BipedObjectSlot::kHead);
-		QUpdateNormalMap(a_actor, GetAllGeometries(a_actor), bipedSlot);
+			return true;
+		return QUpdateNormalMap(a_actor, GetAllGeometries(a_actor), bipedSlot);
 	}
 
 	bool TaskManager::QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::uint32_t bipedSlot)
@@ -245,6 +242,13 @@ namespace Mus {
 		BakeData bakeData;
 		std::size_t geoIndex = 0;
 		auto condition = ConditionManager::GetSingleton().GetCondition(a_actor);
+		if (!condition.Enable)
+			return true;
+		if (!condition.HeadEnable)
+			bipedSlot &= ~std::to_underlying(BipedObjectSlot::kHead);
+		float detailStrength = condition.DetailStrength;
+		if (Papyrus::detailStrengthMap.find(id) != Papyrus::detailStrengthMap.end())
+			detailStrength = Papyrus::detailStrengthMap[id];
 		for (auto& geo : a_srcGeometies)
 		{
 			using State = RE::BSGeometry::States;
@@ -294,8 +298,11 @@ namespace Mus {
 				newBakeTextureSet.geometry = geo;
 				newBakeTextureSet.textureName = GetTextureName(a_actor, slot, geo);
 				newBakeTextureSet.geometryName = geo->name.c_str();
-				newBakeTextureSet.srcTexturePath = GetTangentNormalMapPath(texturePath, condition.ProxyTangentTextureFolder);
+				newBakeTextureSet.srcTexturePath = texturePath;
+				newBakeTextureSet.detailTexturePath = GetDetailNormalMapPath(texturePath, condition.ProxyDetailTextureFolder);
 				newBakeTextureSet.overlayTexturePath = GetOverlayNormalMapPath(texturePath, condition.ProxyOverlayTextureFolder);
+				newBakeTextureSet.maskTexturePath = GetMaskNormalMapPath(texturePath, condition.ProxyMaskTextureFolder);
+				newBakeTextureSet.detailStrength = detailStrength;
 				bakeData.bakeTextureSet.emplace(geoIndex, newBakeTextureSet);
 				logger::debug("{:x}::{} : {} - queue added on bake object normalmap", id, actorName,
 							  geo->name.c_str(), newBakeTextureSet.overlayTexturePath);
@@ -313,6 +320,11 @@ namespace Mus {
 			return false;
 
 		auto taskIDsrc = TaskID{ id, std::to_string(bipedSlot)};
+		if (GetCurrentTaskID(taskIDsrc) != 0)
+		{
+			logger::info("{:x}::{} : {} - queue already exists", id, actorName, bipedSlot);
+			return false;
+		}
 		taskIDsrc.taskID = AttachTaskID(taskIDsrc);
 
 		QUpdateNormalMap(taskIDsrc, id, actorName, bakeData);
@@ -332,6 +344,11 @@ namespace Mus {
 		std::size_t geoIndex = 0;
 		std::uint32_t bipedSlot = 0;
 		auto condition = ConditionManager::GetSingleton().GetCondition(a_actor);
+		if (!condition.Enable)
+			return true;
+		float detailStrength = condition.DetailStrength;
+		if (Papyrus::detailStrengthMap.find(id) != Papyrus::detailStrengthMap.end())
+			detailStrength = Papyrus::detailStrengthMap[id];
 		for (auto& geo : a_srcGeometies)
 		{
 			using State = RE::BSGeometry::States;
@@ -375,25 +392,32 @@ namespace Mus {
 				slot = RE::BIPED_OBJECT::kHead;
 			}
 
+			if (!condition.HeadEnable && slot == RE::BIPED_OBJECT::kHead)
+				continue;
+
 			if (a_updateTargets.find(geo) != a_updateTargets.end())
 			{
-				if (!(bipedSlot & 1 << slot))
-				{
-					bipedSlot += 1 << slot;
-				}
+				bipedSlot |= 1 << slot;
+
 				BakeTextureSet newBakeTextureSet;
 				newBakeTextureSet.geometry = geo;
 				newBakeTextureSet.textureName = GetTextureName(a_actor, slot, geo);
 				newBakeTextureSet.geometryName = geo->name.c_str();
-				newBakeTextureSet.srcTexturePath = GetTangentNormalMapPath(texturePath, condition.ProxyTangentTextureFolder);
+				newBakeTextureSet.srcTexturePath = texturePath;
+				newBakeTextureSet.detailTexturePath = GetDetailNormalMapPath(texturePath, condition.ProxyDetailTextureFolder);
 				newBakeTextureSet.overlayTexturePath = GetOverlayNormalMapPath(texturePath, condition.ProxyOverlayTextureFolder);
+				newBakeTextureSet.maskTexturePath = GetMaskNormalMapPath(texturePath, condition.ProxyMaskTextureFolder);
+				newBakeTextureSet.detailStrength = detailStrength;
 				bakeData.bakeTextureSet.emplace(geoIndex, newBakeTextureSet);
 				logger::debug("{:x}::{} : {} - queue added on bake object normalmap", id, actorName,
 							  geo->name.c_str(), newBakeTextureSet.overlayTexturePath);
 
 				auto found = lastNormalMap[id].find(bakeData.geoData.geometries[geoIndex].second.info.vertexCount);
 				if (found != lastNormalMap[id].end())
+				{
 					Shader::TextureLoadManager::CreateSourceTexture(found->second, material->normalTexture);
+
+				}
 
 				ActorVertexHasher::GetSingleton().Register(a_actor, RE::BIPED_OBJECT(slot));
 			}
@@ -425,10 +449,14 @@ namespace Mus {
 			if (textures.empty())
 			{
 				logger::error("{:x}::{}::{} : Failed to bake object normalmap", id, actorName, taskIDsrc.taskID);
+				DetachTaskID(taskIDsrc, taskIDsrc.taskID);
 				return;
 			}
 
 			RegisterDelayTask(std::to_string(GenerateUniqueID()), [this, id, actorName, textures, taskIDsrc]() {
+				if (!IsValidTaskID(taskIDsrc))
+					return;
+
 				auto refr = GetFormByID<RE::TESObjectREFR*>(id);
 				if (!refr || !refr->loadedData || !refr->loadedData->data3D)
 				{
@@ -436,11 +464,7 @@ namespace Mus {
 					DetachTaskID(taskIDsrc, taskIDsrc.taskID);
 					return;
 				}
-				if (!IsValidTaskID(taskIDsrc))
-				{
-					logger::error("{:x}::{}::{} : invalid task queue. so cancel all current queue for bake object normalmap", id, actorName, taskIDsrc.taskID);
-					return;
-				}
+
 				auto root = refr->loadedData->data3D.get();
 
 				RE::BSVisit::TraverseScenegraphGeometries(root, [&](RE::BSGeometry* geo) -> RE::BSVisit::BSVisitControl {
@@ -452,6 +476,8 @@ namespace Mus {
 						return normalmap.geometry == geo;
 					});
 					if (found == textures.end())
+						return RE::BSVisit::BSVisitControl::kContinue;
+					if (!found->normalmap)
 						return RE::BSVisit::BSVisitControl::kContinue;
 					auto effect = geo->GetGeometryRuntimeData().properties[State::kEffect].get();
 					if (!effect)
@@ -469,11 +495,12 @@ namespace Mus {
 					logger::info("{:x}::{}::{} : {} bake object normalmap done", id, actorName, taskIDsrc.taskID, geo->name.c_str());
 					return RE::BSVisit::BSVisitControl::kContinue;
 				});
+				DetachTaskID(taskIDsrc, taskIDsrc.taskID);
 			});
 		});
 	}
 
-	std::string TaskManager::GetTangentNormalMapPath(std::string a_normalMapPath)
+	std::string TaskManager::GetDetailNormalMapPath(std::string a_normalMapPath)
 	{
 		constexpr std::string_view prefix = "Textures\\";
 		constexpr std::string_view msn_suffix = "_msn";
@@ -499,20 +526,20 @@ namespace Mus {
 		}
 		return "";
 	}
-	std::string TaskManager::GetTangentNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder)
+	std::string TaskManager::GetDetailNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder)
 	{
-		std::string result = GetTangentNormalMapPath(a_normalMapPath);
+		std::string result = GetDetailNormalMapPath(a_normalMapPath);
 		if (!result.empty() || a_proxyFolder.empty())
 			return result;
 		std::filesystem::path file(a_normalMapPath);
 		std::string filename = file.stem().string();
 		for (auto& folder : a_proxyFolder)
 		{
-			result = GetTangentNormalMapPath(folder + "\\" + filename + ".dds");
+			result = GetDetailNormalMapPath(folder + "\\" + filename + ".dds");
 			if (!result.empty())
 				return result;
 		}
-		return a_normalMapPath;
+		return "";
 	}
 
 	std::string TaskManager::GetOverlayNormalMapPath(std::string a_normalMapPath)
@@ -544,11 +571,6 @@ namespace Mus {
 			if (IsExistFile(fullPath, ExistType::textures))
 				return fullPath;
 		}
-		if (stringEndsWith(filename, ov_suffix.data())) //_ov
-		{
-			if (IsExistFile(a_normalMapPath, ExistType::textures))
-				return a_normalMapPath;
-		}
 		return "";
 	}
 	std::string TaskManager::GetOverlayNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder)
@@ -562,6 +584,54 @@ namespace Mus {
 		{
 			a_normalMapPath = folder + "\\" + filename + ".dds";
 			result = GetOverlayNormalMapPath(a_normalMapPath);
+			if (!result.empty())
+				return result;
+		}
+		return "";
+	}
+
+	std::string TaskManager::GetMaskNormalMapPath(std::string a_normalMapPath)
+	{
+		constexpr std::string_view prefix = "Textures\\";
+		constexpr std::string_view msn_suffix = "_msn";
+		constexpr std::string_view n_suffix = "_n";
+		constexpr std::string_view m_suffix = "_m";
+		if (a_normalMapPath.empty())
+			return "";
+		if (!stringStartsWith(a_normalMapPath, prefix.data()))
+			a_normalMapPath = prefix.data() + a_normalMapPath;
+		std::filesystem::path file(a_normalMapPath);
+		std::string filename = file.stem().string();
+
+		if (stringEndsWith(filename, msn_suffix.data())) //_msn -> _n_m
+		{
+			std::string filename_n_m = stringRemoveEnds(filename, msn_suffix.data());
+			filename_n_m += n_suffix;
+			filename_n_m += m_suffix;
+			std::string fullPath = (file.parent_path() / (filename_n_m + ".dds")).string();
+			if (IsExistFile(fullPath, ExistType::textures))
+				return fullPath;
+		}
+		if (stringEndsWith(filename, n_suffix.data())) //_n -> _n_m
+		{
+			std::string filename_n_m = filename + m_suffix.data();
+			std::string fullPath = (file.parent_path() / (filename_n_m + ".dds")).string();
+			if (IsExistFile(fullPath, ExistType::textures))
+				return fullPath;
+		}
+		return "";
+	}
+	std::string TaskManager::GetMaskNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder)
+	{
+		std::string result = GetMaskNormalMapPath(a_normalMapPath);
+		if (!result.empty() || a_proxyFolder.empty())
+			return result;
+		std::filesystem::path file(a_normalMapPath);
+		std::string filename = file.stem().string();
+		for (auto& folder : a_proxyFolder)
+		{
+			a_normalMapPath = folder + "\\" + filename + ".dds";
+			result = GetMaskNormalMapPath(a_normalMapPath);
 			if (!result.empty())
 				return result;
 		}
@@ -602,11 +672,17 @@ namespace Mus {
 		updateNormalMapTaskID[taskIDsrc.refrID].erase(taskIDsrc.taskName);
 		updateNormalMapLock.unlock();
 	}
+	void TaskManager::ResetTaskID()
+	{
+		updateNormalMapLock.lock();
+		updateNormalMapTaskID.clear();
+		updateNormalMapLock.unlock();
+	}
 	std::uint64_t TaskManager::GetCurrentTaskID(TaskID taskIDsrc) 
 	{
 		if (taskIDsrc.refrID == 0 || taskIDsrc.taskName.empty())
-			return -1;
-		std::uint64_t taskID = -1;
+			return 0;
+		std::uint64_t taskID = 0;
 		updateNormalMapLock.lock_shared();
 		if (auto found1 = updateNormalMapTaskID.find(taskIDsrc.refrID); found1 != updateNormalMapTaskID.end()) {
 			if (auto found2 = found1->second.find(taskIDsrc.taskName); found2 != found1->second.end())
@@ -727,12 +803,27 @@ namespace Mus {
 							if (!target)
 								target = RE::PlayerCharacter::GetSingleton();
 							QUpdateNormalMap(target, BipedObjectSlot::kAll);
+							isResetTasks = false;
 						}
 					}
 					else if (button->HeldDuration() >= 3.0f) //forced reset
 					{
+						if (isResetTasks)
+							return EventResult::kContinue;
+						auto coreCount = Mus::Config::GetSingleton().GetPriorityCoreCount();
+						std::uint32_t actorThreads = std::max(2.0f, ceil((float)coreCount / 4.0f));
+						Mus::actorThreads = std::make_unique<Mus::ThreadPool_ParallelModule>(actorThreads);
+						std::uint32_t bakingThreads = std::max(2.0f, ceil((float)coreCount / 4.0f * 3.0f));
+						Mus::bakingThreads = std::make_unique<Mus::ThreadPool_ParallelModule>(bakingThreads);
+						g_frameEventDispatcher.removeListener(cpuTask.get());
+						g_frameEventDispatcher.removeListener(gpuTask.get());
 						cpuTask = std::make_unique<ThreadPool_TaskModule>(Config::GetSingleton().GetTaskQTick(), Config::GetSingleton().GetDirectTaskQ(), Config::GetSingleton().GetTaskQMax());
 						gpuTask = std::make_unique<ThreadPool_TaskModule>(0, Config::GetSingleton().GetDirectTaskQ(), Config::GetSingleton().GetTaskQMax());
+						g_frameEventDispatcher.addListener(cpuTask.get());
+						g_frameEventDispatcher.addListener(gpuTask.get());
+						ResetTaskID();
+						logger::info("Reset all tasks done");
+						isResetTasks = true;
 					}
 				}
 			}

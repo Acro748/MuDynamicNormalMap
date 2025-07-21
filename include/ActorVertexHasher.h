@@ -2,12 +2,18 @@
 
 namespace Mus {
 	class ActorVertexHasher :
-		public IEventListener<FrameEvent> {
+		public IEventListener<FrameEvent>,
+		public IEventListener<FacegenNiNodeEvent>,
+		public IEventListener<ActorChangeHeadPartEvent>,
+		public IEventListener<ArmorAttachEvent>,
+		public RE::BSTEventSink<SKSE::NiNodeUpdateEvent> {
 	public:
 		[[nodiscard]] static ActorVertexHasher& GetSingleton() {
 			static ActorVertexHasher instance;
 			return instance;
 		}
+
+		void Init();
 
 		class Hash {
 		private:
@@ -28,12 +34,23 @@ namespace Mus {
 
 		bool Register(RE::Actor* a_actor, RE::BIPED_OBJECT bipedSlot);
 	protected:
-		void onEvent(const FrameEvent& e) override;
+		void onEvent(const FrameEvent& e) override; 
+		void onEvent(const FacegenNiNodeEvent& e) override;
+		void onEvent(const ActorChangeHeadPartEvent& e) override;
+		void onEvent(const ArmorAttachEvent& e) override;
+		EventResult ProcessEvent(const SKSE::NiNodeUpdateEvent* evn, RE::BSTEventSource<SKSE::NiNodeUpdateEvent>*) override;
 
 	private:
 		void CheckingActorHash();
 		bool GetHash(RE::Actor* a_actor, GeometryHash& hash);
 
+		std::int16_t DetectTick = 0;
+		std::atomic<bool> isDetecting = false;
+
+		concurrency::concurrent_unordered_map<RE::FormID, bool> BlockActors;
 		concurrency::concurrent_unordered_map<RE::FormID, GeometryHash> ActorHash;
+		concurrency::concurrent_unordered_map<RE::FormID, std::uint32_t> ActorQueue;
+		std::unique_ptr<ThreadPool_ParallelModule> BackGroundHasher = nullptr;
+		std::shared_mutex ActorHashLock;
 	};
 }
