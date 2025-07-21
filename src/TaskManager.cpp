@@ -5,6 +5,8 @@ namespace Mus {
 	{
 		if (!dataLoaded)
 		{
+			if (const auto Menu = RE::UI::GetSingleton(); Menu)
+				Menu->AddEventSink<RE::MenuOpenCloseEvent>(this);
 			if (const auto NiNodeEvent = SKSE::GetNiNodeUpdateEventSource(); NiNodeEvent)
 				NiNodeEvent->AddEventSink<SKSE::NiNodeUpdateEvent>(this);
 		}
@@ -834,6 +836,29 @@ namespace Mus {
 				}
 			}
 		}
+		return EventResult::kContinue;
+	}
+
+	EventResult TaskManager::ProcessEvent(const RE::MenuOpenCloseEvent* evn, RE::BSTEventSource<RE::MenuOpenCloseEvent>*)
+	{
+		if (!evn || !evn->menuName.c_str())
+			return EventResult::kContinue;
+
+		if (evn->opening)
+		{
+			if (IsSameString(evn->menuName.c_str(), "RaceSex Menu"))
+			{
+				IsRaceSexMenu.store(true);
+			}
+		}
+		else
+		{
+			if (IsSameString(evn->menuName.c_str(), "RaceSex Menu"))
+			{
+				IsRaceSexMenu.store(false);
+			}
+		}
+
 		return EventResult::kContinue;
 	}
 }

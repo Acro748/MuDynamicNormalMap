@@ -14,7 +14,7 @@ namespace Mus {
 	{
 		if (IsSaveLoading.load())
 			return;
-		if (IsGamePaused.load())
+		if (IsGamePaused.load() && !IsRaceSexMenu.load())
 			return;
 		if (isDetecting.load())
 			return;

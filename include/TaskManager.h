@@ -7,6 +7,7 @@ namespace Mus {
 		public IEventListener<ActorChangeHeadPartEvent>,
 		public IEventListener<ArmorAttachEvent>,
 		public RE::BSTEventSink<SKSE::NiNodeUpdateEvent>, 
+		public RE::BSTEventSink<RE::MenuOpenCloseEvent>,
 		public RE::BSTEventSink<RE::InputEvent*> {
 	public:
 		TaskManager() {};
@@ -90,6 +91,7 @@ namespace Mus {
 		void onEvent(const ArmorAttachEvent& e) override;
 		EventResult ProcessEvent(const SKSE::NiNodeUpdateEvent* evn, RE::BSTEventSource<SKSE::NiNodeUpdateEvent>*) override;
 		EventResult ProcessEvent(RE::InputEvent* const* evn, RE::BSTEventSource<RE::InputEvent*>*) override;
+		EventResult ProcessEvent(const RE::MenuOpenCloseEvent* evn, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override;
 
 	private:
 		std::unordered_map<std::string, std::function<void()>> delayTask; //id, task;
