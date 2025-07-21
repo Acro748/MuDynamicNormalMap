@@ -305,6 +305,7 @@ namespace Mus {
 			condition.DetailStrength = GetDetailStrength();
 
             bool isNormalConditionFile = false;
+            bool isConditionState = false;
 
             std::string line;
             while (std::getline(ifile, line))
@@ -315,6 +316,8 @@ namespace Mus {
                 {
                     std::string variableName;
                     std::string variableValue = GetConfigSetting(line, variableName);
+                    isConditionState = variableValue == "Condition";
+
                     if (variableName == "Enable")
                     {
                         condition.Enable = GetBoolValue(variableValue);
@@ -375,7 +378,8 @@ namespace Mus {
                     }
                     else
                     {
-                        condition.originalCondition += " " + variableValue;
+                        if (isConditionState)
+                            condition.originalCondition += " " + variableValue;
                     }
                 }
             }
