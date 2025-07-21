@@ -1,7 +1,6 @@
 #pragma once
 
 namespace Mus {
-	using EventResult = RE::BSEventNotifyControl;
 	class TaskManager :
 		public IEventListener<FrameEvent>,
 		public IEventListener<FacegenNiNodeEvent>,
@@ -71,7 +70,7 @@ namespace Mus {
 		std::unordered_set<RE::BSGeometry*> GetGeometries(RE::Actor* a_actor, std::uint32_t bipedSlot);
 		std::unordered_set<RE::BSGeometry*> GetAllGeometries(RE::Actor* a_actor);
 
-		void QUpdateNormalMap(RE::Actor* a_actor, std::uint32_t bipedSlot);
+		bool QUpdateNormalMap(RE::Actor* a_actor, std::uint32_t bipedSlot);
 		bool QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::uint32_t bipedSlot);
 		bool QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::unordered_set<RE::BSGeometry*> a_updateTargets);
 		void QUpdateNormalMap(TaskID& taskIDsrc, RE::FormID& id, std::string& actorName, BakeData& bakeData);
@@ -80,6 +79,7 @@ namespace Mus {
 		std::uint64_t AttachTaskID(TaskID& taskIDsrc);
 		void DetachTaskID(TaskID taskIDsrc, std::int64_t a_ownID);
 		void ReleaseTaskID(TaskID taskIDsrc);
+		void ResetTaskID();
 		std::uint64_t GetCurrentTaskID(TaskID taskIDsrc);
 		bool IsValidTaskID(TaskID taskIDsrc);
 
@@ -96,14 +96,17 @@ namespace Mus {
 		std::mutex delayTaskLock;
 
 		bool isPressedHotKey1 = false;
+		bool isResetTasks = false;
 
 		std::string GetTextureName(RE::Actor* a_actor, std::uint32_t a_bipedSlot, RE::BSGeometry* a_geo); // ActorID + Armor/SkinID + BipedSlot + GeometryName + VertexCount
 		bool GetTextureInfo(std::string a_textureName, TextureInfo& a_textureInfo); // ActorID + GeometryName + VertexCount
 		
-		std::string GetTangentNormalMapPath(std::string a_normalMapPath);
-		std::string GetTangentNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder);
+		std::string GetDetailNormalMapPath(std::string a_normalMapPath);
+		std::string GetDetailNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder);
 		std::string GetOverlayNormalMapPath(std::string a_normalMapPath);
 		std::string GetOverlayNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder);
+		std::string GetMaskNormalMapPath(std::string a_normalMapPath);
+		std::string GetMaskNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder);
 
 		std::unordered_map<RE::FormID, std::unordered_map<std::string, std::int64_t>> updateNormalMapTaskID; // ActorID, GeometryName, BakeID
 		std::shared_mutex updateNormalMapLock;

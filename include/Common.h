@@ -12,7 +12,10 @@ namespace Mus {
 		std::string geometryName;
 		std::string textureName;
 		std::string srcTexturePath;
+		std::string detailTexturePath;
 		std::string overlayTexturePath;
+		std::string maskTexturePath;
+		float detailStrength = 0.5f;
 	};
 
 	struct BakeData {

@@ -30,13 +30,6 @@ namespace Mus {
 			return result;
 		}
 
-		concurrency::SchedulerPolicy policy = concurrency::CurrentScheduler::GetPolicy();
-		//policy.SetPolicyValue(concurrency::ContextPriority, THREAD_PRIORITY_LOWEST);
-		policy.SetPolicyValue(concurrency::SchedulingProtocol, concurrency::EnhanceScheduleGroupLocality);
-		policy.SetPolicyValue(concurrency::DynamicProgressFeedback, true);
-		//policy.SetPolicyValue(concurrency::TargetOversubscriptionFactor, 1);
-		concurrency::CurrentScheduler::Create(policy);
-
 		//cpuTask->submitAsync( [&a_data]() { a_data.Subdivision(Config::GetSingleton().GetSubdivision()); }).get();
 		/*if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 		{
@@ -94,6 +87,7 @@ namespace Mus {
 		}
 
 		const std::int32_t margin = Config::GetSingleton().GetTextureMargin();
+		logger::debug("{}::{} : updating... {}", _func_, taskID.taskID, a_bakeSet.size());
 
 		std::vector<std::future<void>> parallelBakings;
 		for (auto& bake : a_bakeSet)
@@ -107,8 +101,8 @@ namespace Mus {
 
 				std::size_t bakeIndex = bake.first;
 
-				Microsoft::WRL::ComPtr<ID3D11Texture2D> srcStagingTexture2D, overlayStagingTexture2D, dstStagingTexture2D;
-				D3D11_TEXTURE2D_DESC srcStagingDesc = {}, overlayStagingDesc = {}, dstStagingDesc = {}, dstDesc = {};
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> srcStagingTexture2D, detailStagingTexture2D, overlayStagingTexture2D, maskStagingTexture2D, dstStagingTexture2D;
+				D3D11_TEXTURE2D_DESC srcStagingDesc = {}, detailStagingDesc = {}, overlayStagingDesc = {}, maskStagingDesc = {}, dstStagingDesc = {}, dstDesc = {};
 				D3D11_SHADER_RESOURCE_VIEW_DESC dstShaderResourceViewDesc = {};
 
 				if (!bake.second.srcTexturePath.empty())
@@ -116,7 +110,7 @@ namespace Mus {
 					Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture2D = nullptr;
 					D3D11_TEXTURE2D_DESC srcDesc;
 					D3D11_SHADER_RESOURCE_VIEW_DESC srcShaderResourceViewDesc;
-					if (IsTangentNormalMap(bake.second.srcTexturePath))
+					if (!IsDetailNormalMap(bake.second.srcTexturePath))
 					{
 						logger::info("{}::{}::{} : {} src texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.srcTexturePath);
 
@@ -138,31 +132,52 @@ namespace Mus {
 								logger::error("{}::{} : Failed to create src staging texture ({}|{})", _func_, taskID.taskID, hr, bake.second.srcTexturePath);
 								srcStagingTexture2D = nullptr;
 							}
+							else
+							{
+								Shader::ShaderManager::GetSingleton().ShaderContextLock();
+								context->CopyResource(srcStagingTexture2D.Get(), srcTexture2D.Get());
+								Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+							}
+						}
+					}
+				}
+				if (!bake.second.detailTexturePath.empty())
+				{
+					Microsoft::WRL::ComPtr<ID3D11Texture2D> detailTexture2D = nullptr;
+					D3D11_TEXTURE2D_DESC detailDesc;
+					D3D11_SHADER_RESOURCE_VIEW_DESC detailShaderResourceViewDesc;
+					logger::info("{}::{}::{} : {} detail texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.detailTexturePath);
 
+					if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.detailTexturePath, detailDesc, detailShaderResourceViewDesc, DXGI_FORMAT_R8G8B8A8_UNORM, detailTexture2D))
+					{
+						dstDesc = detailDesc;
+
+						detailStagingDesc = detailDesc;
+						detailStagingDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+						detailStagingDesc.Usage = D3D11_USAGE_STAGING;
+						detailStagingDesc.BindFlags = 0;
+						detailStagingDesc.MiscFlags = 0;
+						detailStagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+
+						dstShaderResourceViewDesc = detailShaderResourceViewDesc;
+						hr = device->CreateTexture2D(&detailStagingDesc, nullptr, &detailStagingTexture2D);
+						if (FAILED(hr))
+						{
+							logger::error("{}::{} : Failed to create detail staging texture ({}|{})", _func_, taskID.taskID, hr, bake.second.detailTexturePath);
+							detailStagingTexture2D = nullptr;
+						}
+						else
+						{
 							Shader::ShaderManager::GetSingleton().ShaderContextLock();
-							context->CopyResource(srcStagingTexture2D.Get(), srcTexture2D.Get());
+							context->CopyResource(detailStagingTexture2D.Get(), detailTexture2D.Get());
 							Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 						}
 					}
-					else
-					{
-						logger::info("{}::{}::{} : {} src texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.srcTexturePath);
 
-						if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.srcTexturePath, srcDesc, srcShaderResourceViewDesc, DXGI_FORMAT_R8G8B8A8_UNORM, srcTexture2D))
-						{
-							dstDesc = srcDesc;
-							dstShaderResourceViewDesc = srcShaderResourceViewDesc;
-						}
-					}
-					if (!srcTexture2D)
-					{
-						logger::error("{}::{}::{} : There is no Normalmap! {}", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.srcTexturePath);
-						return;
-					}
 				}
-				else
+				if (!srcStagingTexture2D && !detailStagingTexture2D)
 				{
-					logger::error("{}::{}::{} : There is no Normalmap! {}", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.srcTexturePath);
+					logger::error("{}::{}::{} : There is no Normalmap!", _func_, taskID.taskID, a_data.geometries[bakeIndex].first);
 					return;
 				}
 
@@ -182,7 +197,7 @@ namespace Mus {
 						hr = device->CreateTexture2D(&overlayStagingDesc, nullptr, &overlayStagingTexture2D);
 						if (FAILED(hr))
 						{
-							logger::error("{}::{}::{} : Failed to create src staging texture ({})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr);
+							logger::error("{}::{}::{} : Failed to create overlay staging texture ({})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr);
 							overlayStagingTexture2D = nullptr;
 						}
 						else
@@ -190,11 +205,34 @@ namespace Mus {
 							Shader::ShaderManager::GetSingleton().ShaderContextLock();
 							context->CopyResource(overlayStagingTexture2D.Get(), overlayTexture2D.Get());
 							Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-							if (FAILED(hr))
-							{
-								logger::error("{}::{}::{} : Failed to map overlay staging texture ({}|{})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr, bake.second.overlayTexturePath);
-								overlayStagingTexture2D = nullptr;
-							}
+						}
+					}
+				}
+
+				if (!bake.second.maskTexturePath.empty())
+				{
+					Microsoft::WRL::ComPtr<ID3D11Texture2D> maskTexture2D = nullptr;
+					logger::info("{}::{}::{} : {} mask texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.maskTexturePath);
+					D3D11_TEXTURE2D_DESC maskDesc;
+					if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.maskTexturePath, maskDesc, DXGI_FORMAT_R8G8B8A8_UNORM, maskTexture2D))
+					{
+						maskStagingDesc = maskDesc;
+						maskStagingDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+						maskStagingDesc.Usage = D3D11_USAGE_STAGING;
+						maskStagingDesc.BindFlags = 0;
+						maskStagingDesc.MiscFlags = 0;
+						maskStagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+						hr = device->CreateTexture2D(&maskStagingDesc, nullptr, &maskStagingTexture2D);
+						if (FAILED(hr))
+						{
+							logger::error("{}::{}::{} : Failed to create mask staging texture ({})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr);
+							maskStagingTexture2D = nullptr;
+						}
+						else
+						{
+							Shader::ShaderManager::GetSingleton().ShaderContextLock();
+							context->CopyResource(maskStagingTexture2D.Get(), maskTexture2D.Get());
+							Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 						}
 					}
 				}
@@ -227,6 +265,8 @@ namespace Mus {
 							 a_data.geometries[bakeIndex].second.normalCount(),
 							 a_data.geometries[bakeIndex].second.indicesCount());
 
+				WaitForGPU();
+
 				D3D11_MAPPED_SUBRESOURCE srcMappedResource;
 				uint8_t* srcData = nullptr;
 				if (srcStagingTexture2D)
@@ -235,6 +275,15 @@ namespace Mus {
 					hr = context->Map(srcStagingTexture2D.Get(), 0, D3D11_MAP_READ, 0, &srcMappedResource);
 					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 					srcData = reinterpret_cast<uint8_t*>(srcMappedResource.pData);
+				}
+				D3D11_MAPPED_SUBRESOURCE detailMappedResource;
+				uint8_t* detailData = nullptr;
+				if (detailStagingTexture2D)
+				{
+					Shader::ShaderManager::GetSingleton().ShaderContextLock();
+					hr = context->Map(detailStagingTexture2D.Get(), 0, D3D11_MAP_READ, 0, &detailMappedResource);
+					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+					detailData = reinterpret_cast<uint8_t*>(detailMappedResource.pData);
 				}
 				D3D11_MAPPED_SUBRESOURCE overlayMappedResource;
 				uint8_t* overlayData = nullptr;
@@ -245,9 +294,20 @@ namespace Mus {
 					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 					overlayData = reinterpret_cast<uint8_t*>(overlayMappedResource.pData);
 				}
+				D3D11_MAPPED_SUBRESOURCE maskMappedResource;
+				uint8_t* maskData = nullptr;
+				if (maskStagingTexture2D)
+				{
+					Shader::ShaderManager::GetSingleton().ShaderContextLock();
+					hr = context->Map(maskStagingTexture2D.Get(), 0, D3D11_MAP_READ, 0, &maskMappedResource);
+					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+					maskData = reinterpret_cast<uint8_t*>(maskMappedResource.pData);
+				}
 
 				const bool hasSrcData = (srcData != nullptr);
+				const bool hasDetailData = (detailData != nullptr);
 				const bool hasOverlayData = (overlayData != nullptr);
+				const bool hasMaskData = (maskData != nullptr);
 
 				D3D11_MAPPED_SUBRESOURCE mappedResource;
 				Shader::ShaderManager::GetSingleton().ShaderContextLock();
@@ -265,14 +325,20 @@ namespace Mus {
 				const UINT height = dstStagingDesc.Height;
 				uint8_t* dstData = reinterpret_cast<uint8_t*>(mappedResource.pData);
 
-				const float invWidth = 1.0f / (float)width;
-				const float invHeight = 1.0f / (float)height;
-				const float srcHeightF = srcData ? (float)srcStagingDesc.Height : 0.0f;
-				const float srcWidthF = srcData ? (float)srcStagingDesc.Width : 0.0f;
-				const float overlayHeightF = overlayData ? (float)overlayStagingDesc.Height : 0.0f;
-				const float overlayWidthF = overlayData ? (float)overlayStagingDesc.Width : 0.0f;
+				const float WidthF = (float)width;
+				const float HeightF = (float)height;
+				const float invWidth = 1.0f / WidthF;
+				const float invHeight = 1.0f / HeightF;
+				const float srcWidthF = hasSrcData ? (float)srcStagingDesc.Width : 0.0f;
+				const float srcHeightF = hasSrcData ? (float)srcStagingDesc.Height : 0.0f;
+				const float overlayWidthF = hasOverlayData ? (float)overlayStagingDesc.Width : 0.0f;
+				const float overlayHeightF = hasOverlayData ? (float)overlayStagingDesc.Height : 0.0f;
+				const float maskWidthF = hasMaskData ? (float)maskStagingDesc.Width : 0.0f;
+				const float maskHeightF = hasMaskData ? (float)maskStagingDesc.Height : 0.0f;
+
 				const DirectX::XMVECTOR halfVec = DirectX::XMVectorReplicate(0.5f);
 				const bool tangentZCorrection = Config::GetSingleton().GetTangentZCorrection();
+				const float detailStrength = bake.second.detailStrength;
 
 				std::vector<std::future<void>> parallelTris;
 				const std::uint32_t subSize = std::max(UINT(1), totalTris / 10000 + 1) * std::pow(2, Config::GetSingleton().GetDivideTaskQ());
@@ -367,6 +433,13 @@ namespace Mus {
 										srcRowData = srcData + (UINT)srcY * srcMappedResource.RowPitch;
 									}
 
+									uint8_t* detailRowData = nullptr;
+									if (hasDetailData)
+									{
+										const float detailY = mY * HeightF;
+										detailRowData = detailData + (UINT)detailY * detailMappedResource.RowPitch;
+									}
+
 									uint8_t* overlayRowData = nullptr;
 									if (hasOverlayData)
 									{
@@ -374,11 +447,18 @@ namespace Mus {
 										overlayRowData = overlayData + (UINT)overlayY * overlayMappedResource.RowPitch;
 									}
 
+									uint8_t* maskRowData = nullptr;
+									if (hasMaskData)
+									{
+										const float maskY = mY * maskHeightF;
+										maskRowData = maskData + (UINT)maskY * maskMappedResource.RowPitch;
+									}
+
 									std::uint8_t* rowData = dstData + y * mappedResource.RowPitch;
 									for (std::int32_t x = buffers[subIndex][i].minX; x < buffers[subIndex][i].maxX; x++)
 									{
 										DirectX::XMFLOAT3 bary;
-										if (!ComputeBarycentrics(x, y, buffers[subIndex][i].p0, buffers[subIndex][i].p1, buffers[subIndex][i].p2, bary))
+										if (!ComputeBarycentric((float)x + 0.5f, (float)y + 0.5f, buffers[subIndex][i].p0, buffers[subIndex][i].p1, buffers[subIndex][i].p2, bary))
 											continue;
 
 										const float mX = x * invWidth;
@@ -393,66 +473,85 @@ namespace Mus {
 										}
 										if (overlayColor.a < 1.0f)
 										{
-											RGBA srcColor(0.5f, 0.5f, 1.0f, 0.0f);
-											if (hasSrcData)
+											RGBA maskColor(1.0f, 1.0f, 1.0f, 0.0f);
+											if (hasMaskData && hasSrcData)
+											{
+												const float maskX = mX * maskWidthF;
+												const std::uint32_t* maskPixel = reinterpret_cast<std::uint32_t*>(maskRowData + (UINT)maskX * 4);
+												maskColor.SetReverse(*maskPixel);
+											}
+											if (maskColor.a < 1.0f)
+											{
+												RGBA detailColor(0.5f, 0.5f, 1.0f, 0.5f);
+												if (hasDetailData)
+												{
+													const float detailX = mX * WidthF;
+													const std::uint32_t* detailPixel = reinterpret_cast<std::uint32_t*>(detailRowData + (UINT)detailX * 4);
+													detailColor.SetReverse(*detailPixel);
+													detailColor = RGBA::lerp(RGBA(0.5f, 0.5f, 1.0f, detailColor.a), detailColor, detailStrength);
+												}
+
+												const DirectX::XMVECTOR n = DirectX::XMVector3Normalize(
+													DirectX::XMVectorAdd(DirectX::XMVectorAdd(
+														DirectX::XMVectorScale(buffers[subIndex][i].n0v, bary.x),
+														DirectX::XMVectorScale(buffers[subIndex][i].n1v, bary.y)),
+														DirectX::XMVectorScale(buffers[subIndex][i].n2v, bary.z)));
+
+												DirectX::XMVECTOR normalResult = DirectX::XMVectorZero();
+												if (detailColor.a > 0.0f)
+												{
+													const DirectX::XMVECTOR t = DirectX::XMVector3Normalize(
+														DirectX::XMVectorAdd(DirectX::XMVectorAdd(
+															DirectX::XMVectorScale(buffers[subIndex][i].t0v, bary.x),
+															DirectX::XMVectorScale(buffers[subIndex][i].t1v, bary.y)),
+															DirectX::XMVectorScale(buffers[subIndex][i].t2v, bary.z)));
+
+													const DirectX::XMVECTOR b = DirectX::XMVector3Normalize(
+														DirectX::XMVectorAdd(DirectX::XMVectorAdd(
+															DirectX::XMVectorScale(buffers[subIndex][i].b0v, bary.x),
+															DirectX::XMVectorScale(buffers[subIndex][i].b1v, bary.y)),
+															DirectX::XMVectorScale(buffers[subIndex][i].b2v, bary.z)));
+
+													const DirectX::XMVECTOR ft = DirectX::XMVector3Normalize(
+														DirectX::XMVectorSubtract(t, DirectX::XMVectorScale(n, DirectX::XMVectorGetX(DirectX::XMVector3Dot(n, t)))));
+
+													const DirectX::XMVECTOR cross = DirectX::XMVector3Cross(n, ft);
+													const float handedness = (DirectX::XMVectorGetX(DirectX::XMVector3Dot(cross, b)) < 0.0f) ? -1.0f : 1.0f;
+													const DirectX::XMVECTOR fb = DirectX::XMVector3Normalize(DirectX::XMVectorScale(cross, handedness));
+													const DirectX::XMMATRIX tbn = DirectX::XMMATRIX(ft, fb, n, DirectX::XMVectorSet(0, 0, 0, 1));
+
+													const DirectX::XMFLOAT4 detailColorF(
+														detailColor.r * 2.0f - 1.0f,
+														detailColor.g * 2.0f - 1.0f,
+														detailColor.b * 2.0f - 1.0f,
+														0.0f
+													);
+													const DirectX::XMVECTOR detailNormalVec = DirectX::XMVectorSet(
+														detailColorF.x,
+														detailColorF.y,
+														tangentZCorrection ? std::sqrt(std::max(0.0f, 1.0f - detailColorF.x * detailColorF.x - detailColorF.y * detailColorF.y)) : detailColorF.z,
+														0.0f);
+
+													const DirectX::XMVECTOR detailNormal = DirectX::XMVector3Normalize(
+														DirectX::XMVector3TransformNormal(detailNormalVec, tbn));
+													normalResult = DirectX::XMVector3Normalize(
+														DirectX::XMVectorLerp(n, detailNormal, detailColor.a));
+												}
+												else
+												{
+													normalResult = n;
+												}
+												const DirectX::XMVECTOR normalVec = DirectX::XMVectorMultiplyAdd(normalResult, halfVec, halfVec);
+												dstColor = RGBA(DirectX::XMVectorGetX(normalVec), DirectX::XMVectorGetZ(normalVec), DirectX::XMVectorGetY(normalVec));
+											}
+											if (maskColor.a > 0.0f && hasSrcData)
 											{
 												const float srcX = mX * srcWidthF;
 												const std::uint32_t* srcPixel = reinterpret_cast<std::uint32_t*>(srcRowData + (UINT)srcX * 4);
+												RGBA srcColor;
 												srcColor.SetReverse(*srcPixel);
+												dstColor = RGBA::lerp(dstColor, srcColor, maskColor.a);
 											}
-
-											const DirectX::XMVECTOR n = DirectX::XMVector3Normalize(
-												DirectX::XMVectorAdd(DirectX::XMVectorAdd(
-													DirectX::XMVectorScale(buffers[subIndex][i].n0v, bary.x),
-													DirectX::XMVectorScale(buffers[subIndex][i].n1v, bary.y)),
-													DirectX::XMVectorScale(buffers[subIndex][i].n2v, bary.z)));
-
-											DirectX::XMVECTOR normalResult = DirectX::XMVectorZero();
-											if (srcColor.a > 0.0f)
-											{
-												const DirectX::XMVECTOR t = DirectX::XMVector3Normalize(
-													DirectX::XMVectorAdd(DirectX::XMVectorAdd(
-														DirectX::XMVectorScale(buffers[subIndex][i].t0v, bary.x),
-														DirectX::XMVectorScale(buffers[subIndex][i].t1v, bary.y)),
-														DirectX::XMVectorScale(buffers[subIndex][i].t2v, bary.z)));
-
-												const DirectX::XMVECTOR b = DirectX::XMVector3Normalize(
-													DirectX::XMVectorAdd(DirectX::XMVectorAdd(
-														DirectX::XMVectorScale(buffers[subIndex][i].b0v, bary.x),
-														DirectX::XMVectorScale(buffers[subIndex][i].b1v, bary.y)),
-														DirectX::XMVectorScale(buffers[subIndex][i].b2v, bary.z)));
-
-												const DirectX::XMVECTOR ft = DirectX::XMVector3Normalize(
-													DirectX::XMVectorSubtract(t, DirectX::XMVectorScale(n, DirectX::XMVectorGetX(DirectX::XMVector3Dot(n, t)))));
-
-												const DirectX::XMVECTOR cross = DirectX::XMVector3Cross(n, ft);
-												const float handedness = (DirectX::XMVectorGetX(DirectX::XMVector3Dot(cross, b)) < 0.0f) ? -1.0f : 1.0f;
-												const DirectX::XMVECTOR fb = DirectX::XMVector3Normalize(DirectX::XMVectorScale(cross, handedness));
-												const DirectX::XMMATRIX tbn = DirectX::XMMATRIX(ft, fb, n, DirectX::XMVectorSet(0, 0, 0, 1));
-
-												const DirectX::XMFLOAT4 srcColorF(
-													srcColor.r * 2.0f - 1.0f,
-													srcColor.g * 2.0f - 1.0f,
-													srcColor.b * 2.0f - 1.0f,
-													0.0f
-												);
-												const DirectX::XMVECTOR srcNormalVec = DirectX::XMVectorSet(
-													srcColorF.x,
-													srcColorF.y,
-													tangentZCorrection ? std::sqrt(std::max(0.0f, 1.0f - srcColorF.x * srcColorF.x - srcColorF.y * srcColorF.y)) : srcColorF.z,
-													0.0f);
-
-												const DirectX::XMVECTOR detailNormal = DirectX::XMVector3Normalize(
-													DirectX::XMVector3TransformNormal(srcNormalVec, tbn));
-												normalResult = DirectX::XMVector3Normalize(
-													DirectX::XMVectorLerp(n, detailNormal, srcColor.a));
-											}
-											else
-											{
-												normalResult = n;
-											}
-											const DirectX::XMVECTOR normalVec = DirectX::XMVectorMultiplyAdd(normalResult, halfVec, halfVec);
-											dstColor = RGBA(DirectX::XMVectorGetX(normalVec), DirectX::XMVectorGetZ(normalVec), DirectX::XMVectorGetY(normalVec));
 										}
 										if (overlayColor.a > 0.0f)
 										{
@@ -483,16 +582,28 @@ namespace Mus {
 				context->Unmap(dstStagingTexture2D.Get(), 0);
 				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 
-				if (srcStagingTexture2D)
+				if (hasSrcData)
 				{
 					Shader::ShaderManager::GetSingleton().ShaderContextLock();
 					context->Unmap(srcStagingTexture2D.Get(), 0);
 					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 				}
-				if (overlayStagingTexture2D)
+				if (hasDetailData)
+				{
+					Shader::ShaderManager::GetSingleton().ShaderContextLock();
+					context->Unmap(detailStagingTexture2D.Get(), 0);
+					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+				}
+				if (hasOverlayData)
 				{
 					Shader::ShaderManager::GetSingleton().ShaderContextLock();
 					context->Unmap(overlayStagingTexture2D.Get(), 0);
+					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+				}
+				if (hasMaskData)
+				{
+					Shader::ShaderManager::GetSingleton().ShaderContextLock();
+					context->Unmap(maskStagingTexture2D.Get(), 0);
 					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 				}
 
@@ -546,6 +657,8 @@ namespace Mus {
 				context->GenerateMips(dstShaderResourceView.Get());
 				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 
+				WaitForGPU();
+
 				if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 				{
 					logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
@@ -554,7 +667,7 @@ namespace Mus {
 
 				RE::NiPointer<RE::NiSourceTexture> output = nullptr;
 				bool texCreated = false;
-				Shader::TextureLoadManager::GetSingleton().CreateNiTexture(a_bakeSet[bakeIndex].textureName, a_bakeSet[bakeIndex].srcTexturePath.empty() ? "None" : a_bakeSet[bakeIndex].srcTexturePath, dstTexture2D, dstShaderResourceView, output, texCreated);
+				Shader::TextureLoadManager::GetSingleton().CreateNiTexture(a_bakeSet[bakeIndex].textureName, a_bakeSet[bakeIndex].detailTexturePath.empty() ? "None" : a_bakeSet[bakeIndex].detailTexturePath, dstTexture2D, dstShaderResourceView, output, texCreated);
 				if (!output)
 					return;
 
@@ -601,13 +714,6 @@ namespace Mus {
 			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
 			return result;
 		}
-
-		concurrency::SchedulerPolicy policy = concurrency::CurrentScheduler::GetPolicy();
-		//policy.SetPolicyValue(concurrency::ContextPriority, THREAD_PRIORITY_LOWEST);
-		policy.SetPolicyValue(concurrency::SchedulingProtocol, concurrency::EnhanceScheduleGroupLocality);
-		policy.SetPolicyValue(concurrency::DynamicProgressFeedback, true);
-		//policy.SetPolicyValue(concurrency::TargetOversubscriptionFactor, 1);
-		concurrency::CurrentScheduler::Create(policy);
 
 		//cpuTask->submitAsync( [&a_data]() { a_data.Subdivision(Config::GetSingleton().GetSubdivision()); }).get();
 		/*if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
@@ -708,6 +814,8 @@ namespace Mus {
 		if (!CreateStructuredBuffer(indices.data(), UINT(sizeof(std::uint32_t) * indices.size()), sizeof(std::uint32_t), indicesBuffer, indicesSRV))
 			return result;
 
+		logger::debug("{}::{} : updating... {}", _func_, taskID.taskID, a_bakeSet.size());
+
 		std::vector<std::future<void>> parallelBakings;
 		for (auto& bake : a_bakeSet)
 		{
@@ -720,19 +828,17 @@ namespace Mus {
 
 				std::size_t bakeIndex = bake.first;
 
-				Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture2D, overlayTexture2D;
-				bool isTangentNormalMap = IsTangentNormalMap(bake.second.srcTexturePath);
-				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcShaderResourceView, overlayShaderResourceView;
-				D3D11_TEXTURE2D_DESC srcDesc = {}, overlayDesc = {}, dstDesc = {}, dstWriteDesc = {};
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture2D, detailTexture2D, overlayTexture2D, maskTexture2D;
+				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcShaderResourceView, detailShaderResourceView, overlayShaderResourceView, maskShaderResourceView;
+				D3D11_TEXTURE2D_DESC srcDesc = {}, detailDesc = {}, overlayDesc = {}, maskDesc = {}, dstDesc = {}, dstWriteDesc = {};
 				D3D11_SHADER_RESOURCE_VIEW_DESC dstShaderResourceViewDesc = {};
 
 				if (!bake.second.srcTexturePath.empty())
 				{
-					D3D11_SHADER_RESOURCE_VIEW_DESC srcShaderResourceViewDesc;
-					if (isTangentNormalMap)
+					if (!IsDetailNormalMap(bake.second.srcTexturePath))
 					{
+						D3D11_SHADER_RESOURCE_VIEW_DESC srcShaderResourceViewDesc;
 						logger::info("{}::{}::{} : {} src texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.srcTexturePath);
-
 						if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.srcTexturePath, srcDesc, srcShaderResourceViewDesc, DXGI_FORMAT_UNKNOWN, srcTexture2D))
 						{
 							dstWriteDesc = srcDesc;
@@ -744,30 +850,33 @@ namespace Mus {
 							if (FAILED(hr))
 							{
 								logger::error("{}::{}::{} : Failed to create src shader resource view ({}|{})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr, bake.second.srcTexturePath);
-								return;
+								srcShaderResourceView = nullptr;
 							}
 						}
 					}
-					else
+				}
+				if (!bake.second.detailTexturePath.empty())
+				{
+					D3D11_SHADER_RESOURCE_VIEW_DESC detailShaderResourceViewDesc;
+					logger::info("{}::{}::{} : {} detail texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.detailTexturePath);
+					if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.detailTexturePath, detailDesc, detailShaderResourceViewDesc, DXGI_FORMAT_UNKNOWN, detailTexture2D))
 					{
-						logger::info("{}::{}::{} : {} src texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.srcTexturePath);
+						dstWriteDesc = detailDesc;
+						dstDesc = detailDesc;
+						dstShaderResourceViewDesc = detailShaderResourceViewDesc;
 
-						if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.srcTexturePath, srcDesc, srcShaderResourceViewDesc, DXGI_FORMAT_UNKNOWN, srcTexture2D))
+						detailShaderResourceViewDesc.Texture2D.MipLevels = 1;
+						hr = device->CreateShaderResourceView(detailTexture2D.Get(), &detailShaderResourceViewDesc, detailShaderResourceView.ReleaseAndGetAddressOf());
+						if (FAILED(hr))
 						{
-							dstWriteDesc = srcDesc;
-							dstDesc = srcDesc;
-							dstShaderResourceViewDesc = srcShaderResourceViewDesc;
+							logger::error("{}::{}::{} : Failed to create detail shader resource view ({}|{})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr, bake.second.detailTexturePath);
+							detailShaderResourceView = nullptr;
 						}
 					}
-					if (!srcTexture2D)
-					{
-						logger::error("{}::{}::{} : There is no Normalmap! {}", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.srcTexturePath);
-						return;
-					}
 				}
-				else
+				if (!srcShaderResourceView && !detailShaderResourceView)
 				{
-					logger::error("{}::{}::{} : There is no Normalmap! {}", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.srcTexturePath);
+					logger::error("{}::{}::{} : There is no Normalmap!", _func_, taskID.taskID, a_data.geometries[bakeIndex].first);
 					return;
 				}
 
@@ -783,6 +892,22 @@ namespace Mus {
 						{
 							overlayShaderResourceView = nullptr;
 							logger::error("{}::{}::{} : Failed to create overlay shader resource view ({}|{})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr, bake.second.overlayTexturePath);
+						}
+					}
+				}
+
+				if (!bake.second.maskTexturePath.empty())
+				{
+					logger::info("{}::{}::{} : {} mask texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.maskTexturePath);
+					D3D11_SHADER_RESOURCE_VIEW_DESC maskShaderResourceViewDesc;
+					if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.maskTexturePath, maskDesc, maskShaderResourceViewDesc, DXGI_FORMAT_UNKNOWN, maskTexture2D))
+					{
+						maskShaderResourceViewDesc.Texture2D.MipLevels = 1;
+						hr = device->CreateShaderResourceView(maskTexture2D.Get(), &maskShaderResourceViewDesc, maskShaderResourceView.ReleaseAndGetAddressOf());
+						if (FAILED(hr))
+						{
+							maskShaderResourceView = nullptr;
+							logger::error("{}::{}::{} : Failed to create mask shader resource view ({}|{})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr, bake.second.maskTexturePath);
 						}
 					}
 				}
@@ -825,9 +950,14 @@ namespace Mus {
 					UINT indicesEnd;
 
 					UINT hasSrcTexture;
+					UINT hasDetailTexture;
 					UINT hasOverlayTexture;
+					UINT hasMaskTexture;
+
 					UINT tangentZCorrection;
-					UINT padding0;
+					float detailStrength;
+					UINT padding1;
+					UINT padding2;
 				};
 				static_assert(sizeof(ConstBufferData) % 16 == 0, "Constant buffer must be 16-byte aligned.");
 				ConstBufferData cbData = {};
@@ -835,9 +965,12 @@ namespace Mus {
 				cbData.texHeight = dstDesc.Height;
 				cbData.indicesStart = a_data.geometries[bakeIndex].second.indicesStart;
 				cbData.indicesEnd = a_data.geometries[bakeIndex].second.indicesEnd;
-				cbData.hasSrcTexture = isTangentNormalMap ? 1 : 0;
+				cbData.hasSrcTexture = srcShaderResourceView ? 1 : 0;
+				cbData.hasDetailTexture = detailShaderResourceView ? 1 : 0;
 				cbData.hasOverlayTexture = overlayShaderResourceView ? 1 : 0;
+				cbData.hasMaskTexture = maskShaderResourceView ? 1 : 0;
 				cbData.tangentZCorrection = Config::GetSingleton().GetTangentZCorrection() ? 1 : 0;
+				cbData.detailStrength = bake.second.detailStrength;
 
 				D3D11_BUFFER_DESC cbDesc = {};
 				cbDesc.ByteWidth = sizeof(ConstBufferData);
@@ -923,7 +1056,9 @@ namespace Mus {
 						context->CSGetShaderResources(4, 1, &bitangentSRV);
 						context->CSGetShaderResources(5, 1, &indicesSRV);
 						context->CSGetShaderResources(6, 1, &srcSRV);
-						context->CSGetShaderResources(7, 1, &overlaySRV);
+						context->CSGetShaderResources(7, 1, &detailSRV);
+						context->CSGetShaderResources(8, 1, &overlaySRV);
+						context->CSGetShaderResources(9, 1, &maskSRV);
 						context->CSGetUnorderedAccessViews(0, 1, &dstUAV);
 						context->CSGetUnorderedAccessViews(1, 1, &pixelBufferUAV);
 						context->CSGetSamplers(0, 1, &samplerState);
@@ -938,7 +1073,9 @@ namespace Mus {
 						context->CSSetShaderResources(4, 1, bitangentSRV.GetAddressOf());
 						context->CSSetShaderResources(5, 1, indicesSRV.GetAddressOf());
 						context->CSSetShaderResources(6, 1, srcSRV.GetAddressOf());
-						context->CSSetShaderResources(7, 1, overlaySRV.GetAddressOf());
+						context->CSSetShaderResources(7, 1, detailSRV.GetAddressOf());
+						context->CSSetShaderResources(8, 1, overlaySRV.GetAddressOf());
+						context->CSSetShaderResources(9, 1, maskSRV.GetAddressOf());
 						context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
 						context->CSSetUnorderedAccessViews(1, 1, pixelBufferUAV.GetAddressOf(), nullptr);
 						context->CSSetSamplers(0, 1, samplerState.GetAddressOf());
@@ -952,7 +1089,9 @@ namespace Mus {
 					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> bitangentSRV;
 					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> indicesSRV;
 					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcSRV;
+					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> detailSRV;
 					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> overlaySRV;
+					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> maskSRV;
 					Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> dstUAV;
 					Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> pixelBufferUAV;
 					Microsoft::WRL::ComPtr<ID3D11SamplerState> samplerState;
@@ -974,7 +1113,9 @@ namespace Mus {
 					context->CSSetShaderResources(4, 1, bitangentSRV.GetAddressOf());
 					context->CSSetShaderResources(5, 1, indicesSRV.GetAddressOf());
 					context->CSSetShaderResources(6, 1, srcShaderResourceView.GetAddressOf());
-					context->CSSetShaderResources(7, 1, overlayShaderResourceView.GetAddressOf());
+					context->CSSetShaderResources(7, 1, detailShaderResourceView.GetAddressOf());
+					context->CSSetShaderResources(8, 1, overlayShaderResourceView.GetAddressOf());
+					context->CSSetShaderResources(9, 1, maskShaderResourceView.GetAddressOf());
 					context->CSSetUnorderedAccessViews(0, 1, dstWriteTextureUAV.GetAddressOf(), nullptr);
 					context->CSSetUnorderedAccessViews(1, 1, pixelBufferUAV.GetAddressOf(), nullptr);
 					context->CSSetSamplers(0, 1, samplerState.GetAddressOf());
@@ -1035,6 +1176,8 @@ namespace Mus {
 				context->GenerateMips(dstShaderResourceView.Get());
 				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 
+				WaitForGPU();
+
 				if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
 				{
 					logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
@@ -1043,7 +1186,7 @@ namespace Mus {
 
 				RE::NiPointer<RE::NiSourceTexture> output = nullptr;
 				bool texCreated = false;
-				Shader::TextureLoadManager::GetSingleton().CreateNiTexture(a_bakeSet[bakeIndex].textureName, a_bakeSet[bakeIndex].srcTexturePath.empty() ? "None" : a_bakeSet[bakeIndex].srcTexturePath, dstTexture2D, dstShaderResourceView, output, texCreated);
+				Shader::TextureLoadManager::GetSingleton().CreateNiTexture(a_bakeSet[bakeIndex].textureName, a_bakeSet[bakeIndex].detailTexturePath.empty() ? "None" : a_bakeSet[bakeIndex].detailTexturePath, dstTexture2D, dstShaderResourceView, output, texCreated);
 				if (!output)
 					return;
 
@@ -1069,7 +1212,7 @@ namespace Mus {
 
 
 
-	bool ObjectNormalMapUpdater::IsTangentNormalMap(std::string a_normalMapPath)
+	bool ObjectNormalMapUpdater::IsDetailNormalMap(std::string a_normalMapPath)
 	{
 		constexpr std::string_view prefix = "Textures\\";
 		constexpr std::string_view n_suffix = "_n";
@@ -1107,12 +1250,6 @@ namespace Mus {
 
 		out = { u, v, w };
 		return true;
-	}
-	
-	bool ObjectNormalMapUpdater::ComputeBarycentrics(float px, float py, DirectX::XMINT2 a, DirectX::XMINT2 b, DirectX::XMINT2 c, DirectX::XMFLOAT3& out)
-	{
-		return ComputeBarycentric(px, py, a, b, c, out) || ComputeBarycentric(px + 1, py, a, b, c, out) 
-			|| ComputeBarycentric(px, py + 1, a, b, c, out) || ComputeBarycentric(px + 1, py + 1, a, b, c, out);
 	}
 
 	bool ObjectNormalMapUpdater::CreateStructuredBuffer(const void* data, UINT size, UINT stride, Microsoft::WRL::ComPtr<ID3D11Buffer>& bufferOut, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvOut)
@@ -1349,6 +1486,7 @@ namespace Mus {
 		{
 			const std::uint32_t subOffset = subIndex * numSubMargins;
 			const std::uint32_t localMarginMax = std::min(margin, subOffset + numSubMargins);
+
 			gpuTask->submitAsync([&, subOffset, localMarginMax]() {
 #ifdef BLEED_TEST2
 				GPUPerformanceLog(std::string(_func_) + "::" + std::to_string(width) + "|" + std::to_string(height), false, false);
@@ -1484,5 +1622,43 @@ namespace Mus {
 				}
 			}
 		}
+	}
+
+	void ObjectNormalMapUpdater::WaitForGPU()
+	{
+		return;
+
+		auto device = Shader::ShaderManager::GetSingleton().GetDevice();
+		auto context = Shader::ShaderManager::GetSingleton().GetContext();
+		if (!device || !context)
+			return;
+
+		D3D11_QUERY_DESC queryDesc = {};
+		queryDesc.Query = D3D11_QUERY_EVENT;
+		queryDesc.MiscFlags = 0;
+
+		Microsoft::WRL::ComPtr<ID3D11Query> query;
+		HRESULT hr = device->CreateQuery(&queryDesc, &query);
+		if (FAILED(hr)) {
+			return;
+		}
+		Shader::ShaderManager::GetSingleton().ShaderContextLock();
+		context->End(query.Get());
+		Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+		std::uint32_t spinCount = 0;
+		bool isDone = false;
+		while (true) {
+			Shader::ShaderManager::GetSingleton().ShaderContextLock();
+			isDone = context->GetData(query.Get(), nullptr, 0, 0) == S_FALSE;
+			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+			if (isDone)
+				break;
+			if (spinCount < 100)
+				std::this_thread::yield();
+			else
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			spinCount++;
+		}
+		return;
 	}
 }

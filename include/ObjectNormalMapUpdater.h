@@ -24,16 +24,16 @@ namespace Mus {
 		BakeResult UpdateObjectNormalMapGPU(TaskID taskID, GeometryData a_data, std::unordered_map<std::size_t, BakeTextureSet> a_bakeSet);
 
 	private:
-		bool IsTangentNormalMap(std::string a_normalMapPath);
+		bool IsDetailNormalMap(std::string a_normalMapPath);
 
 		bool ComputeBarycentric(float px, float py, DirectX::XMINT2 a, DirectX::XMINT2 b, DirectX::XMINT2 c, DirectX::XMFLOAT3& out);
-		bool ComputeBarycentrics(float px, float py, DirectX::XMINT2 a, DirectX::XMINT2 b, DirectX::XMINT2 c, DirectX::XMFLOAT3& out);
 		bool CreateStructuredBuffer(const void* data, UINT size, UINT stride, Microsoft::WRL::ComPtr<ID3D11Buffer>& bufferOut, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvOut);
 		bool IsValidPixel(const std::uint32_t a_pixel);
 		bool BleedTexture(std::uint8_t* pData, UINT width, UINT height, UINT RowPitch, std::uint32_t margin);
 		bool BleedTextureGPU(TaskID taskID, std::uint32_t margin, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut);
 
 		void GPUPerformanceLog(std::string funcStr, bool isEnd, bool isAverage = true, std::uint32_t args = 0);
+		void WaitForGPU();
 
 		const std::string_view BleedTextureShaderName = "BleedTexture";
 		const std::string_view UpdateNormalMapShaderName = "UpdateNormalMap";

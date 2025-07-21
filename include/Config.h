@@ -46,11 +46,21 @@ namespace Mus {
         [[nodiscard]] inline bool GetHeadEnable() const noexcept {
             return HeadEnable;
         }
+
         [[nodiscard]] inline bool GetRealtimeDetect() const noexcept {
             return RealtimeDetect;
         }
         [[nodiscard]] inline std::uint8_t GetRealtimeDetectHead() const noexcept {
             return RealtimeDetectHead;
+        }
+        [[nodiscard]] inline bool GetRealtimeDetectOnBackGround() const noexcept {
+            return RealtimeDetectOnBackGround;
+        }
+        [[nodiscard]] inline float GetDetectDistance() const noexcept {
+            return DetectDistance;
+        }
+        [[nodiscard]] inline std::int16_t GetDetectTick() const noexcept {
+            return DetectTick;
         }
 
         [[nodiscard]] inline bool GetGPUEnable() const noexcept {
@@ -101,6 +111,9 @@ namespace Mus {
         [[nodiscard]] inline float GetVertexSmoothStrength() const noexcept {
             return VertexSmoothStrength;
         }
+        [[nodiscard]] inline float GetDetailStrength() const noexcept {
+            return DetailStrength;
+        }
         [[nodiscard]] inline std::uint32_t GetTextureMargin() const noexcept {
             return TextureMargin;
         }
@@ -138,14 +151,18 @@ namespace Mus {
         bool MaleEnable = true;
         bool FemaleEnable = true;
         bool HeadEnable = false;
+
         bool RealtimeDetect = true;
         std::uint8_t RealtimeDetectHead = 1; //0 disable, 1 morph data only, all data
+        bool RealtimeDetectOnBackGround = false;
+        float DetectDistance = 512.0f * 512.0f;
+        std::int16_t DetectTick = 2; //2 frames
 
         bool GPUEnable = true;
         unsigned long PriorityCores = 0;
         unsigned long PriorityCoreCount = 0;
 
-        std::uint8_t AutoTaskQ = AutoTaskQList::Disable; //0 disable, 1 speed focused, 2 speed focused but performance focused, 3 balanced, 4 performance focused
+        std::uint8_t AutoTaskQ = AutoTaskQList::Disable;
         std::uint8_t TaskQMax = 1;
         std::clock_t TaskQTick = 13;
         bool DirectTaskQ = false;
@@ -156,11 +173,12 @@ namespace Mus {
         std::uint32_t HotKey1 = 0;
         std::uint32_t HotKey2 = 43;
 
-        float WeldDistance = 0.0001f;
+        float WeldDistance = 0.02f;
         float NormalSmoothDegree = 60.0f;
         std::uint8_t Subdivision = 0;
         std::uint8_t VertexSmooth = 0;
         float VertexSmoothStrength = 0.5f;
+        float DetailStrength = 0.5f;
 
         std::uint32_t TextureMargin = 2;
         bool TextureMarginGPU = true;

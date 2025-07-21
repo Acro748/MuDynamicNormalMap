@@ -163,6 +163,12 @@ namespace Mus {
 		case ConditionType::IsRace:
 			item.conditionFunction = std::make_shared<ConditionFragment::IsRace>();
 			break;
+		case ConditionType::HasHeadPart:
+			item.conditionFunction = std::make_shared<ConditionFragment::HasHeadPart>();
+			break;
+		case ConditionType::HasHeadPartEditorID:
+			item.conditionFunction = std::make_shared<ConditionFragment::HasHeadPartEditorID>();
+			break;
 		case ConditionType::IsFemale:
 			item.conditionFunction = std::make_shared<ConditionFragment::IsFemale>();
 			break;
@@ -199,7 +205,7 @@ namespace Mus {
 		}
 		bool HasKeyword::Condition(RE::Actor* actor)
 		{
-			if (!keyword)
+			if (!actor || !keyword)
 				return false;
 			RE::TESRace* race = actor->GetRace();
 			return (actor->HasKeyword(keyword) || (race ? race->HasKeyword(keyword) : false));
@@ -211,7 +217,10 @@ namespace Mus {
 		}
 		bool HasKeywordEditorID::Condition(RE::Actor* actor)
 		{
-			return actor ? actor->HasKeywordString(keywordEditorID.c_str()) : false;
+			if (!actor || keywordEditorID.empty())
+				return false;
+			RE::TESRace* race = actor->GetRace();
+			return (actor->HasKeywordString(keywordEditorID.c_str()) || (race ? race->HasKeywordString(keywordEditorID.c_str()) : false));
 		}
 
 		void IsActorBase::Initial(ConditionManager::ConditionItem& item)
@@ -247,6 +256,48 @@ namespace Mus {
 				return false;
 			RE::TESRace* race = actor->GetRace();
 			return race && race->formID == form->formID;
+		}
+
+		void HasHeadPart::Initial(ConditionManager::ConditionItem& item)
+		{
+			form = GetFormByID(item.id, item.pluginName);
+		}
+		bool HasHeadPart::Condition(RE::Actor* actor)
+		{
+			if (!actor || !form)
+				return false;
+			auto npc = actor->GetActorBase();
+			if (!npc)
+				return false;
+			RE::BGSHeadPart** headParts = npc->HasOverlays() ? npc->GetBaseOverlays() : npc->headParts;
+			std::uint32_t numHeadParts = npc->HasOverlays() ? npc->GetNumBaseOverlays() : npc->numHeadParts;
+			for (std::uint32_t i = 0; i < numHeadParts; i++)
+			{
+				if (headParts[i] && headParts[i]->formID == form->formID)
+					return true;
+			}
+			return false;
+		}
+
+		void HasHeadPartEditorID::Initial(ConditionManager::ConditionItem& item)
+		{
+			headPartEditorID = item.arg;
+		}
+		bool HasHeadPartEditorID::Condition(RE::Actor* actor)
+		{
+			if (!actor || headPartEditorID.empty())
+				return false;
+			auto npc = actor->GetActorBase();
+			if (!npc)
+				return false;
+			RE::BGSHeadPart** headParts = npc->HasOverlays() ? npc->GetBaseOverlays() : npc->headParts;
+			std::uint32_t numHeadParts = npc->HasOverlays() ? npc->GetNumBaseOverlays() : npc->numHeadParts;
+			for (std::uint32_t i = 0; i < numHeadParts; i++)
+			{
+				if (headParts[i] && IsSameString(headParts[i]->GetFormEditorID(), headPartEditorID))
+					return true;
+			}
+			return false;
 		}
 
 		void IsFemale::Initial(ConditionManager::ConditionItem& item)

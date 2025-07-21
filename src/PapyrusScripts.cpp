@@ -31,10 +31,20 @@ namespace Mus {
 			TaskManager::GetSingleton().QUpdateNormalMap(a_actor, TaskManager::GetSingleton().GetGeometries(a_actor, bipedSlot), bipedSlot);
 		}
 
+		concurrency::concurrent_unordered_map<RE::FormID, float> detailStrengthMap;
+		void SetDetailStrength(RE::StaticFunctionTag*, RE::Actor* a_actor, float strength)
+		{
+			if (!a_actor)
+				return;
+			strength = std::clamp(strength, 0.0f, 1.0f);
+			detailStrengthMap[a_actor->formID] = strength;
+		}
+
         bool RegisterPapyrusFunctions(RE::BSScript::IVirtualMachine* vm) {
             vm->RegisterFunction("GetVersion", ScriptFileName, GetVersion);
             vm->RegisterFunction("GetArmorSlotBit", ScriptFileName, GetArmorSlotBit);
             vm->RegisterFunction("QUpdateNormalmap", ScriptFileName, QUpdateNormalmap);
+            vm->RegisterFunction("SetDetailStrength", ScriptFileName, SetDetailStrength);
             
             return true;
         }

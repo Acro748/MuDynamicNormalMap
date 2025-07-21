@@ -213,6 +213,15 @@ namespace {
 		Mus::g_frameEventDispatcher.addListener(&Mus::ActorVertexHasher::GetSingleton());
 		Mus::g_frameEventDispatcher.addListener(Mus::cpuTask.get());
         Mus::g_frameEventDispatcher.addListener(Mus::gpuTask.get());
+
+        if (Mus::Config::GetSingleton().GetRealtimeDetectOnBackGround())
+        {
+            Mus::g_armorAttachEventEventDispatcher.addListener(&Mus::ActorVertexHasher::GetSingleton());
+            Mus::g_facegenNiNodeEventDispatcher.addListener(&Mus::ActorVertexHasher::GetSingleton());
+            Mus::g_actorChangeHeadPartEventDispatcher.addListener(&Mus::ActorVertexHasher::GetSingleton());
+            Mus::ActorVertexHasher::GetSingleton().Init();
+        }
+
 		Mus::g_armorAttachEventEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_facegenNiNodeEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_actorChangeHeadPartEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());

@@ -23,6 +23,8 @@ namespace Mus {
 			IsActorBase,
 			IsActor,
 			IsRace,
+			HasHeadPart,
+			HasHeadPartEditorID,
 
 			IsFemale,
 			IsChild,
@@ -48,8 +50,10 @@ namespace Mus {
 			std::vector<ConditionItemOr> AND;
 			bool Enable = true;
 			bool HeadEnable = true;
-			std::vector<std::string> ProxyTangentTextureFolder;
+			float DetailStrength = 0.5f;
+			std::vector<std::string> ProxyDetailTextureFolder;
 			std::vector<std::string> ProxyOverlayTextureFolder;
+			std::vector<std::string> ProxyMaskTextureFolder;
 			std::int32_t Priority;
 		};
 		bool RegisterCondition(Condition condition);
@@ -147,6 +151,24 @@ namespace Mus {
 			bool Condition(RE::Actor* acto) override;
 		private:
 			RE::TESForm* form = nullptr;
+		};
+
+		class HasHeadPart : public ConditionBase {
+		public:
+			HasHeadPart() = default;
+			void Initial(ConditionManager::ConditionItem& item) override;
+			bool Condition(RE::Actor* acto) override;
+		private:
+			RE::TESForm* form = nullptr;
+		};
+
+		class HasHeadPartEditorID : public ConditionBase {
+		public:
+			HasHeadPartEditorID() = default;
+			void Initial(ConditionManager::ConditionItem& item) override;
+			bool Condition(RE::Actor* acto) override;
+		private:
+			std::string headPartEditorID = "";
 		};
 
 		class IsFemale : public ConditionBase {

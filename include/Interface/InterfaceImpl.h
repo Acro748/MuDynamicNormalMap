@@ -61,6 +61,11 @@ namespace MDNM {
 			}
 			Mus::TaskManager::GetSingleton().QUpdateNormalMap(a_actor, geos, updateTargets);
 		}
+		virtual void SetDetailStrength(RE::Actor* a_actor, float a_strength) {
+			if (!a_actor)
+				return;
+			Mus::Papyrus::detailStrengthMap[a_actor->formID] = std::clamp(a_strength, 0.0f, 1.0f);
+		}
 	};
 	static DynamicNormalMap DNM;
 }
