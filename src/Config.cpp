@@ -304,6 +304,8 @@ namespace Mus {
 			condition.HeadEnable = GetHeadEnable();
 			condition.DetailStrength = GetDetailStrength();
 
+            bool isNormalConditionFile = false;
+
             std::string line;
             while (std::getline(ifile, line))
             {
@@ -316,14 +318,17 @@ namespace Mus {
                     if (variableName == "Enable")
                     {
                         condition.Enable = GetBoolValue(variableValue);
+                        isNormalConditionFile = true;
                     }
                     else if (variableName == "HeadEnable")
                     {
                         condition.HeadEnable = GetBoolValue(variableValue);
+                        isNormalConditionFile = true;
                     }
                     else if (variableName == "DetailStrength")
                     {
                         condition.DetailStrength = GetFloatValue(variableValue);
+                        isNormalConditionFile = true;
                     }
                     else if (variableName == "ProxyDetailTextureFolder")
                     {
@@ -334,6 +339,7 @@ namespace Mus {
                                 condition.ProxyDetailTextureFolder.push_back(value);
                             }
                         }
+                        isNormalConditionFile = true;
                     }
                     else if (variableName == "ProxyOverlayTextureFolder")
                     {
@@ -344,6 +350,7 @@ namespace Mus {
                                 condition.ProxyOverlayTextureFolder.push_back(value);
                             }
                         }
+                        isNormalConditionFile = true;
                     }
                     else if (variableName == "ProxyMaskTextureFolder")
                     {
@@ -354,10 +361,17 @@ namespace Mus {
                                 condition.ProxyMaskTextureFolder.push_back(value);
                             }
                         }
+                        isNormalConditionFile = true;
                     }
                     else if (variableName == "Priority")
                     {
                         condition.Priority = GetIntValue(variableValue);
+                        isNormalConditionFile = true;
+                    }
+                    else if (variableValue == "Condition")
+                    {
+                        condition.originalCondition = variableValue;
+                        isNormalConditionFile = true;
                     }
                     else
                     {
@@ -365,7 +379,8 @@ namespace Mus {
                     }
                 }
             }
-            ConditionManager::GetSingleton().RegisterCondition(condition);
+            if (isNormalConditionFile)
+                ConditionManager::GetSingleton().RegisterCondition(condition);
         });
         return false;
     }

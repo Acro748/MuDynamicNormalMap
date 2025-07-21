@@ -246,6 +246,8 @@ namespace Mus {
 			return true;
 		if (!condition.HeadEnable)
 			bipedSlot &= ~std::to_underlying(BipedObjectSlot::kHead);
+		if (bipedSlot == 0)
+			return true;
 		float detailStrength = condition.DetailStrength;
 		if (Papyrus::detailStrengthMap.find(id) != Papyrus::detailStrengthMap.end())
 			detailStrength = Papyrus::detailStrengthMap[id];
@@ -345,6 +347,10 @@ namespace Mus {
 		std::uint32_t bipedSlot = 0;
 		auto condition = ConditionManager::GetSingleton().GetCondition(a_actor);
 		if (!condition.Enable)
+			return true;
+		if (!condition.HeadEnable)
+			bipedSlot &= ~std::to_underlying(BipedObjectSlot::kHead);
+		if (bipedSlot == 0)
 			return true;
 		float detailStrength = condition.DetailStrength;
 		if (Papyrus::detailStrengthMap.find(id) != Papyrus::detailStrengthMap.end())
