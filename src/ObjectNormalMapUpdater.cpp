@@ -771,11 +771,6 @@ namespace Mus {
 			return result;
 		}
 
-		hr = device->GetDeviceRemovedReason();
-		if (FAILED(hr)) {
-			logger::error("{}::{} : Device removed reason : {}", _func_, taskID.taskID, hr);
-		}
-
 		const std::uint32_t margin = Config::GetSingleton().GetTextureMargin();
 
 		std::vector<DirectX::XMFLOAT3> vertices(a_data.vertices.begin(), a_data.vertices.end());
