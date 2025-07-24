@@ -6,767 +6,665 @@ namespace Mus {
 //#define BLEED_TEST1
 //#define BLEED_TEST2
 
-	ObjectNormalMapUpdater::BakeResult ObjectNormalMapUpdater::UpdateObjectNormalMap(TaskID taskID, GeometryData a_data, std::unordered_map<std::size_t, BakeTextureSet> a_bakeSet)
+	void ObjectNormalMapUpdater::Init()
+	{
+		if (Config::GetSingleton().GetGPUEnable())
+		{
+			D3D11_SAMPLER_DESC samplerDesc = {};
+			samplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+			samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+			samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+			samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+			samplerDesc.MipLODBias = 0.0f;
+			samplerDesc.MaxAnisotropy = 4;
+			samplerDesc.ComparisonFunc = D3D11_COMPARISON_ALWAYS;
+			samplerDesc.BorderColor[0] = 0.0f;
+			samplerDesc.BorderColor[1] = 0.0f;
+			samplerDesc.BorderColor[2] = 0.0f;
+			samplerDesc.BorderColor[3] = 0.0f;
+			samplerDesc.MinLOD = 0;
+			samplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
+			auto device = Shader::ShaderManager::GetSingleton().GetDevice();
+			if (!device)
+			{
+				logger::error("{} : Invalid device", __func__);
+				return;
+			}
+			auto hr = device->CreateSamplerState(&samplerDesc, &samplerState);
+			if (FAILED(hr))
+			{
+				logger::error("{} : Failed to create samplerState ({})", __func__, hr);
+				return;
+			}
+			Shader::ShaderManager::GetSingleton().GetComputeShader(UpdateNormalMapShaderName.data());
+
+		}
+		if (Config::GetSingleton().GetTextureMarginGPU())
+		{
+			Shader::ShaderManager::GetSingleton().GetComputeShader(BleedTextureShaderName.data());
+		}
+	}
+
+	bool ObjectNormalMapUpdater::CreateGeometryResourceData(RE::FormID a_actorID, GeometryData& a_data)
+	{
+		a_data.GetGeometryData();
+
+		if (a_data.vertices.empty() || a_data.indices.empty()
+			|| a_data.vertices.size() != a_data.uvs.size()
+			|| a_data.geometries.empty() || a_actorID == 0)
+		{
+			logger::error("{} : Invalid parameters", __func__);
+			return false;
+		}
+		a_data.UpdateMap();
+		//a_data.Subdivision(Config::GetSingleton().GetSubdivision());
+		a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree());
+		//a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
+
+		if (a_data.vertices.size() != a_data.uvs.size() ||
+			a_data.vertices.size() != a_data.normals.size() ||
+			a_data.vertices.size() != a_data.tangents.size() ||
+			a_data.vertices.size() != a_data.bitangents.size())
+		{
+			logger::error("{} : Invalid geometry", __func__);
+			return false;
+		}
+
+		if (Config::GetSingleton().GetGPUEnable())
+		{
+			if (!CreateStructuredBuffer(a_data.vertices.data(), UINT(sizeof(DirectX::XMFLOAT3) * a_data.vertices.size()), sizeof(DirectX::XMFLOAT3), GeometryResourceDataMap[a_actorID].vertexBuffer, GeometryResourceDataMap[a_actorID].vertexSRV))
+				return false;
+			if (!CreateStructuredBuffer(a_data.uvs.data(), UINT(sizeof(DirectX::XMFLOAT2) * a_data.uvs.size()), sizeof(DirectX::XMFLOAT2), GeometryResourceDataMap[a_actorID].uvBuffer, GeometryResourceDataMap[a_actorID].uvSRV))
+				return false;
+			if (!CreateStructuredBuffer(a_data.normals.data(), UINT(sizeof(DirectX::XMFLOAT3) * a_data.normals.size()), sizeof(DirectX::XMFLOAT3), GeometryResourceDataMap[a_actorID].normalBuffer, GeometryResourceDataMap[a_actorID].normalSRV))
+				return false;
+			if (!CreateStructuredBuffer(a_data.tangents.data(), UINT(sizeof(DirectX::XMFLOAT3) * a_data.tangents.size()), sizeof(DirectX::XMFLOAT3), GeometryResourceDataMap[a_actorID].tangentBuffer, GeometryResourceDataMap[a_actorID].tangentSRV))
+				return false;
+			if (!CreateStructuredBuffer(a_data.bitangents.data(), UINT(sizeof(DirectX::XMFLOAT3) * a_data.bitangents.size()), sizeof(DirectX::XMFLOAT3), GeometryResourceDataMap[a_actorID].bitangentBuffer, GeometryResourceDataMap[a_actorID].bitangentSRV))
+				return false;
+			if (!CreateStructuredBuffer(a_data.indices.data(), UINT(sizeof(std::uint32_t) * a_data.indices.size()), sizeof(std::uint32_t), GeometryResourceDataMap[a_actorID].indicesBuffer, GeometryResourceDataMap[a_actorID].indicesSRV))
+				return false;
+		}
+		return true;
+	}
+
+	ObjectNormalMapUpdater::BakeResult ObjectNormalMapUpdater::UpdateObjectNormalMap(RE::FormID a_actorID, GeometryData& a_data, BakeSet& a_bakeSet)
 	{
 		std::string_view _func_ = __func__;
 #ifdef BAKE_TEST1
-		PerformanceLog(std::string(_func_) + "::" + std::to_string(taskID.taskID), false, false);
+		PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID), false, false);
 #endif // BAKE_TEST1
 
-		a_data.GetGeometryData();
-
 		BakeResult result;
-		if (a_data.vertices.empty() || a_data.indices.empty()
-			|| a_data.vertices.size() != a_data.uvs.size()
-			|| a_bakeSet.empty() || a_data.geometries.empty())
-		{
-			logger::error("{}::{} : Invalid parameters", _func_, taskID.taskID);
-			return result;
-		}
-
-		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
-		{
-			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
-			return result;
-		}
-
-		//cpuTask->submitAsync( [&a_data]() { a_data.Subdivision(Config::GetSingleton().GetSubdivision()); }).get();
-		/*if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
-		{
-			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
-			return result;
-		}*/
-
-		cpuTask->submitAsync( [&a_data]() { a_data.UpdateMap(); }).get();
-		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
-		{
-			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
-			return result;
-		}
-
-		//cpuTask->submitAsync( [&a_data]() { a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth()); }).get();
-		//a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
-		/*if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
-		{
-			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
-			return result;
-		}
-		if (Config::GetSingleton().GetVertexSmooth() > 0)
-		{
-			cpuTask->submitAsync([&a_data]() { a_data.UpdateMap(); }).get();
-			if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
-			{
-				logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
-				return result;
-			}
-		}*/
-
-		cpuTask->submitAsync([&a_data]() { a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree()); }).get();
-		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
-		{
-			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
-			return result;
-		}
-
-		if (a_data.vertices.size() != a_data.uvs.size() ||
-			a_data.vertices.size() != a_data.normals.size() || 
-			a_data.vertices.size() != a_data.tangents.size() || 
-			a_data.vertices.size() != a_data.bitangents.size())
-		{
-			logger::error("{}::{} : Invalid geometry", _func_, taskID.taskID);
-			return result;
-		}
 
 		HRESULT hr;
 		auto device = Shader::ShaderManager::GetSingleton().GetDevice();
 		auto context = Shader::ShaderManager::GetSingleton().GetContext();
 		if (!device || !context)
 		{
-			logger::error("{}::{} : Invalid renderer", _func_, taskID.taskID);
+			logger::error("{}::{:x} : Invalid renderer", _func_, a_actorID);
 			return result;
 		}
 
 		const std::int32_t margin = Config::GetSingleton().GetTextureMargin();
-		logger::debug("{}::{} : updating... {}", _func_, taskID.taskID, a_bakeSet.size());
+		logger::debug("{}::{:x} : updating... {}", _func_, a_actorID, a_bakeSet.size());
 
 		std::vector<std::future<void>> parallelBakings;
 		for (auto& bake : a_bakeSet)
 		{
-			parallelBakings.push_back(bakingThreads->submitAsync([&, bake]() {
-				if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
+			auto found = std::find_if(a_data.geometries.begin(), a_data.geometries.end(), [&](std::pair<RE::BSGeometry*, GeometryData::ObjectInfo>& geometry) {
+				return geometry.first == bake.first;
+									  });
+			if (found == a_data.geometries.end())
+			{
+				logger::error("{}::{:x} : Geometry {} not found in data", _func_, a_actorID, bake.second.geometryName);
+				continue;
+			}
+			GeometryData::ObjectInfo& objInfo = found->second;
+			ResourceDataMap[bake.second.textureName].clear();
+
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> srcStagingTexture2D, detailStagingTexture2D, overlayStagingTexture2D, maskStagingTexture2D, dstStagingTexture2D;
+			D3D11_TEXTURE2D_DESC srcStagingDesc = {}, detailStagingDesc = {}, overlayStagingDesc = {}, maskStagingDesc = {}, dstStagingDesc = {}, dstDesc = {};
+			D3D11_SHADER_RESOURCE_VIEW_DESC dstShaderResourceViewDesc = {};
+
+			if (!bake.second.srcTexturePath.empty())
+			{
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture2D = nullptr;
+				D3D11_TEXTURE2D_DESC srcDesc;
+				D3D11_SHADER_RESOURCE_VIEW_DESC srcShaderResourceViewDesc;
+				if (!IsDetailNormalMap(bake.second.srcTexturePath))
 				{
-					logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
-					return;
-				}
+					logger::info("{}::{:x}::{} : {} src texture loading...)", _func_, a_actorID, bake.second.geometryName, bake.second.srcTexturePath);
 
-				std::size_t bakeIndex = bake.first;
-
-				Microsoft::WRL::ComPtr<ID3D11Texture2D> srcStagingTexture2D, detailStagingTexture2D, overlayStagingTexture2D, maskStagingTexture2D, dstStagingTexture2D;
-				D3D11_TEXTURE2D_DESC srcStagingDesc = {}, detailStagingDesc = {}, overlayStagingDesc = {}, maskStagingDesc = {}, dstStagingDesc = {}, dstDesc = {};
-				D3D11_SHADER_RESOURCE_VIEW_DESC dstShaderResourceViewDesc = {};
-
-				if (!bake.second.srcTexturePath.empty())
-				{
-					Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture2D = nullptr;
-					D3D11_TEXTURE2D_DESC srcDesc;
-					D3D11_SHADER_RESOURCE_VIEW_DESC srcShaderResourceViewDesc;
-					if (!IsDetailNormalMap(bake.second.srcTexturePath))
+					if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.srcTexturePath, srcDesc, srcShaderResourceViewDesc, DXGI_FORMAT_R8G8B8A8_UNORM, srcTexture2D))
 					{
-						logger::info("{}::{}::{} : {} src texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.srcTexturePath);
+						dstDesc = srcDesc;
 
-						if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.srcTexturePath, srcDesc, srcShaderResourceViewDesc, DXGI_FORMAT_R8G8B8A8_UNORM, srcTexture2D))
-						{
-							dstDesc = srcDesc;
+						srcStagingDesc = srcDesc;
+						srcStagingDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+						srcStagingDesc.Usage = D3D11_USAGE_STAGING;
+						srcStagingDesc.BindFlags = 0;
+						srcStagingDesc.MiscFlags = 0;
+						srcStagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 
-							srcStagingDesc = srcDesc;
-							srcStagingDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-							srcStagingDesc.Usage = D3D11_USAGE_STAGING;
-							srcStagingDesc.BindFlags = 0;
-							srcStagingDesc.MiscFlags = 0;
-							srcStagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-
-							dstShaderResourceViewDesc = srcShaderResourceViewDesc;
-							hr = device->CreateTexture2D(&srcStagingDesc, nullptr, &srcStagingTexture2D);
-							if (FAILED(hr))
-							{
-								logger::error("{}::{} : Failed to create src staging texture ({}|{})", _func_, taskID.taskID, hr, bake.second.srcTexturePath);
-								srcStagingTexture2D = nullptr;
-							}
-							else
-							{
-								Shader::ShaderManager::GetSingleton().ShaderContextLock();
-								context->CopyResource(srcStagingTexture2D.Get(), srcTexture2D.Get());
-								Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-							}
-						}
-					}
-				}
-				if (!bake.second.detailTexturePath.empty())
-				{
-					Microsoft::WRL::ComPtr<ID3D11Texture2D> detailTexture2D = nullptr;
-					D3D11_TEXTURE2D_DESC detailDesc;
-					D3D11_SHADER_RESOURCE_VIEW_DESC detailShaderResourceViewDesc;
-					logger::info("{}::{}::{} : {} detail texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.detailTexturePath);
-
-					if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.detailTexturePath, detailDesc, detailShaderResourceViewDesc, DXGI_FORMAT_R8G8B8A8_UNORM, detailTexture2D))
-					{
-						auto tmpDesc = dstDesc;
-						dstDesc = detailDesc;
-						if ((std::uint64_t)detailDesc.Width * (std::uint64_t)detailDesc.Height < (std::uint64_t)tmpDesc.Width * (std::uint64_t)tmpDesc.Height)
-						{
-							dstDesc.Width = tmpDesc.Width;
-							dstDesc.Height = tmpDesc.Height;
-						}
-
-						detailStagingDesc = detailDesc;
-						detailStagingDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-						detailStagingDesc.Usage = D3D11_USAGE_STAGING;
-						detailStagingDesc.BindFlags = 0;
-						detailStagingDesc.MiscFlags = 0;
-						detailStagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-
-						dstShaderResourceViewDesc = detailShaderResourceViewDesc;
-						hr = device->CreateTexture2D(&detailStagingDesc, nullptr, &detailStagingTexture2D);
+						dstShaderResourceViewDesc = srcShaderResourceViewDesc;
+						hr = device->CreateTexture2D(&srcStagingDesc, nullptr, &srcStagingTexture2D);
 						if (FAILED(hr))
 						{
-							logger::error("{}::{} : Failed to create detail staging texture ({}|{})", _func_, taskID.taskID, hr, bake.second.detailTexturePath);
-							detailStagingTexture2D = nullptr;
+							logger::error("{}::{:x} : Failed to create src staging texture ({}|{})", _func_, a_actorID, hr, bake.second.srcTexturePath);
+							srcStagingTexture2D = nullptr;
 						}
 						else
 						{
 							Shader::ShaderManager::GetSingleton().ShaderContextLock();
-							context->CopyResource(detailStagingTexture2D.Get(), detailTexture2D.Get());
+							context->CopyResource(srcStagingTexture2D.Get(), srcTexture2D.Get());
 							Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 						}
 					}
-
 				}
-				if (!srcStagingTexture2D && !detailStagingTexture2D)
-				{
-					logger::error("{}::{}::{} : There is no Normalmap!", _func_, taskID.taskID, a_data.geometries[bakeIndex].first);
-					return;
-				}
+			}
+			if (!bake.second.detailTexturePath.empty())
+			{
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> detailTexture2D = nullptr;
+				D3D11_TEXTURE2D_DESC detailDesc;
+				D3D11_SHADER_RESOURCE_VIEW_DESC detailShaderResourceViewDesc;
+				logger::info("{}::{:x}::{} : {} detail texture loading...)", _func_, a_actorID, bake.second.geometryName, bake.second.detailTexturePath);
 
-				if (!bake.second.overlayTexturePath.empty())
+				if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.detailTexturePath, detailDesc, detailShaderResourceViewDesc, DXGI_FORMAT_R8G8B8A8_UNORM, detailTexture2D))
 				{
-					Microsoft::WRL::ComPtr<ID3D11Texture2D> overlayTexture2D = nullptr;
-					logger::info("{}::{}::{} : {} overlay texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.overlayTexturePath);
-					D3D11_TEXTURE2D_DESC overlayDesc;
-					if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.overlayTexturePath, overlayDesc, DXGI_FORMAT_R8G8B8A8_UNORM, overlayTexture2D))
+					auto tmpDesc = dstDesc;
+					dstDesc = detailDesc;
+					if ((std::uint64_t)detailDesc.Width * (std::uint64_t)detailDesc.Height < (std::uint64_t)tmpDesc.Width * (std::uint64_t)tmpDesc.Height)
 					{
-						overlayStagingDesc = overlayDesc;
-						overlayStagingDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-						overlayStagingDesc.Usage = D3D11_USAGE_STAGING;
-						overlayStagingDesc.BindFlags = 0;
-						overlayStagingDesc.MiscFlags = 0;
-						overlayStagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-						hr = device->CreateTexture2D(&overlayStagingDesc, nullptr, &overlayStagingTexture2D);
-						if (FAILED(hr))
-						{
-							logger::error("{}::{}::{} : Failed to create overlay staging texture ({})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr);
-							overlayStagingTexture2D = nullptr;
-						}
-						else
-						{
-							Shader::ShaderManager::GetSingleton().ShaderContextLock();
-							context->CopyResource(overlayStagingTexture2D.Get(), overlayTexture2D.Get());
-							Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-						}
+						dstDesc.Width = tmpDesc.Width;
+						dstDesc.Height = tmpDesc.Height;
 					}
-				}
 
-				if (!bake.second.maskTexturePath.empty())
-				{
-					Microsoft::WRL::ComPtr<ID3D11Texture2D> maskTexture2D = nullptr;
-					logger::info("{}::{}::{} : {} mask texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.maskTexturePath);
-					D3D11_TEXTURE2D_DESC maskDesc;
-					if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.maskTexturePath, maskDesc, DXGI_FORMAT_R8G8B8A8_UNORM, maskTexture2D))
+					detailStagingDesc = detailDesc;
+					detailStagingDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+					detailStagingDesc.Usage = D3D11_USAGE_STAGING;
+					detailStagingDesc.BindFlags = 0;
+					detailStagingDesc.MiscFlags = 0;
+					detailStagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+
+					dstShaderResourceViewDesc = detailShaderResourceViewDesc;
+					hr = device->CreateTexture2D(&detailStagingDesc, nullptr, &detailStagingTexture2D);
+					if (FAILED(hr))
 					{
-						maskStagingDesc = maskDesc;
-						maskStagingDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-						maskStagingDesc.Usage = D3D11_USAGE_STAGING;
-						maskStagingDesc.BindFlags = 0;
-						maskStagingDesc.MiscFlags = 0;
-						maskStagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-						hr = device->CreateTexture2D(&maskStagingDesc, nullptr, &maskStagingTexture2D);
-						if (FAILED(hr))
-						{
-							logger::error("{}::{}::{} : Failed to create mask staging texture ({})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr);
-							maskStagingTexture2D = nullptr;
-						}
-						else
-						{
-							Shader::ShaderManager::GetSingleton().ShaderContextLock();
-							context->CopyResource(maskStagingTexture2D.Get(), maskTexture2D.Get());
-							Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-						}
+						logger::error("{}::{:x} : Failed to create detail staging texture ({}|{})", _func_, a_actorID, hr, bake.second.detailTexturePath);
+						detailStagingTexture2D = nullptr;
+					}
+					else
+					{
+						Shader::ShaderManager::GetSingleton().ShaderContextLock();
+						context->CopyResource(detailStagingTexture2D.Get(), detailTexture2D.Get());
+						Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 					}
 				}
 
-				dstStagingDesc = dstDesc;
-				dstStagingDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-				dstStagingDesc.Usage = D3D11_USAGE_STAGING;
-				dstStagingDesc.BindFlags = 0;
-				dstStagingDesc.MiscFlags = 0;
-				dstStagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ | D3D11_CPU_ACCESS_WRITE;
-				dstStagingDesc.MipLevels = 1;
-				dstStagingDesc.ArraySize = 1;
-				dstStagingDesc.SampleDesc.Count = 1;
-				hr = device->CreateTexture2D(&dstStagingDesc, nullptr, &dstStagingTexture2D);
-				if (FAILED(hr))
-				{
-					logger::error("{}::{}::{} : Failed to create dst staging texture ({})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr);
-					return;
-				}
+			}
+			if (!srcStagingTexture2D && !detailStagingTexture2D)
+			{
+				logger::error("{}::{:x}::{} : There is no Normalmap!", _func_, a_actorID, bake.second.geometryName);
+				continue;
+			}
 
-				if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
+			if (!bake.second.overlayTexturePath.empty())
+			{
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> overlayTexture2D = nullptr;
+				logger::info("{}::{:x}::{} : {} overlay texture loading...)", _func_, a_actorID, bake.second.geometryName, bake.second.overlayTexturePath);
+				D3D11_TEXTURE2D_DESC overlayDesc;
+				if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.overlayTexturePath, overlayDesc, DXGI_FORMAT_R8G8B8A8_UNORM, overlayTexture2D))
 				{
-					logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
-					return;
+					overlayStagingDesc = overlayDesc;
+					overlayStagingDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+					overlayStagingDesc.Usage = D3D11_USAGE_STAGING;
+					overlayStagingDesc.BindFlags = 0;
+					overlayStagingDesc.MiscFlags = 0;
+					overlayStagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+					hr = device->CreateTexture2D(&overlayStagingDesc, nullptr, &overlayStagingTexture2D);
+					if (FAILED(hr))
+					{
+						logger::error("{}::{:x}::{} : Failed to create overlay staging texture ({})", _func_, a_actorID, bake.second.geometryName, hr);
+						overlayStagingTexture2D = nullptr;
+					}
+					else
+					{
+						Shader::ShaderManager::GetSingleton().ShaderContextLock();
+						context->CopyResource(overlayStagingTexture2D.Get(), overlayTexture2D.Get());
+						Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+					}
 				}
+			}
 
-				logger::info("{}::{}::{} : {} {} {} {} baking normalmap...", _func_, taskID.taskID, a_data.geometries[bakeIndex].first,
-							 a_data.geometries[bakeIndex].second.vertexCount(),
-							 a_data.geometries[bakeIndex].second.uvCount(),
-							 a_data.geometries[bakeIndex].second.normalCount(),
-							 a_data.geometries[bakeIndex].second.indicesCount());
-
-				WaitForGPU();
-
-				D3D11_MAPPED_SUBRESOURCE srcMappedResource;
-				uint8_t* srcData = nullptr;
-				if (srcStagingTexture2D)
+			if (!bake.second.maskTexturePath.empty())
+			{
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> maskTexture2D = nullptr;
+				logger::info("{}::{:x}::{} : {} mask texture loading...)", _func_, a_actorID, bake.second.geometryName, bake.second.maskTexturePath);
+				D3D11_TEXTURE2D_DESC maskDesc;
+				if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.maskTexturePath, maskDesc, DXGI_FORMAT_R8G8B8A8_UNORM, maskTexture2D))
 				{
-					Shader::ShaderManager::GetSingleton().ShaderContextLock();
-					hr = context->Map(srcStagingTexture2D.Get(), 0, D3D11_MAP_READ, 0, &srcMappedResource);
-					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-					srcData = reinterpret_cast<uint8_t*>(srcMappedResource.pData);
+					maskStagingDesc = maskDesc;
+					maskStagingDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+					maskStagingDesc.Usage = D3D11_USAGE_STAGING;
+					maskStagingDesc.BindFlags = 0;
+					maskStagingDesc.MiscFlags = 0;
+					maskStagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+					hr = device->CreateTexture2D(&maskStagingDesc, nullptr, &maskStagingTexture2D);
+					if (FAILED(hr))
+					{
+						logger::error("{}::{:x}::{} : Failed to create mask staging texture ({})", _func_, a_actorID, bake.second.geometryName, hr);
+						maskStagingTexture2D = nullptr;
+					}
+					else
+					{
+						Shader::ShaderManager::GetSingleton().ShaderContextLock();
+						context->CopyResource(maskStagingTexture2D.Get(), maskTexture2D.Get());
+						Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+					}
 				}
-				D3D11_MAPPED_SUBRESOURCE detailMappedResource;
-				uint8_t* detailData = nullptr;
-				if (detailStagingTexture2D)
-				{
-					Shader::ShaderManager::GetSingleton().ShaderContextLock();
-					hr = context->Map(detailStagingTexture2D.Get(), 0, D3D11_MAP_READ, 0, &detailMappedResource);
-					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-					detailData = reinterpret_cast<uint8_t*>(detailMappedResource.pData);
-				}
-				D3D11_MAPPED_SUBRESOURCE overlayMappedResource;
-				uint8_t* overlayData = nullptr;
-				if (overlayStagingTexture2D)
-				{
-					Shader::ShaderManager::GetSingleton().ShaderContextLock();
-					hr = context->Map(overlayStagingTexture2D.Get(), 0, D3D11_MAP_READ, 0, &overlayMappedResource);
-					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-					overlayData = reinterpret_cast<uint8_t*>(overlayMappedResource.pData);
-				}
-				D3D11_MAPPED_SUBRESOURCE maskMappedResource;
-				uint8_t* maskData = nullptr;
-				if (maskStagingTexture2D)
-				{
-					Shader::ShaderManager::GetSingleton().ShaderContextLock();
-					hr = context->Map(maskStagingTexture2D.Get(), 0, D3D11_MAP_READ, 0, &maskMappedResource);
-					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-					maskData = reinterpret_cast<uint8_t*>(maskMappedResource.pData);
-				}
+			}
 
-				const bool hasSrcData = (srcData != nullptr);
-				const bool hasDetailData = (detailData != nullptr);
-				const bool hasOverlayData = (overlayData != nullptr);
-				const bool hasMaskData = (maskData != nullptr);
+			dstStagingDesc = dstDesc;
+			dstStagingDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			dstStagingDesc.Usage = D3D11_USAGE_STAGING;
+			dstStagingDesc.BindFlags = 0;
+			dstStagingDesc.MiscFlags = 0;
+			dstStagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ | D3D11_CPU_ACCESS_WRITE;
+			dstStagingDesc.MipLevels = 1;
+			dstStagingDesc.ArraySize = 1;
+			dstStagingDesc.SampleDesc.Count = 1;
+			hr = device->CreateTexture2D(&dstStagingDesc, nullptr, &dstStagingTexture2D);
+			if (FAILED(hr))
+			{
+				logger::error("{}::{:x}::{} : Failed to create dst staging texture ({})", _func_, a_actorID, bake.second.geometryName, hr);
+				continue;
+			}
 
-				D3D11_MAPPED_SUBRESOURCE mappedResource;
+			logger::info("{}::{:x}::{} : {} {} {} {} baking normalmap...", _func_, a_actorID, bake.second.geometryName,
+						 objInfo.vertexCount(),
+						 objInfo.uvCount(),
+						 objInfo.normalCount(),
+						 objInfo.indicesCount());
+
+			WaitForGPU();
+
+			D3D11_MAPPED_SUBRESOURCE srcMappedResource;
+			uint8_t* srcData = nullptr;
+			if (srcStagingTexture2D)
+			{
 				Shader::ShaderManager::GetSingleton().ShaderContextLock();
-				hr = context->Map(dstStagingTexture2D.Get(), 0, D3D11_MAP_READ_WRITE, 0, &mappedResource);
+				hr = context->Map(srcStagingTexture2D.Get(), 0, D3D11_MAP_READ, 0, &srcMappedResource);
 				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-				if (FAILED(hr))
-				{
-					logger::error("{}::{}::{} Failed to read data from the staging texture ({})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr);
-					return;
-				}
+				srcData = reinterpret_cast<uint8_t*>(srcMappedResource.pData);
+			}
+			D3D11_MAPPED_SUBRESOURCE detailMappedResource;
+			uint8_t* detailData = nullptr;
+			if (detailStagingTexture2D)
+			{
+				Shader::ShaderManager::GetSingleton().ShaderContextLock();
+				hr = context->Map(detailStagingTexture2D.Get(), 0, D3D11_MAP_READ, 0, &detailMappedResource);
+				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+				detailData = reinterpret_cast<uint8_t*>(detailMappedResource.pData);
+			}
+			D3D11_MAPPED_SUBRESOURCE overlayMappedResource;
+			uint8_t* overlayData = nullptr;
+			if (overlayStagingTexture2D)
+			{
+				Shader::ShaderManager::GetSingleton().ShaderContextLock();
+				hr = context->Map(overlayStagingTexture2D.Get(), 0, D3D11_MAP_READ, 0, &overlayMappedResource);
+				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+				overlayData = reinterpret_cast<uint8_t*>(overlayMappedResource.pData);
+			}
+			D3D11_MAPPED_SUBRESOURCE maskMappedResource;
+			uint8_t* maskData = nullptr;
+			if (maskStagingTexture2D)
+			{
+				Shader::ShaderManager::GetSingleton().ShaderContextLock();
+				hr = context->Map(maskStagingTexture2D.Get(), 0, D3D11_MAP_READ, 0, &maskMappedResource);
+				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+				maskData = reinterpret_cast<uint8_t*>(maskMappedResource.pData);
+			}
 
-				std::uint32_t totalTris = a_data.geometries[bakeIndex].second.indicesCount() / 3;
+			const bool hasSrcData = (srcData != nullptr);
+			const bool hasDetailData = (detailData != nullptr);
+			const bool hasOverlayData = (overlayData != nullptr);
+			const bool hasMaskData = (maskData != nullptr);
 
-				const UINT width = dstStagingDesc.Width;
-				const UINT height = dstStagingDesc.Height;
-				uint8_t* dstData = reinterpret_cast<uint8_t*>(mappedResource.pData);
+			D3D11_MAPPED_SUBRESOURCE mappedResource;
+			Shader::ShaderManager::GetSingleton().ShaderContextLock();
+			hr = context->Map(dstStagingTexture2D.Get(), 0, D3D11_MAP_READ_WRITE, 0, &mappedResource);
+			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+			if (FAILED(hr))
+			{
+				logger::error("{}::{:x}::{} Failed to read data from the staging texture ({})", _func_, a_actorID, bake.second.geometryName, hr);
+				continue;
+			}
 
-				const float WidthF = (float)width;
-				const float HeightF = (float)height;
-				const float invWidth = 1.0f / WidthF;
-				const float invHeight = 1.0f / HeightF;
-				const float srcWidthF = hasSrcData ? (float)srcStagingDesc.Width : 0.0f;
-				const float srcHeightF = hasSrcData ? (float)srcStagingDesc.Height : 0.0f;
-				const float detailWidthF = hasDetailData ? (float)detailStagingDesc.Width : 0.0f;
-				const float detailHeightF = hasDetailData ? (float)detailStagingDesc.Height : 0.0f;
-				const float overlayWidthF = hasOverlayData ? (float)overlayStagingDesc.Width : 0.0f;
-				const float overlayHeightF = hasOverlayData ? (float)overlayStagingDesc.Height : 0.0f;
-				const float maskWidthF = hasMaskData ? (float)maskStagingDesc.Width : 0.0f;
-				const float maskHeightF = hasMaskData ? (float)maskStagingDesc.Height : 0.0f;
+			std::uint32_t totalTris = objInfo.indicesCount() / 3;
 
-				const DirectX::XMVECTOR halfVec = DirectX::XMVectorReplicate(0.5f);
-				const bool tangentZCorrection = Config::GetSingleton().GetTangentZCorrection();
-				const float detailStrength = bake.second.detailStrength;
+			const UINT width = dstStagingDesc.Width;
+			const UINT height = dstStagingDesc.Height;
+			uint8_t* dstData = reinterpret_cast<uint8_t*>(mappedResource.pData);
 
-				std::vector<std::future<void>> parallelTris;
-				const std::uint32_t subSize = std::max(UINT(1), totalTris / 10000 + 1) * std::pow(2, Config::GetSingleton().GetDivideTaskQ());
-				const std::uint32_t numSubTris = (totalTris + subSize - 1) / subSize;
+			const float WidthF = (float)width;
+			const float HeightF = (float)height;
+			const float invWidth = 1.0f / WidthF;
+			const float invHeight = 1.0f / HeightF;
+			const float srcWidthF = hasSrcData ? (float)srcStagingDesc.Width : 0.0f;
+			const float srcHeightF = hasSrcData ? (float)srcStagingDesc.Height : 0.0f;
+			const float detailWidthF = hasDetailData ? (float)detailStagingDesc.Width : 0.0f;
+			const float detailHeightF = hasDetailData ? (float)detailStagingDesc.Height : 0.0f;
+			const float overlayWidthF = hasOverlayData ? (float)overlayStagingDesc.Width : 0.0f;
+			const float overlayHeightF = hasOverlayData ? (float)overlayStagingDesc.Height : 0.0f;
+			const float maskWidthF = hasMaskData ? (float)maskStagingDesc.Width : 0.0f;
+			const float maskHeightF = hasMaskData ? (float)maskStagingDesc.Height : 0.0f;
 
-				struct Buffer {
-					DirectX::XMINT2 p0, p1, p2;
-					DirectX::XMVECTOR n0v, n1v, n2v;
-					DirectX::XMVECTOR t0v, t1v, t2v;
-					DirectX::XMVECTOR b0v, b1v, b2v;
-					std::int32_t minX, minY, maxX, maxY;
-				};
-				std::vector<std::vector<Buffer>> buffers(subSize);
+			const DirectX::XMVECTOR halfVec = DirectX::XMVectorReplicate(0.5f);
+			const bool tangentZCorrection = Config::GetSingleton().GetTangentZCorrection();
+			const float detailStrength = bake.second.detailStrength;
 
-				for (std::size_t subIndex = 0; subIndex < subSize; subIndex++)
-				{
-					buffers[subIndex].resize(numSubTris);
-					const std::uint32_t subOffset = subIndex * numSubTris;
-					const std::uint32_t localTrisMax = std::min(totalTris, subOffset + numSubTris);
-					concurrency::combinable<std::uint32_t> pixels;
-
-					concurrency::parallel_for(subOffset, localTrisMax, [&](std::uint32_t i) {
-						const std::uint32_t index = a_data.geometries[bakeIndex].second.indicesStart + i * 3;
-
-						const std::uint32_t index0 = a_data.indices[index + 0];
-						const std::uint32_t index1 = a_data.indices[index + 1];
-						const std::uint32_t index2 = a_data.indices[index + 2];
-
-						const DirectX::XMFLOAT2& u0 = a_data.uvs[index0];
-						const DirectX::XMFLOAT2& u1 = a_data.uvs[index1];
-						const DirectX::XMFLOAT2& u2 = a_data.uvs[index2];
-
-						const std::uint32_t bufferIndex = i - subOffset;
-
-						buffers[subIndex][bufferIndex].n0v = DirectX::XMLoadFloat3(&a_data.normals[index0]);
-						buffers[subIndex][bufferIndex].n1v = DirectX::XMLoadFloat3(&a_data.normals[index1]);
-						buffers[subIndex][bufferIndex].n2v = DirectX::XMLoadFloat3(&a_data.normals[index2]);
-
-						buffers[subIndex][bufferIndex].t0v = DirectX::XMLoadFloat3(&a_data.tangents[index0]);
-						buffers[subIndex][bufferIndex].t1v = DirectX::XMLoadFloat3(&a_data.tangents[index1]);
-						buffers[subIndex][bufferIndex].t2v = DirectX::XMLoadFloat3(&a_data.tangents[index2]);
-
-						buffers[subIndex][bufferIndex].b0v = DirectX::XMLoadFloat3(&a_data.bitangents[index0]);
-						buffers[subIndex][bufferIndex].b1v = DirectX::XMLoadFloat3(&a_data.bitangents[index1]);
-						buffers[subIndex][bufferIndex].b2v = DirectX::XMLoadFloat3(&a_data.bitangents[index2]);
-
-						//uvToPixel
-						const DirectX::XMINT2 p0 = { static_cast<int>(u0.x * width), static_cast<int>(u0.y * height) };
-						const DirectX::XMINT2 p1 = { static_cast<int>(u1.x * width), static_cast<int>(u1.y * height) };
-						const DirectX::XMINT2 p2 = { static_cast<int>(u2.x * width), static_cast<int>(u2.y * height) };
-
-						const std::int32_t minX = std::max(0, std::min({ p0.x, p1.x, p2.x }));
-						const std::int32_t minY = std::max(0, std::min({ p0.y, p1.y, p2.y }));
-						const std::int32_t maxX = std::min((std::int32_t)width - 1, std::max({ p0.x, p1.x, p2.x }) + 1);
-						const std::int32_t maxY = std::min((std::int32_t)height - 1, std::max({ p0.y, p1.y, p2.y }) + 1);
-
-						buffers[subIndex][bufferIndex].p0 = p0;
-						buffers[subIndex][bufferIndex].p1 = p1;
-						buffers[subIndex][bufferIndex].p2 = p2;
-
-						buffers[subIndex][bufferIndex].minX = minX;
-						buffers[subIndex][bufferIndex].minY = minY;
-						buffers[subIndex][bufferIndex].maxX = maxX;
-						buffers[subIndex][bufferIndex].maxY = maxY;
-
-						pixels.local() += (maxX - minX) * (maxY - minY);
-					});
-
-					std::uint32_t totalPixels = pixels.combine(std::plus<std::uint32_t>());
-
-					const std::uint32_t subPixelSize = std::max(UINT(1), totalPixels / pixelGroup + 1) * std::pow(2, Config::GetSingleton().GetDivideTaskQ());
-					const std::uint32_t numSubPixels = (numSubTris + subPixelSize - 1) / subPixelSize;
-
-					for (std::size_t subPixelIndex = 0; subPixelIndex < subPixelSize; subPixelIndex++)
-					{
-						const std::uint32_t subPixelOffset = subPixelIndex * numSubPixels;
-						const std::uint32_t localPixelMax = std::min(numSubTris, subPixelOffset + numSubPixels);
-						parallelTris.push_back(cpuTask->submitAsync([&, subIndex, subPixelOffset, localPixelMax]() {
+			std::vector<std::future<void>> processes;
 #ifdef BAKE_TEST2
-							PerformanceLog(std::string(_func_) + "::" + std::to_string(taskID.taskID) + "::" + a_data.geometries[bakeIndex].second.info.name, false, false);
+			PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + bake.second.geometryName, false, false);
 #endif // BAKE_TEST2
-							concurrency::parallel_for(subPixelOffset, localPixelMax, [&](std::uint32_t i) {
+			for (std::size_t i = 0; i < totalTris; i++)
+			{
+				processes.push_back(processingThreads->submitAsync([&, i]() {
+					const std::uint32_t index = objInfo.indicesStart + i * 3;
 
-								for (std::int32_t y = buffers[subIndex][i].minY; y < buffers[subIndex][i].maxY; y++)
+					const std::uint32_t index0 = a_data.indices[index + 0];
+					const std::uint32_t index1 = a_data.indices[index + 1];
+					const std::uint32_t index2 = a_data.indices[index + 2];
+
+					const DirectX::XMFLOAT2& u0 = a_data.uvs[index0];
+					const DirectX::XMFLOAT2& u1 = a_data.uvs[index1];
+					const DirectX::XMFLOAT2& u2 = a_data.uvs[index2];
+
+					const DirectX::XMVECTOR n0v = DirectX::XMLoadFloat3(&a_data.normals[index0]);
+					const DirectX::XMVECTOR n1v = DirectX::XMLoadFloat3(&a_data.normals[index1]);
+					const DirectX::XMVECTOR n2v = DirectX::XMLoadFloat3(&a_data.normals[index2]);
+
+					const DirectX::XMVECTOR t0v = DirectX::XMLoadFloat3(&a_data.tangents[index0]);
+					const DirectX::XMVECTOR t1v = DirectX::XMLoadFloat3(&a_data.tangents[index1]);
+					const DirectX::XMVECTOR t2v = DirectX::XMLoadFloat3(&a_data.tangents[index2]);
+
+					const DirectX::XMVECTOR b0v = DirectX::XMLoadFloat3(&a_data.bitangents[index0]);
+					const DirectX::XMVECTOR b1v = DirectX::XMLoadFloat3(&a_data.bitangents[index1]);
+					const DirectX::XMVECTOR b2v = DirectX::XMLoadFloat3(&a_data.bitangents[index2]);
+
+					//uvToPixel
+					const DirectX::XMINT2 p0 = { static_cast<int>(u0.x * width), static_cast<int>(u0.y * height) };
+					const DirectX::XMINT2 p1 = { static_cast<int>(u1.x * width), static_cast<int>(u1.y * height) };
+					const DirectX::XMINT2 p2 = { static_cast<int>(u2.x * width), static_cast<int>(u2.y * height) };
+
+					const std::int32_t minX = std::max(0, std::min({ p0.x, p1.x, p2.x }));
+					const std::int32_t minY = std::max(0, std::min({ p0.y, p1.y, p2.y }));
+					const std::int32_t maxX = std::min((std::int32_t)width - 1, std::max({ p0.x, p1.x, p2.x }) + 1);
+					const std::int32_t maxY = std::min((std::int32_t)height - 1, std::max({ p0.y, p1.y, p2.y }) + 1);
+
+					for (std::int32_t y = minY; y < maxY; y++)
+					{
+						const float mY = (float)y * invHeight;
+
+						uint8_t* srcRowData = nullptr;
+						if (hasSrcData)
+						{
+							const float srcY = mY * srcHeightF;
+							srcRowData = srcData + (UINT)srcY * srcMappedResource.RowPitch;
+						}
+
+						uint8_t* detailRowData = nullptr;
+						if (hasDetailData)
+						{
+							const float detailY = mY * detailHeightF;
+							detailRowData = detailData + (UINT)detailY * detailMappedResource.RowPitch;
+						}
+
+						uint8_t* overlayRowData = nullptr;
+						if (hasOverlayData)
+						{
+							const float overlayY = mY * overlayHeightF;
+							overlayRowData = overlayData + (UINT)overlayY * overlayMappedResource.RowPitch;
+						}
+
+						uint8_t* maskRowData = nullptr;
+						if (hasMaskData)
+						{
+							const float maskY = mY * maskHeightF;
+							maskRowData = maskData + (UINT)maskY * maskMappedResource.RowPitch;
+						}
+
+						std::uint8_t* rowData = dstData + y * mappedResource.RowPitch;
+						for (std::int32_t x = minX; x < maxX; x++)
+						{
+							DirectX::XMFLOAT3 bary;
+							if (!ComputeBarycentric((float)x + 0.5f, (float)y + 0.5f, p0, p1, p2, bary))
+								continue;
+
+							const float mX = x * invWidth;
+
+							RGBA dstColor;
+							RGBA overlayColor(1.0f, 1.0f, 1.0f, 0.0f);
+							if (hasOverlayData)
+							{
+								const float overlayX = mX * overlayWidthF;
+								const std::uint32_t* overlayPixel = reinterpret_cast<std::uint32_t*>(overlayRowData + (UINT)overlayX * 4);
+								overlayColor.SetReverse(*overlayPixel);
+							}
+							if (overlayColor.a < 1.0f)
+							{
+								RGBA maskColor(1.0f, 1.0f, 1.0f, 0.0f);
+								if (hasMaskData && hasSrcData)
 								{
-									const float mY = (float)y * invHeight;
-
-									uint8_t* srcRowData = nullptr;
-									if (hasSrcData)
-									{
-										const float srcY = mY * srcHeightF;
-										srcRowData = srcData + (UINT)srcY * srcMappedResource.RowPitch;
-									}
-
-									uint8_t* detailRowData = nullptr;
+									const float maskX = mX * maskWidthF;
+									const std::uint32_t* maskPixel = reinterpret_cast<std::uint32_t*>(maskRowData + (UINT)maskX * 4);
+									maskColor.SetReverse(*maskPixel);
+								}
+								if (maskColor.a < 1.0f)
+								{
+									RGBA detailColor(0.5f, 0.5f, 1.0f, 0.5f);
 									if (hasDetailData)
 									{
-										const float detailY = mY * detailHeightF;
-										detailRowData = detailData + (UINT)detailY * detailMappedResource.RowPitch;
+										const float detailX = mX * detailWidthF;
+										const std::uint32_t* detailPixel = reinterpret_cast<std::uint32_t*>(detailRowData + (UINT)detailX * 4);
+										detailColor.SetReverse(*detailPixel);
+										detailColor = RGBA::lerp(RGBA(0.5f, 0.5f, 1.0f, detailColor.a), detailColor, detailStrength);
 									}
 
-									uint8_t* overlayRowData = nullptr;
-									if (hasOverlayData)
+									const DirectX::XMVECTOR n = DirectX::XMVector3Normalize(
+										DirectX::XMVectorAdd(DirectX::XMVectorAdd(
+											DirectX::XMVectorScale(n0v, bary.x),
+											DirectX::XMVectorScale(n1v, bary.y)),
+											DirectX::XMVectorScale(n2v, bary.z)));
+
+									DirectX::XMVECTOR normalResult = DirectX::XMVectorZero();
+									if (detailColor.a > 0.0f)
 									{
-										const float overlayY = mY * overlayHeightF;
-										overlayRowData = overlayData + (UINT)overlayY * overlayMappedResource.RowPitch;
-									}
+										const DirectX::XMVECTOR t = DirectX::XMVector3Normalize(
+											DirectX::XMVectorAdd(DirectX::XMVectorAdd(
+												DirectX::XMVectorScale(t0v, bary.x),
+												DirectX::XMVectorScale(t1v, bary.y)),
+												DirectX::XMVectorScale(t2v, bary.z)));
 
-									uint8_t* maskRowData = nullptr;
-									if (hasMaskData)
+										const DirectX::XMVECTOR b = DirectX::XMVector3Normalize(
+											DirectX::XMVectorAdd(DirectX::XMVectorAdd(
+												DirectX::XMVectorScale(b0v, bary.x),
+												DirectX::XMVectorScale(b1v, bary.y)),
+												DirectX::XMVectorScale(b2v, bary.z)));
+
+										const DirectX::XMVECTOR ft = DirectX::XMVector3Normalize(
+											DirectX::XMVectorSubtract(t, DirectX::XMVectorScale(n, DirectX::XMVectorGetX(DirectX::XMVector3Dot(n, t)))));
+
+										const DirectX::XMVECTOR cross = DirectX::XMVector3Cross(n, ft);
+										const float handedness = (DirectX::XMVectorGetX(DirectX::XMVector3Dot(cross, b)) < 0.0f) ? -1.0f : 1.0f;
+										const DirectX::XMVECTOR fb = DirectX::XMVector3Normalize(DirectX::XMVectorScale(cross, handedness));
+										const DirectX::XMMATRIX tbn = DirectX::XMMATRIX(ft, fb, n, DirectX::XMVectorSet(0, 0, 0, 1));
+
+										const DirectX::XMFLOAT4 detailColorF(
+											detailColor.r * 2.0f - 1.0f,
+											detailColor.g * 2.0f - 1.0f,
+											detailColor.b * 2.0f - 1.0f,
+											0.0f
+										);
+										const DirectX::XMVECTOR detailNormalVec = DirectX::XMVectorSet(
+											detailColorF.x,
+											detailColorF.y,
+											tangentZCorrection ? std::sqrt(std::max(0.0f, 1.0f - detailColorF.x * detailColorF.x - detailColorF.y * detailColorF.y)) : detailColorF.z,
+											0.0f);
+
+										const DirectX::XMVECTOR detailNormal = DirectX::XMVector3Normalize(
+											DirectX::XMVector3TransformNormal(detailNormalVec, tbn));
+										normalResult = DirectX::XMVector3Normalize(
+											DirectX::XMVectorLerp(n, detailNormal, detailColor.a));
+									}
+									else
 									{
-										const float maskY = mY * maskHeightF;
-										maskRowData = maskData + (UINT)maskY * maskMappedResource.RowPitch;
+										normalResult = n;
 									}
-
-									std::uint8_t* rowData = dstData + y * mappedResource.RowPitch;
-									for (std::int32_t x = buffers[subIndex][i].minX; x < buffers[subIndex][i].maxX; x++)
-									{
-										DirectX::XMFLOAT3 bary;
-										if (!ComputeBarycentric((float)x + 0.5f, (float)y + 0.5f, buffers[subIndex][i].p0, buffers[subIndex][i].p1, buffers[subIndex][i].p2, bary))
-											continue;
-
-										const float mX = x * invWidth;
-
-										RGBA dstColor;
-										RGBA overlayColor(1.0f, 1.0f, 1.0f, 0.0f);
-										if (hasOverlayData)
-										{
-											const float overlayX = mX * overlayWidthF;
-											const std::uint32_t* overlayPixel = reinterpret_cast<std::uint32_t*>(overlayRowData + (UINT)overlayX * 4);
-											overlayColor.SetReverse(*overlayPixel);
-										}
-										if (overlayColor.a < 1.0f)
-										{
-											RGBA maskColor(1.0f, 1.0f, 1.0f, 0.0f);
-											if (hasMaskData && hasSrcData)
-											{
-												const float maskX = mX * maskWidthF;
-												const std::uint32_t* maskPixel = reinterpret_cast<std::uint32_t*>(maskRowData + (UINT)maskX * 4);
-												maskColor.SetReverse(*maskPixel);
-											}
-											if (maskColor.a < 1.0f)
-											{
-												RGBA detailColor(0.5f, 0.5f, 1.0f, 0.5f);
-												if (hasDetailData)
-												{
-													const float detailX = mX * detailWidthF;
-													const std::uint32_t* detailPixel = reinterpret_cast<std::uint32_t*>(detailRowData + (UINT)detailX * 4);
-													detailColor.SetReverse(*detailPixel);
-													detailColor = RGBA::lerp(RGBA(0.5f, 0.5f, 1.0f, detailColor.a), detailColor, detailStrength);
-												}
-
-												const DirectX::XMVECTOR n = DirectX::XMVector3Normalize(
-													DirectX::XMVectorAdd(DirectX::XMVectorAdd(
-														DirectX::XMVectorScale(buffers[subIndex][i].n0v, bary.x),
-														DirectX::XMVectorScale(buffers[subIndex][i].n1v, bary.y)),
-														DirectX::XMVectorScale(buffers[subIndex][i].n2v, bary.z)));
-
-												DirectX::XMVECTOR normalResult = DirectX::XMVectorZero();
-												if (detailColor.a > 0.0f)
-												{
-													const DirectX::XMVECTOR t = DirectX::XMVector3Normalize(
-														DirectX::XMVectorAdd(DirectX::XMVectorAdd(
-															DirectX::XMVectorScale(buffers[subIndex][i].t0v, bary.x),
-															DirectX::XMVectorScale(buffers[subIndex][i].t1v, bary.y)),
-															DirectX::XMVectorScale(buffers[subIndex][i].t2v, bary.z)));
-
-													const DirectX::XMVECTOR b = DirectX::XMVector3Normalize(
-														DirectX::XMVectorAdd(DirectX::XMVectorAdd(
-															DirectX::XMVectorScale(buffers[subIndex][i].b0v, bary.x),
-															DirectX::XMVectorScale(buffers[subIndex][i].b1v, bary.y)),
-															DirectX::XMVectorScale(buffers[subIndex][i].b2v, bary.z)));
-
-													const DirectX::XMVECTOR ft = DirectX::XMVector3Normalize(
-														DirectX::XMVectorSubtract(t, DirectX::XMVectorScale(n, DirectX::XMVectorGetX(DirectX::XMVector3Dot(n, t)))));
-
-													const DirectX::XMVECTOR cross = DirectX::XMVector3Cross(n, ft);
-													const float handedness = (DirectX::XMVectorGetX(DirectX::XMVector3Dot(cross, b)) < 0.0f) ? -1.0f : 1.0f;
-													const DirectX::XMVECTOR fb = DirectX::XMVector3Normalize(DirectX::XMVectorScale(cross, handedness));
-													const DirectX::XMMATRIX tbn = DirectX::XMMATRIX(ft, fb, n, DirectX::XMVectorSet(0, 0, 0, 1));
-
-													const DirectX::XMFLOAT4 detailColorF(
-														detailColor.r * 2.0f - 1.0f,
-														detailColor.g * 2.0f - 1.0f,
-														detailColor.b * 2.0f - 1.0f,
-														0.0f
-													);
-													const DirectX::XMVECTOR detailNormalVec = DirectX::XMVectorSet(
-														detailColorF.x,
-														detailColorF.y,
-														tangentZCorrection ? std::sqrt(std::max(0.0f, 1.0f - detailColorF.x * detailColorF.x - detailColorF.y * detailColorF.y)) : detailColorF.z,
-														0.0f);
-
-													const DirectX::XMVECTOR detailNormal = DirectX::XMVector3Normalize(
-														DirectX::XMVector3TransformNormal(detailNormalVec, tbn));
-													normalResult = DirectX::XMVector3Normalize(
-														DirectX::XMVectorLerp(n, detailNormal, detailColor.a));
-												}
-												else
-												{
-													normalResult = n;
-												}
-												const DirectX::XMVECTOR normalVec = DirectX::XMVectorMultiplyAdd(normalResult, halfVec, halfVec);
-												dstColor = RGBA(DirectX::XMVectorGetX(normalVec), DirectX::XMVectorGetZ(normalVec), DirectX::XMVectorGetY(normalVec));
-											}
-											if (maskColor.a > 0.0f && hasSrcData)
-											{
-												const float srcX = mX * srcWidthF;
-												const std::uint32_t* srcPixel = reinterpret_cast<std::uint32_t*>(srcRowData + (UINT)srcX * 4);
-												RGBA srcColor;
-												srcColor.SetReverse(*srcPixel);
-												dstColor = RGBA::lerp(dstColor, srcColor, maskColor.a);
-											}
-										}
-										if (overlayColor.a > 0.0f)
-										{
-											dstColor = RGBA::lerp(dstColor, overlayColor, overlayColor.a);
-										}
-
-										std::uint32_t* dstPixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
-										*dstPixel = dstColor.GetReverse() | 0xFF000000;
-									}
+									const DirectX::XMVECTOR normalVec = DirectX::XMVectorMultiplyAdd(normalResult, halfVec, halfVec);
+									dstColor = RGBA(DirectX::XMVectorGetX(normalVec), DirectX::XMVectorGetZ(normalVec), DirectX::XMVectorGetY(normalVec));
 								}
-							});
-#ifdef BAKE_TEST2
-							PerformanceLog(std::string(_func_) + "::" + std::to_string(taskID.taskID) + "::" + a_data.geometries[bakeIndex].second.info.name, true, false);
-#endif // BAKE_TEST2
-						}));
+								if (maskColor.a > 0.0f && hasSrcData)
+								{
+									const float srcX = mX * srcWidthF;
+									const std::uint32_t* srcPixel = reinterpret_cast<std::uint32_t*>(srcRowData + (UINT)srcX * 4);
+									RGBA srcColor;
+									srcColor.SetReverse(*srcPixel);
+									dstColor = RGBA::lerp(dstColor, srcColor, maskColor.a);
+								}
+							}
+							if (overlayColor.a > 0.0f)
+							{
+								dstColor = RGBA::lerp(dstColor, overlayColor, overlayColor.a);
+							}
+
+							std::uint32_t* dstPixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
+							*dstPixel = dstColor.GetReverse() | 0xFF000000;
+						}
 					}
-				}
-				for (auto& parallelTri : parallelTris) {
-					parallelTri.get();
-				}
+				}));
+			}
+			for (auto& process : processes)
+			{
+				process.get();
+			}
+#ifdef BAKE_TEST2
+			PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + bake.second.geometryName, true, false);
+#endif // BAKE_TEST2
+			if (!Config::GetSingleton().GetTextureMarginGPU() || Shader::ShaderManager::GetSingleton().IsFailedShader(BleedTextureShaderName.data()))
+			{
+				BleedTexture(dstData, dstStagingDesc.Width, dstStagingDesc.Height, mappedResource.RowPitch, margin);
+			}
 
-				if (!Config::GetSingleton().GetTextureMarginGPU() || Shader::ShaderManager::GetSingleton().IsFailedShader(BleedTextureShaderName.data()))
-				{
-					BleedTexture(dstData, dstStagingDesc.Width, dstStagingDesc.Height, mappedResource.RowPitch, margin);
-				}
+			Shader::ShaderManager::GetSingleton().ShaderContextLock();
+			context->Unmap(dstStagingTexture2D.Get(), 0);
+			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 
+			if (hasSrcData)
+			{
 				Shader::ShaderManager::GetSingleton().ShaderContextLock();
-				context->Unmap(dstStagingTexture2D.Get(), 0);
+				context->Unmap(srcStagingTexture2D.Get(), 0);
 				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-
-				if (hasSrcData)
-				{
-					Shader::ShaderManager::GetSingleton().ShaderContextLock();
-					context->Unmap(srcStagingTexture2D.Get(), 0);
-					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-				}
-				if (hasDetailData)
-				{
-					Shader::ShaderManager::GetSingleton().ShaderContextLock();
-					context->Unmap(detailStagingTexture2D.Get(), 0);
-					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-				}
-				if (hasOverlayData)
-				{
-					Shader::ShaderManager::GetSingleton().ShaderContextLock();
-					context->Unmap(overlayStagingTexture2D.Get(), 0);
-					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-				}
-				if (hasMaskData)
-				{
-					Shader::ShaderManager::GetSingleton().ShaderContextLock();
-					context->Unmap(maskStagingTexture2D.Get(), 0);
-					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-				}
-
-				if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
-				{
-					logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
-					return;
-				}
-
-				Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTexture2D;
-				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> dstShaderResourceView;
-
-				dstDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-				dstDesc.Usage = D3D11_USAGE_DEFAULT;
-				dstDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
-				dstDesc.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
-				dstDesc.MipLevels = 0;
-				dstDesc.ArraySize = 1;
-				dstDesc.CPUAccessFlags = 0;
-				dstDesc.SampleDesc.Count = 1;
-				hr = device->CreateTexture2D(&dstDesc, nullptr, &dstTexture2D);
-				if (FAILED(hr))
-				{
-					logger::error("{}::{} : Failed to create dst texture ({})", _func_, taskID.taskID, hr);
-					return;
-				}
-
+			}
+			if (hasDetailData)
+			{
 				Shader::ShaderManager::GetSingleton().ShaderContextLock();
-				context->CopySubresourceRegion(
-					dstTexture2D.Get(),
-					0,
-					0, 0, 0,
-					dstStagingTexture2D.Get(),
-					0,
-					nullptr);
+				context->Unmap(detailStagingTexture2D.Get(), 0);
 				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-
-				dstShaderResourceViewDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-				dstShaderResourceViewDesc.Texture2D.MostDetailedMip = 0;
-				dstShaderResourceViewDesc.Texture2D.MipLevels = -1;
-				hr = device->CreateShaderResourceView(dstTexture2D.Get(), &dstShaderResourceViewDesc, &dstShaderResourceView);
-				if (FAILED(hr)) {
-					logger::error("{}::{} : Failed to create ShaderResourceView ({})", _func_, taskID.taskID, hr);
-					return;
-				}
-
-				if (Config::GetSingleton().GetTextureMarginGPU() && !Shader::ShaderManager::GetSingleton().IsFailedShader(BleedTextureShaderName.data()))
-					BleedTextureGPU(taskID, margin, dstShaderResourceView, dstTexture2D);
-
+			}
+			if (hasOverlayData)
+			{
 				Shader::ShaderManager::GetSingleton().ShaderContextLock();
-				context->GenerateMips(dstShaderResourceView.Get());
+				context->Unmap(overlayStagingTexture2D.Get(), 0);
 				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+			}
+			if (hasMaskData)
+			{
+				Shader::ShaderManager::GetSingleton().ShaderContextLock();
+				context->Unmap(maskStagingTexture2D.Get(), 0);
+				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+			}
 
-				WaitForGPU();
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTexture2D;
+			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> dstShaderResourceView;
 
-				if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
-				{
-					logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
-					return;
-				}
+			dstDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			dstDesc.Usage = D3D11_USAGE_DEFAULT;
+			dstDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+			dstDesc.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+			dstDesc.MipLevels = 0;
+			dstDesc.ArraySize = 1;
+			dstDesc.CPUAccessFlags = 0;
+			dstDesc.SampleDesc.Count = 1;
+			hr = device->CreateTexture2D(&dstDesc, nullptr, &dstTexture2D);
+			if (FAILED(hr))
+			{
+				logger::error("{}::{:x} : Failed to create dst texture ({})", _func_, a_actorID, hr);
+				continue;
+			}
 
-				RE::NiPointer<RE::NiSourceTexture> output = nullptr;
-				bool texCreated = false;
-				Shader::TextureLoadManager::GetSingleton().CreateNiTexture(a_bakeSet[bakeIndex].textureName, a_bakeSet[bakeIndex].detailTexturePath.empty() ? "None" : a_bakeSet[bakeIndex].detailTexturePath, dstTexture2D, dstShaderResourceView, output, texCreated);
-				if (!output)
-					return;
+			Shader::ShaderManager::GetSingleton().ShaderContextLock();
+			context->CopySubresourceRegion(
+				dstTexture2D.Get(),
+				0,
+				0, 0, 0,
+				dstStagingTexture2D.Get(),
+				0,
+				nullptr);
+			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 
-				NormalMapResult newNormalMapResult;
-				newNormalMapResult.geometry = bake.second.geometry;
-				newNormalMapResult.index = bakeIndex;
-				newNormalMapResult.vertexCount = a_data.geometries[bakeIndex].second.info.vertexCount;
-				newNormalMapResult.geoName = a_bakeSet[bakeIndex].geometryName;
-				newNormalMapResult.textureName = a_bakeSet[bakeIndex].textureName;
-				newNormalMapResult.normalmap = output;
-				result.push_back(newNormalMapResult);
-				logger::info("{}::{}::{} : normalmap baked", _func_, taskID.taskID, a_bakeSet[bakeIndex].geometryName);
-			}));
+			dstShaderResourceViewDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			dstShaderResourceViewDesc.Texture2D.MostDetailedMip = 0;
+			dstShaderResourceViewDesc.Texture2D.MipLevels = -1;
+			hr = device->CreateShaderResourceView(dstTexture2D.Get(), &dstShaderResourceViewDesc, &dstShaderResourceView);
+			if (FAILED(hr)) {
+				logger::error("{}::{:x} : Failed to create ShaderResourceView ({})", _func_, a_actorID, hr);
+				continue;
+			}
+
+			if (Config::GetSingleton().GetTextureMarginGPU() && !Shader::ShaderManager::GetSingleton().IsFailedShader(BleedTextureShaderName.data()))
+				BleedTextureGPU(bake.second.textureName, margin, dstShaderResourceView, dstTexture2D);
+
+			Shader::ShaderManager::GetSingleton().ShaderContextLock();
+			context->GenerateMips(dstShaderResourceView.Get());
+			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+
+			RE::NiPointer<RE::NiSourceTexture> output = nullptr;
+			bool texCreated = false;
+			Shader::TextureLoadManager::GetSingleton().CreateNiTexture(bake.second.textureName, bake.second.detailTexturePath.empty() ? "None" : bake.second.detailTexturePath, dstTexture2D, dstShaderResourceView, output, texCreated);
+			if (!output)
+				continue;
+
+			NormalMapResult newNormalMapResult;
+			newNormalMapResult.geometry = bake.first;
+			newNormalMapResult.vertexCount = objInfo.vertexCount();
+			newNormalMapResult.geoName = bake.second.geometryName;
+			newNormalMapResult.textureName = bake.second.textureName;
+			newNormalMapResult.normalmap = output;
+			result.push_back(newNormalMapResult);
+			logger::info("{}::{:x}::{} : normalmap baked", _func_, a_actorID, bake.second.geometryName);
 		}
 		for (auto& parallelBaking : parallelBakings) {
 			parallelBaking.get();
 		}
 #ifdef BAKE_TEST1
-		PerformanceLog(std::string(_func_) + "::" + std::to_string(taskID.taskID), true, false);
+		PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID), true, false);
 #endif // BAKE_TEST1
 		return result;
 	}
 
-	ObjectNormalMapUpdater::BakeResult ObjectNormalMapUpdater::UpdateObjectNormalMapGPU(TaskID taskID, GeometryData a_data, std::unordered_map<std::size_t, BakeTextureSet> a_bakeSet)
+	ObjectNormalMapUpdater::BakeResult ObjectNormalMapUpdater::UpdateObjectNormalMapGPU(RE::FormID a_actorID, GeometryData& a_data, BakeSet& a_bakeSet)
 	{
 		std::string_view _func_ = __func__;
 #ifdef BAKE_TEST1
-		PerformanceLog(std::string(_func_) + "::" + std::to_string(taskID.taskID), false, false);
+		PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID), false, false);
 #endif // BAKE_TEST1
 
-		a_data.GetGeometryData();
-
 		BakeResult result;
-		if (a_data.vertices.empty() || a_data.indices.empty()
-			|| a_data.vertices.size() != a_data.uvs.size()
-			|| a_bakeSet.empty() || a_data.geometries.empty())
+		if (!samplerState)
 		{
-			logger::error("{}::{} : Invalid parameters", _func_, taskID.taskID);
-			return result;
-		}
-
-		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
-		{
-			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
-			return result;
-		}
-
-		//cpuTask->submitAsync( [&a_data]() { a_data.Subdivision(Config::GetSingleton().GetSubdivision()); }).get();
-		/*if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
-		{
-			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
-			return result;
-		}*/
-
-		cpuTask->submitAsync( [&a_data]() { a_data.UpdateMap(); }).get();
-		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
-		{
-			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
-			return result;
-		}
-
-		//cpuTask->submitAsync( [&a_data]() { a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth()); }).get();
-		//a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
-		/*if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
-		{
-			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
-			return result;
-		}
-		if (Config::GetSingleton().GetVertexSmooth() > 0)
-		{
-			cpuTask->submitAsync([&a_data]() { a_data.UpdateMap(); }).get();
-			if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
-			{
-				logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
-				return result;
-			}
-		}*/
-
-		cpuTask->submitAsync([&a_data]() { a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree()); }).get();
-		if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
-		{
-			logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
-			return result;
-		}
-
-		if (a_data.vertices.size() != a_data.uvs.size() ||
-			a_data.vertices.size() != a_data.normals.size() || 
-			a_data.vertices.size() != a_data.tangents.size() || 
-			a_data.vertices.size() != a_data.bitangents.size())
-		{
-			logger::error("{}::{} : Invalid geometry", _func_, taskID.taskID);
+			logger::error("{}::{:x} : Invalid SampleState", _func_, a_actorID);
 			return result;
 		}
 
@@ -775,346 +673,239 @@ namespace Mus {
 		auto context = Shader::ShaderManager::GetSingleton().GetContext();
 		if (!device || !context)
 		{
-			logger::error("{}::{} : Invalid renderer", _func_, taskID.taskID);
+			logger::error("{}::{:x} : Invalid renderer", _func_, a_actorID);
 			return result;
 		}
 
 		const std::uint32_t margin = Config::GetSingleton().GetTextureMargin();
 
-		std::vector<DirectX::XMFLOAT3> vertices(a_data.vertices.begin(), a_data.vertices.end());
-		Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer;
-		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> vertexSRV;
-		if (!CreateStructuredBuffer(vertices.data(), UINT(sizeof(DirectX::XMFLOAT3) * vertices.size()), sizeof(DirectX::XMFLOAT3), vertexBuffer, vertexSRV))
-			return result;
+		logger::debug("{}::{:x} : updating... {}", _func_, a_actorID, a_bakeSet.size());
 
-		std::vector<DirectX::XMFLOAT2> uvs(a_data.uvs.begin(), a_data.uvs.end());
-		Microsoft::WRL::ComPtr<ID3D11Buffer> uvBuffer;
-		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> uvSRV;
-		if (!CreateStructuredBuffer(uvs.data(), UINT(sizeof(DirectX::XMFLOAT2) * uvs.size()), sizeof(DirectX::XMFLOAT2), uvBuffer, uvSRV))
-			return result;
-
-		std::vector<DirectX::XMFLOAT3> normals(a_data.normals.begin(), a_data.normals.end());
-		Microsoft::WRL::ComPtr<ID3D11Buffer> normalBuffer;
-		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> normalSRV;
-		if (!CreateStructuredBuffer(normals.data(), UINT(sizeof(DirectX::XMFLOAT3) * normals.size()), sizeof(DirectX::XMFLOAT3), normalBuffer, normalSRV))
-			return result;
-
-		std::vector<DirectX::XMFLOAT3> tangents(a_data.tangents.begin(), a_data.tangents.end());
-		Microsoft::WRL::ComPtr<ID3D11Buffer> tangentBuffer;
-		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> tangentSRV;
-		if (!CreateStructuredBuffer(tangents.data(), UINT(sizeof(DirectX::XMFLOAT3) * tangents.size()), sizeof(DirectX::XMFLOAT3), tangentBuffer, tangentSRV))
-			return result;
-
-		std::vector<DirectX::XMFLOAT3> bitangents(a_data.bitangents.begin(), a_data.bitangents.end());
-		Microsoft::WRL::ComPtr<ID3D11Buffer> bitangentBuffer;
-		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> bitangentSRV;
-		if (!CreateStructuredBuffer(bitangents.data(), UINT(sizeof(DirectX::XMFLOAT3) * bitangents.size()), sizeof(DirectX::XMFLOAT3), bitangentBuffer, bitangentSRV))
-			return result;
-
-		std::vector<std::uint32_t> indices(a_data.indices.begin(), a_data.indices.end());
-		Microsoft::WRL::ComPtr<ID3D11Buffer> indicesBuffer;
-		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> indicesSRV;
-		if (!CreateStructuredBuffer(indices.data(), UINT(sizeof(std::uint32_t) * indices.size()), sizeof(std::uint32_t), indicesBuffer, indicesSRV))
-			return result;
-
-		logger::debug("{}::{} : updating... {}", _func_, taskID.taskID, a_bakeSet.size());
-
-		std::vector<std::future<void>> parallelBakings;
 		for (auto& bake : a_bakeSet)
 		{
-			parallelBakings.push_back(bakingThreads->submitAsync([&, bake]() {
-				if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
+			auto found = std::find_if(a_data.geometries.begin(), a_data.geometries.end(), [&](std::pair<RE::BSGeometry*, GeometryData::ObjectInfo>& geometry) {
+				return geometry.first == bake.first;
+									  });
+			if (found == a_data.geometries.end())
+			{
+				logger::error("{}::{:x} : Geometry {} not found in data", _func_, a_actorID, bake.second.geometryName);
+				continue;
+			}
+			GeometryData::ObjectInfo& objInfo = found->second;
+			ResourceDataMap[bake.second.textureName].clear();
+
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture2D, detailTexture2D, overlayTexture2D, maskTexture2D;
+			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcShaderResourceView, detailShaderResourceView, overlayShaderResourceView, maskShaderResourceView;
+			D3D11_TEXTURE2D_DESC srcDesc = {}, detailDesc = {}, overlayDesc = {}, maskDesc = {}, dstDesc = {}, dstWriteDesc = {};
+			D3D11_SHADER_RESOURCE_VIEW_DESC dstShaderResourceViewDesc = {};
+
+			if (!bake.second.srcTexturePath.empty())
+			{
+				if (!IsDetailNormalMap(bake.second.srcTexturePath))
 				{
-					logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
-					return;
-				}
-
-				std::size_t bakeIndex = bake.first;
-
-				Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture2D, detailTexture2D, overlayTexture2D, maskTexture2D;
-				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcShaderResourceView, detailShaderResourceView, overlayShaderResourceView, maskShaderResourceView;
-				D3D11_TEXTURE2D_DESC srcDesc = {}, detailDesc = {}, overlayDesc = {}, maskDesc = {}, dstDesc = {}, dstWriteDesc = {};
-				D3D11_SHADER_RESOURCE_VIEW_DESC dstShaderResourceViewDesc = {};
-
-				if (!bake.second.srcTexturePath.empty())
-				{
-					if (!IsDetailNormalMap(bake.second.srcTexturePath))
+					D3D11_SHADER_RESOURCE_VIEW_DESC srcShaderResourceViewDesc;
+					logger::info("{}::{:x}::{} : {} src texture loading...)", _func_, a_actorID, bake.second.geometryName, bake.second.srcTexturePath);
+					if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.srcTexturePath, srcDesc, srcShaderResourceViewDesc, DXGI_FORMAT_UNKNOWN, srcTexture2D))
 					{
-						D3D11_SHADER_RESOURCE_VIEW_DESC srcShaderResourceViewDesc;
-						logger::info("{}::{}::{} : {} src texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.srcTexturePath);
-						if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.srcTexturePath, srcDesc, srcShaderResourceViewDesc, DXGI_FORMAT_UNKNOWN, srcTexture2D))
-						{
-							dstWriteDesc = srcDesc;
-							dstDesc = srcDesc;
-							dstShaderResourceViewDesc = srcShaderResourceViewDesc;
+						dstWriteDesc = srcDesc;
+						dstDesc = srcDesc;
+						dstShaderResourceViewDesc = srcShaderResourceViewDesc;
 
-							srcShaderResourceViewDesc.Texture2D.MipLevels = 1;
-							hr = device->CreateShaderResourceView(srcTexture2D.Get(), &srcShaderResourceViewDesc, srcShaderResourceView.ReleaseAndGetAddressOf());
-							if (FAILED(hr))
-							{
-								logger::error("{}::{}::{} : Failed to create src shader resource view ({}|{})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr, bake.second.srcTexturePath);
-								srcShaderResourceView = nullptr;
-							}
-						}
-					}
-				}
-				if (!bake.second.detailTexturePath.empty())
-				{
-					D3D11_SHADER_RESOURCE_VIEW_DESC detailShaderResourceViewDesc;
-					logger::info("{}::{}::{} : {} detail texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.detailTexturePath);
-					if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.detailTexturePath, detailDesc, detailShaderResourceViewDesc, DXGI_FORMAT_UNKNOWN, detailTexture2D))
-					{
-						auto tmpDesc = dstDesc;
-						dstWriteDesc = detailDesc;
-						dstDesc = detailDesc;
-						if ((std::uint64_t)detailDesc.Width * (std::uint64_t)detailDesc.Height < (std::uint64_t)tmpDesc.Width * (std::uint64_t)tmpDesc.Height)
-						{
-							dstWriteDesc.Width = tmpDesc.Width;
-							dstWriteDesc.Height = tmpDesc.Height;
-							dstDesc.Width = tmpDesc.Width;
-							dstDesc.Height = tmpDesc.Height;
-						}
-						dstShaderResourceViewDesc = detailShaderResourceViewDesc;
-
-						detailShaderResourceViewDesc.Texture2D.MipLevels = 1;
-						hr = device->CreateShaderResourceView(detailTexture2D.Get(), &detailShaderResourceViewDesc, detailShaderResourceView.ReleaseAndGetAddressOf());
+						srcShaderResourceViewDesc.Texture2D.MipLevels = 1;
+						hr = device->CreateShaderResourceView(srcTexture2D.Get(), &srcShaderResourceViewDesc, srcShaderResourceView.ReleaseAndGetAddressOf());
 						if (FAILED(hr))
 						{
-							logger::error("{}::{}::{} : Failed to create detail shader resource view ({}|{})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr, bake.second.detailTexturePath);
-							detailShaderResourceView = nullptr;
+							logger::error("{}::{:x}::{} : Failed to create src shader resource view ({}|{})", _func_, a_actorID, bake.second.geometryName, hr, bake.second.srcTexturePath);
+							srcShaderResourceView = nullptr;
 						}
 					}
 				}
-				if (!srcShaderResourceView && !detailShaderResourceView)
+			}
+			if (!bake.second.detailTexturePath.empty())
+			{
+				D3D11_SHADER_RESOURCE_VIEW_DESC detailShaderResourceViewDesc;
+				logger::info("{}::{:x}::{} : {} detail texture loading...)", _func_, a_actorID, bake.second.geometryName, bake.second.detailTexturePath);
+				if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.detailTexturePath, detailDesc, detailShaderResourceViewDesc, DXGI_FORMAT_UNKNOWN, detailTexture2D))
 				{
-					logger::error("{}::{}::{} : There is no Normalmap!", _func_, taskID.taskID, a_data.geometries[bakeIndex].first);
-					return;
-				}
-
-				if (!bake.second.overlayTexturePath.empty())
-				{
-					logger::info("{}::{}::{} : {} overlay texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.overlayTexturePath);
-					D3D11_SHADER_RESOURCE_VIEW_DESC overlayShaderResourceViewDesc;
-					if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.overlayTexturePath, overlayDesc, overlayShaderResourceViewDesc, DXGI_FORMAT_UNKNOWN, overlayTexture2D))
+					auto tmpDesc = dstDesc;
+					dstWriteDesc = detailDesc;
+					dstDesc = detailDesc;
+					if ((std::uint64_t)detailDesc.Width * (std::uint64_t)detailDesc.Height < (std::uint64_t)tmpDesc.Width * (std::uint64_t)tmpDesc.Height)
 					{
-						overlayShaderResourceViewDesc.Texture2D.MipLevels = 1;
-						hr = device->CreateShaderResourceView(overlayTexture2D.Get(), &overlayShaderResourceViewDesc, overlayShaderResourceView.ReleaseAndGetAddressOf());
-						if (FAILED(hr))
-						{
-							overlayShaderResourceView = nullptr;
-							logger::error("{}::{}::{} : Failed to create overlay shader resource view ({}|{})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr, bake.second.overlayTexturePath);
-						}
+						dstWriteDesc.Width = tmpDesc.Width;
+						dstWriteDesc.Height = tmpDesc.Height;
+						dstDesc.Width = tmpDesc.Width;
+						dstDesc.Height = tmpDesc.Height;
 					}
-				}
+					dstShaderResourceViewDesc = detailShaderResourceViewDesc;
 
-				if (!bake.second.maskTexturePath.empty())
-				{
-					logger::info("{}::{}::{} : {} mask texture loading...)", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, bake.second.maskTexturePath);
-					D3D11_SHADER_RESOURCE_VIEW_DESC maskShaderResourceViewDesc;
-					if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.maskTexturePath, maskDesc, maskShaderResourceViewDesc, DXGI_FORMAT_UNKNOWN, maskTexture2D))
+					detailShaderResourceViewDesc.Texture2D.MipLevels = 1;
+					hr = device->CreateShaderResourceView(detailTexture2D.Get(), &detailShaderResourceViewDesc, detailShaderResourceView.ReleaseAndGetAddressOf());
+					if (FAILED(hr))
 					{
-						maskShaderResourceViewDesc.Texture2D.MipLevels = 1;
-						hr = device->CreateShaderResourceView(maskTexture2D.Get(), &maskShaderResourceViewDesc, maskShaderResourceView.ReleaseAndGetAddressOf());
-						if (FAILED(hr))
-						{
-							maskShaderResourceView = nullptr;
-							logger::error("{}::{}::{} : Failed to create mask shader resource view ({}|{})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr, bake.second.maskTexturePath);
-						}
+						logger::error("{}::{:x}::{} : Failed to create detail shader resource view ({}|{})", _func_, a_actorID, bake.second.geometryName, hr, bake.second.detailTexturePath);
+						detailShaderResourceView = nullptr;
 					}
 				}
+			}
+			if (!srcShaderResourceView && !detailShaderResourceView)
+			{
+				logger::error("{}::{:x}::{} : There is no Normalmap!", _func_, a_actorID, bake.second.geometryName);
+				continue;
+			}
 
-				Microsoft::WRL::ComPtr<ID3D11Texture2D> dstWriteTexture2D;
-				dstWriteDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-				dstWriteDesc.Usage = D3D11_USAGE_DEFAULT;
-				dstWriteDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
-				dstWriteDesc.MiscFlags = 0;
-				dstWriteDesc.MipLevels = 1;
-				dstWriteDesc.CPUAccessFlags = 0;
-				hr = device->CreateTexture2D(&dstWriteDesc, nullptr, &dstWriteTexture2D);
-				if (FAILED(hr))
+			if (!bake.second.overlayTexturePath.empty())
+			{
+				logger::info("{}::{:x}::{} : {} overlay texture loading...)", _func_, a_actorID, bake.second.geometryName, bake.second.overlayTexturePath);
+				D3D11_SHADER_RESOURCE_VIEW_DESC overlayShaderResourceViewDesc;
+				if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.overlayTexturePath, overlayDesc, overlayShaderResourceViewDesc, DXGI_FORMAT_UNKNOWN, overlayTexture2D))
 				{
-					logger::error("{}::{}::{} : Failed to create dst texture 2d ({})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr);
-					return;
-				}
-
-				Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> dstWriteTextureUAV;
-				D3D11_UNORDERED_ACCESS_VIEW_DESC dstUnorderedViewDesc = {};
-				dstUnorderedViewDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-				dstUnorderedViewDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
-				dstUnorderedViewDesc.Texture2D.MipSlice = 0;
-				hr = device->CreateUnorderedAccessView(dstWriteTexture2D.Get(), &dstUnorderedViewDesc, &dstWriteTextureUAV);
-				if (FAILED(hr))
-				{
-					logger::error("{}::{}::{} : Failed to create dst unordered access view ({})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr);
-					return;
-				}
-
-				const UINT width = dstDesc.Width;
-				const UINT height = dstDesc.Height;
-
-				//create buffers
-				struct ConstBufferData
-				{
-					UINT texWidth;
-					UINT texHeight;
-					UINT indicesStart;
-					UINT indicesEnd;
-
-					UINT hasSrcTexture;
-					UINT hasDetailTexture;
-					UINT hasOverlayTexture;
-					UINT hasMaskTexture;
-
-					UINT tangentZCorrection;
-					float detailStrength;
-					UINT padding1;
-					UINT padding2;
-				};
-				static_assert(sizeof(ConstBufferData) % 16 == 0, "Constant buffer must be 16-byte aligned.");
-				ConstBufferData cbData = {};
-				cbData.texWidth = dstDesc.Width;
-				cbData.texHeight = dstDesc.Height;
-				cbData.indicesStart = a_data.geometries[bakeIndex].second.indicesStart;
-				cbData.indicesEnd = a_data.geometries[bakeIndex].second.indicesEnd;
-				cbData.hasSrcTexture = srcShaderResourceView ? 1 : 0;
-				cbData.hasDetailTexture = detailShaderResourceView ? 1 : 0;
-				cbData.hasOverlayTexture = overlayShaderResourceView ? 1 : 0;
-				cbData.hasMaskTexture = maskShaderResourceView ? 1 : 0;
-				cbData.tangentZCorrection = Config::GetSingleton().GetTangentZCorrection() ? 1 : 0;
-				cbData.detailStrength = bake.second.detailStrength;
-
-				D3D11_BUFFER_DESC cbDesc = {};
-				cbDesc.ByteWidth = sizeof(ConstBufferData);
-				cbDesc.Usage = D3D11_USAGE_DEFAULT;
-				cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-				D3D11_SUBRESOURCE_DATA cbInitData = {};
-				cbInitData.pSysMem = &cbData;
-				Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
-				hr = device->CreateBuffer(&cbDesc, &cbInitData, &constBuffer);
-				if (FAILED(hr)) {
-					logger::error("{}::{}::{} : Failed to create const buffer ({})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr);
-					return;
-				}
-
-				UINT pixelCount = dstDesc.Width * dstDesc.Height;
-				D3D11_BUFFER_DESC pixelBufferDesc = {};
-				pixelBufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
-				pixelBufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
-				pixelBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-				pixelBufferDesc.CPUAccessFlags = 0;
-				pixelBufferDesc.StructureByteStride = 0;
-				pixelBufferDesc.ByteWidth = pixelCount * sizeof(std::uint32_t);
-				Microsoft::WRL::ComPtr<ID3D11Buffer> pixelBuffer;
-				hr = device->CreateBuffer(&pixelBufferDesc, nullptr, &pixelBuffer);
-				if (FAILED(hr)) {
-					logger::error("{}::{}::{} : Failed to create flags buffer ({})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr);
-					return;
-				}
-
-				D3D11_UNORDERED_ACCESS_VIEW_DESC pixelBufferUAVDesc = {};
-				pixelBufferUAVDesc.Format = DXGI_FORMAT_R32_TYPELESS;
-				pixelBufferUAVDesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
-				pixelBufferUAVDesc.Buffer.FirstElement = 0;
-				pixelBufferUAVDesc.Buffer.NumElements = pixelCount;
-				pixelBufferUAVDesc.Buffer.Flags = D3D11_BUFFER_UAV_FLAG_RAW;
-				Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> pixelBufferUAV;
-				hr = device->CreateUnorderedAccessView(pixelBuffer.Get(), &pixelBufferUAVDesc, &pixelBufferUAV);
-				if (FAILED(hr)) {
-					logger::error("{}::{}::{} : Failed to create flags buffer unordered access view ({})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr);
-					return;
-				}
-
-				Microsoft::WRL::ComPtr<ID3D11SamplerState> samplerState = nullptr;
-				D3D11_SAMPLER_DESC samplerDesc = {};
-				samplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-				samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
-				samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
-				samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
-				samplerDesc.MipLODBias = 0.0f;
-				samplerDesc.MaxAnisotropy = 4;
-				samplerDesc.ComparisonFunc = D3D11_COMPARISON_ALWAYS;
-				samplerDesc.BorderColor[0] = 0.0f;
-				samplerDesc.BorderColor[1] = 0.0f;
-				samplerDesc.BorderColor[2] = 0.0f;
-				samplerDesc.BorderColor[3] = 0.0f;
-				samplerDesc.MinLOD = 0;
-				samplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
-				hr = device->CreateSamplerState(&samplerDesc, &samplerState);
-				if (FAILED(hr))
-				{
-					logger::error("{}::{}::{} : Failed to create samplerState ({})", _func_, taskID.taskID, a_data.geometries[bakeIndex].first, hr);
-					return;
-				}
-
-				auto shader = Shader::ShaderManager::GetSingleton().GetComputeShader(UpdateNormalMapShaderName.data());
-				if (!shader)
-				{
-					logger::error("{}::{} : Invalid shader", _func_, taskID.taskID);
-					return;
-				}
-
-				const std::uint32_t dispatch = a_data.geometries[bakeIndex].second.indicesCount() / 3 / 64 + 1;
-
-				struct ShaderBackup {
-				public:
-					void Backup(ID3D11DeviceContext* context) {
-						context->CSGetShader(&shader, nullptr, 0);
-						context->CSGetConstantBuffers(0, 1, &constBuffer);
-						context->CSGetShaderResources(0, 1, &vertexSRV);
-						context->CSGetShaderResources(1, 1, &uvSRV);
-						context->CSGetShaderResources(2, 1, &normalSRV);
-						context->CSGetShaderResources(3, 1, &tangentSRV);
-						context->CSGetShaderResources(4, 1, &bitangentSRV);
-						context->CSGetShaderResources(5, 1, &indicesSRV);
-						context->CSGetShaderResources(6, 1, &srcSRV);
-						context->CSGetShaderResources(7, 1, &detailSRV);
-						context->CSGetShaderResources(8, 1, &overlaySRV);
-						context->CSGetShaderResources(9, 1, &maskSRV);
-						context->CSGetUnorderedAccessViews(0, 1, &dstUAV);
-						context->CSGetUnorderedAccessViews(1, 1, &pixelBufferUAV);
-						context->CSGetSamplers(0, 1, &samplerState);
+					overlayShaderResourceViewDesc.Texture2D.MipLevels = 1;
+					hr = device->CreateShaderResourceView(overlayTexture2D.Get(), &overlayShaderResourceViewDesc, overlayShaderResourceView.ReleaseAndGetAddressOf());
+					if (FAILED(hr))
+					{
+						overlayShaderResourceView = nullptr;
+						logger::error("{}::{:x}::{} : Failed to create overlay shader resource view ({}|{})", _func_, a_actorID, bake.second.geometryName, hr, bake.second.overlayTexturePath);
 					}
-					void Revert(ID3D11DeviceContext* context) {
-						context->CSSetShader(shader.Get(), nullptr, 0);
-						context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
-						context->CSSetShaderResources(0, 1, vertexSRV.GetAddressOf());
-						context->CSSetShaderResources(1, 1, uvSRV.GetAddressOf());
-						context->CSSetShaderResources(2, 1, normalSRV.GetAddressOf());
-						context->CSSetShaderResources(3, 1, tangentSRV.GetAddressOf());
-						context->CSSetShaderResources(4, 1, bitangentSRV.GetAddressOf());
-						context->CSSetShaderResources(5, 1, indicesSRV.GetAddressOf());
-						context->CSSetShaderResources(6, 1, srcSRV.GetAddressOf());
-						context->CSSetShaderResources(7, 1, detailSRV.GetAddressOf());
-						context->CSSetShaderResources(8, 1, overlaySRV.GetAddressOf());
-						context->CSSetShaderResources(9, 1, maskSRV.GetAddressOf());
-						context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
-						context->CSSetUnorderedAccessViews(1, 1, pixelBufferUAV.GetAddressOf(), nullptr);
-						context->CSSetSamplers(0, 1, samplerState.GetAddressOf());
-					}
-					Shader::ShaderManager::ComputeShader shader;
-					Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
-					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> vertexSRV;
-					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> uvSRV;
-					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> normalSRV;
-					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> tangentSRV;
-					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> bitangentSRV;
-					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> indicesSRV;
-					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcSRV;
-					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> detailSRV;
-					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> overlaySRV;
-					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> maskSRV;
-					Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> dstUAV;
-					Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> pixelBufferUAV;
-					Microsoft::WRL::ComPtr<ID3D11SamplerState> samplerState;
-				private:
-				} sb;
+				}
+			}
 
-				gpuTask->submitAsync([&]() {
-#ifdef BAKE_TEST2
-					GPUPerformanceLog(std::string(_func_) + "::" + std::to_string(taskID.taskID) + "::" + a_data.geometries[bakeIndex].second.info.name, false, false);
-#endif // BAKE_TEST2
-					Shader::ShaderManager::GetSingleton().ShaderContextLock();
-					sb.Backup(context);
+			if (!bake.second.maskTexturePath.empty())
+			{
+				logger::info("{}::{:x}::{} : {} mask texture loading...)", _func_, a_actorID, bake.second.geometryName, bake.second.maskTexturePath);
+				D3D11_SHADER_RESOURCE_VIEW_DESC maskShaderResourceViewDesc;
+				if (Shader::TextureLoadManager::GetSingleton().GetTexture2D(bake.second.maskTexturePath, maskDesc, maskShaderResourceViewDesc, DXGI_FORMAT_UNKNOWN, maskTexture2D))
+				{
+					maskShaderResourceViewDesc.Texture2D.MipLevels = 1;
+					hr = device->CreateShaderResourceView(maskTexture2D.Get(), &maskShaderResourceViewDesc, maskShaderResourceView.ReleaseAndGetAddressOf());
+					if (FAILED(hr))
+					{
+						maskShaderResourceView = nullptr;
+						logger::error("{}::{:x}::{} : Failed to create mask shader resource view ({}|{})", _func_, a_actorID, bake.second.geometryName, hr, bake.second.maskTexturePath);
+					}
+				}
+			}
+
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> dstWriteTexture2D;
+			dstWriteDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			dstWriteDesc.Usage = D3D11_USAGE_DEFAULT;
+			dstWriteDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
+			dstWriteDesc.MiscFlags = 0;
+			dstWriteDesc.MipLevels = 1;
+			dstWriteDesc.CPUAccessFlags = 0;
+			hr = device->CreateTexture2D(&dstWriteDesc, nullptr, &dstWriteTexture2D);
+			if (FAILED(hr))
+			{
+				logger::error("{}::{:x}::{} : Failed to create dst texture 2d ({})", _func_, a_actorID, bake.second.geometryName, hr);
+				continue;
+			}
+
+			Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> dstWriteTextureUAV;
+			D3D11_UNORDERED_ACCESS_VIEW_DESC dstUnorderedViewDesc = {};
+			dstUnorderedViewDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			dstUnorderedViewDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
+			dstUnorderedViewDesc.Texture2D.MipSlice = 0;
+			hr = device->CreateUnorderedAccessView(dstWriteTexture2D.Get(), &dstUnorderedViewDesc, &dstWriteTextureUAV);
+			if (FAILED(hr))
+			{
+				logger::error("{}::{:x}::{} : Failed to create dst unordered access view ({})", _func_, a_actorID, bake.second.geometryName, hr);
+				continue;
+			}
+
+			const UINT width = dstDesc.Width;
+			const UINT height = dstDesc.Height;
+
+			//create buffers
+			struct ConstBufferData
+			{
+				UINT texWidth;
+				UINT texHeight;
+				UINT indicesStart;
+				UINT indicesEnd;
+
+				UINT hasSrcTexture;
+				UINT hasDetailTexture;
+				UINT hasOverlayTexture;
+				UINT hasMaskTexture;
+
+				UINT tangentZCorrection;
+				float detailStrength;
+				UINT padding1;
+				UINT padding2;
+			};
+			static_assert(sizeof(ConstBufferData) % 16 == 0, "Constant buffer must be 16-byte aligned.");
+			ConstBufferData cbData = {};
+			cbData.texWidth = dstDesc.Width;
+			cbData.texHeight = dstDesc.Height;
+			cbData.indicesStart = objInfo.indicesStart;
+			cbData.indicesEnd = objInfo.indicesEnd;
+			cbData.hasSrcTexture = srcShaderResourceView ? 1 : 0;
+			cbData.hasDetailTexture = detailShaderResourceView ? 1 : 0;
+			cbData.hasOverlayTexture = overlayShaderResourceView ? 1 : 0;
+			cbData.hasMaskTexture = maskShaderResourceView ? 1 : 0;
+			cbData.tangentZCorrection = Config::GetSingleton().GetTangentZCorrection() ? 1 : 0;
+			cbData.detailStrength = bake.second.detailStrength;
+
+			D3D11_BUFFER_DESC cbDesc = {};
+			cbDesc.ByteWidth = sizeof(ConstBufferData);
+			cbDesc.Usage = D3D11_USAGE_DEFAULT;
+			cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+
+			UINT pixelCount = dstDesc.Width * dstDesc.Height;
+			D3D11_BUFFER_DESC pixelBufferDesc = {};
+			pixelBufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
+			pixelBufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
+			pixelBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+			pixelBufferDesc.CPUAccessFlags = 0;
+			pixelBufferDesc.StructureByteStride = 0;
+			pixelBufferDesc.ByteWidth = pixelCount * sizeof(std::uint32_t);
+			Microsoft::WRL::ComPtr<ID3D11Buffer> pixelBuffer;
+			hr = device->CreateBuffer(&pixelBufferDesc, nullptr, &pixelBuffer);
+			if (FAILED(hr)) {
+				logger::error("{}::{:x}::{} : Failed to create flags buffer ({})", _func_, a_actorID, bake.second.geometryName, hr);
+				continue;
+			}
+
+			D3D11_UNORDERED_ACCESS_VIEW_DESC pixelBufferUAVDesc = {};
+			pixelBufferUAVDesc.Format = DXGI_FORMAT_R32_TYPELESS;
+			pixelBufferUAVDesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+			pixelBufferUAVDesc.Buffer.FirstElement = 0;
+			pixelBufferUAVDesc.Buffer.NumElements = pixelCount;
+			pixelBufferUAVDesc.Buffer.Flags = D3D11_BUFFER_UAV_FLAG_RAW;
+			Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> pixelBufferUAV;
+			hr = device->CreateUnorderedAccessView(pixelBuffer.Get(), &pixelBufferUAVDesc, &pixelBufferUAV);
+			if (FAILED(hr)) {
+				logger::error("{}::{:x}::{} : Failed to create flags buffer unordered access view ({})", _func_, a_actorID, bake.second.geometryName, hr);
+				continue;
+			}
+
+			auto shader = Shader::ShaderManager::GetSingleton().GetComputeShader(UpdateNormalMapShaderName.data());
+			if (!shader)
+			{
+				logger::error("{}::{:x} : Invalid shader", _func_, a_actorID);
+				continue;
+			}
+
+			struct ShaderBackup {
+			public:
+				void Backup(ID3D11DeviceContext* context) {
+					context->CSGetShader(&shader, nullptr, 0);
+					context->CSGetConstantBuffers(0, 1, &constBuffer);
+					context->CSGetShaderResources(0, 1, &vertexSRV);
+					context->CSGetShaderResources(1, 1, &uvSRV);
+					context->CSGetShaderResources(2, 1, &normalSRV);
+					context->CSGetShaderResources(3, 1, &tangentSRV);
+					context->CSGetShaderResources(4, 1, &bitangentSRV);
+					context->CSGetShaderResources(5, 1, &indicesSRV);
+					context->CSGetShaderResources(6, 1, &srcSRV);
+					context->CSGetShaderResources(7, 1, &detailSRV);
+					context->CSGetShaderResources(8, 1, &overlaySRV);
+					context->CSGetShaderResources(9, 1, &maskSRV);
+					context->CSGetUnorderedAccessViews(0, 1, &dstUAV);
+					context->CSGetUnorderedAccessViews(1, 1, &pixelBufferUAV);
+					context->CSGetSamplers(0, 1, &samplerState);
+				}
+				void Revert(ID3D11DeviceContext* context) {
 					context->CSSetShader(shader.Get(), nullptr, 0);
 					context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
 					context->CSSetShaderResources(0, 1, vertexSRV.GetAddressOf());
@@ -1123,6 +914,70 @@ namespace Mus {
 					context->CSSetShaderResources(3, 1, tangentSRV.GetAddressOf());
 					context->CSSetShaderResources(4, 1, bitangentSRV.GetAddressOf());
 					context->CSSetShaderResources(5, 1, indicesSRV.GetAddressOf());
+					context->CSSetShaderResources(6, 1, srcSRV.GetAddressOf());
+					context->CSSetShaderResources(7, 1, detailSRV.GetAddressOf());
+					context->CSSetShaderResources(8, 1, overlaySRV.GetAddressOf());
+					context->CSSetShaderResources(9, 1, maskSRV.GetAddressOf());
+					context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
+					context->CSSetUnorderedAccessViews(1, 1, pixelBufferUAV.GetAddressOf(), nullptr);
+					context->CSSetSamplers(0, 1, samplerState.GetAddressOf());
+				}
+				Shader::ShaderManager::ComputeShader shader;
+				Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
+				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> vertexSRV;
+				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> uvSRV;
+				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> normalSRV;
+				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> tangentSRV;
+				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> bitangentSRV;
+				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> indicesSRV;
+				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcSRV;
+				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> detailSRV;
+				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> overlaySRV;
+				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> maskSRV;
+				Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> dstUAV;
+				Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> pixelBufferUAV;
+				Microsoft::WRL::ComPtr<ID3D11SamplerState> samplerState;
+			private:
+			} sb;
+
+			std::mutex constBuffersLock;
+			std::uint32_t totalTris = objInfo.indicesCount() / 3;
+			std::uint32_t subSize = 1;
+			if (Config::GetSingleton().GetDivideTaskQ() == 1)
+				subSize = std::max(std::uint32_t(1), totalTris / 15000);
+			else if (Config::GetSingleton().GetDivideTaskQ() > 1)
+				subSize = std::max(std::uint32_t(1), totalTris / 10000);
+
+			const std::uint32_t numSubTris = (totalTris + subSize - 1) / subSize;
+			const std::uint32_t dispatch = (numSubTris + 64 - 1) / 64;
+			std::vector<std::future<void>> gpuTasks;
+			for (std::size_t subIndex = 0; subIndex < subSize; subIndex++)
+			{
+				const std::uint32_t trisStart = objInfo.indicesStart + subIndex * numSubTris * 3;
+				gpuTasks.push_back(gpuTask->submitAsync([&, trisStart, subIndex]() {
+#ifdef BAKE_TEST2
+					GPUPerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + bake.second.geometryName + "::" + std::to_string(subIndex), false, false);
+#endif // BAKE_TEST2
+					auto cbData_ = cbData;
+					cbData_.indicesStart = trisStart;
+					D3D11_SUBRESOURCE_DATA cbInitData = {};
+					cbInitData.pSysMem = &cbData_;
+					Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
+					hr = device->CreateBuffer(&cbDesc, &cbInitData, &constBuffer);
+					if (FAILED(hr)) {
+						logger::error("{}::{:x}::{} : Failed to create const buffer ({})", _func_, a_actorID, bake.second.geometryName, hr);
+						return;
+					}
+					Shader::ShaderManager::GetSingleton().ShaderContextLock();
+					sb.Backup(context);
+					context->CSSetShader(shader.Get(), nullptr, 0);
+					context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
+					context->CSSetShaderResources(0, 1, GeometryResourceDataMap[a_actorID].vertexSRV.GetAddressOf());
+					context->CSSetShaderResources(1, 1, GeometryResourceDataMap[a_actorID].uvSRV.GetAddressOf());
+					context->CSSetShaderResources(2, 1, GeometryResourceDataMap[a_actorID].normalSRV.GetAddressOf());
+					context->CSSetShaderResources(3, 1, GeometryResourceDataMap[a_actorID].tangentSRV.GetAddressOf());
+					context->CSSetShaderResources(4, 1, GeometryResourceDataMap[a_actorID].bitangentSRV.GetAddressOf());
+					context->CSSetShaderResources(5, 1, GeometryResourceDataMap[a_actorID].indicesSRV.GetAddressOf());
 					context->CSSetShaderResources(6, 1, srcShaderResourceView.GetAddressOf());
 					context->CSSetShaderResources(7, 1, detailShaderResourceView.GetAddressOf());
 					context->CSSetShaderResources(8, 1, overlayShaderResourceView.GetAddressOf());
@@ -1133,95 +988,91 @@ namespace Mus {
 					context->Dispatch(dispatch, 1, 1);
 					sb.Revert(context);
 					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+					constBuffersLock.lock();
+					ResourceDataMap[bake.second.textureName].constBuffers.push_back(constBuffer);
+					constBuffersLock.unlock();
 #ifdef BAKE_TEST2
-					GPUPerformanceLog(std::string(_func_) + "::" + std::to_string(taskID.taskID) + "::" + a_data.geometries[bakeIndex].second.info.name, true, false);
+					GPUPerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + bake.second.geometryName + "::" + std::to_string(subIndex), true, false);
 #endif // BAKE_TEST2
-				}).get();
+				}));
+			}
+			for (auto& task : gpuTasks) {
+				task.get();
+			}
 
-				if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
-				{
-					logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
-					return;
-				}
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTexture2D;
+			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> dstShaderResourceView;
 
-				Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTexture2D;
-				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> dstShaderResourceView;
+			dstDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			dstDesc.Usage = D3D11_USAGE_DEFAULT;
+			dstDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+			dstDesc.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+			dstDesc.MipLevels = 0;
+			dstDesc.ArraySize = 1;
+			dstDesc.CPUAccessFlags = 0;
+			dstDesc.SampleDesc.Count = 1;
+			hr = device->CreateTexture2D(&dstDesc, nullptr, &dstTexture2D);
+			if (FAILED(hr))
+			{
+				logger::error("{}::{:x} : Failed to create dst texture ({})", _func_, a_actorID, hr);
+				continue;
+			}
 
-				dstDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-				dstDesc.Usage = D3D11_USAGE_DEFAULT;
-				dstDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
-				dstDesc.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
-				dstDesc.MipLevels = 0;
-				dstDesc.ArraySize = 1;
-				dstDesc.CPUAccessFlags = 0;
-				dstDesc.SampleDesc.Count = 1;
-				hr = device->CreateTexture2D(&dstDesc, nullptr, &dstTexture2D);
-				if (FAILED(hr))
-				{
-					logger::error("{}::{} : Failed to create dst texture ({})", _func_, taskID.taskID, hr);
-					return;
-				}
+			Shader::ShaderManager::GetSingleton().ShaderContextLock();
+			context->CopySubresourceRegion(
+				dstTexture2D.Get(),
+				0,
+				0, 0, 0,
+				dstWriteTexture2D.Get(),
+				0,
+				nullptr);
+			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 
-				Shader::ShaderManager::GetSingleton().ShaderContextLock();
-				context->CopySubresourceRegion(
-					dstTexture2D.Get(),
-					0,
-					0, 0, 0,
-					dstWriteTexture2D.Get(),
-					0,
-					nullptr);
-				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+			dstShaderResourceViewDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			dstShaderResourceViewDesc.Texture2D.MostDetailedMip = 0;
+			dstShaderResourceViewDesc.Texture2D.MipLevels = -1;
+			hr = device->CreateShaderResourceView(dstTexture2D.Get(), &dstShaderResourceViewDesc, &dstShaderResourceView);
+			if (FAILED(hr)) {
+				logger::error("{}::{:x} : Failed to create ShaderResourceView ({})", _func_, a_actorID, hr);
+				continue;
+			}
 
-				dstShaderResourceViewDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-				dstShaderResourceViewDesc.Texture2D.MostDetailedMip = 0;
-				dstShaderResourceViewDesc.Texture2D.MipLevels = -1;
-				hr = device->CreateShaderResourceView(dstTexture2D.Get(), &dstShaderResourceViewDesc, &dstShaderResourceView);
-				if (FAILED(hr)) {
-					logger::error("{}::{} : Failed to create ShaderResourceView ({})", _func_, taskID.taskID, hr);
-					return;
-				}
+			BleedTextureGPU(bake.second.textureName, margin, dstShaderResourceView, dstTexture2D);
+			//TexturePostProcessingGPU(bake.second.textureName, 0.3f, 0.5f, dstShaderResourceView, dstTexture2D);
 
-				BleedTextureGPU(taskID, margin, dstShaderResourceView, dstTexture2D);
+			Shader::ShaderManager::GetSingleton().ShaderContextLock();
+			context->GenerateMips(dstShaderResourceView.Get());
+			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 
-				Shader::ShaderManager::GetSingleton().ShaderContextLock();
-				context->GenerateMips(dstShaderResourceView.Get());
-				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+			RE::NiPointer<RE::NiSourceTexture> output = nullptr;
+			bool texCreated = false;
+			Shader::TextureLoadManager::GetSingleton().CreateNiTexture(bake.second.textureName, bake.second.detailTexturePath.empty() ? "None" : bake.second.detailTexturePath, dstTexture2D, dstShaderResourceView, output, texCreated);
+			if (!output)
+				continue;
 
-				WaitForGPU();
+			NormalMapResult newNormalMapResult;
+			newNormalMapResult.geometry = bake.first;
+			newNormalMapResult.vertexCount = objInfo.vertexCount();
+			newNormalMapResult.geoName = bake.second.geometryName;
+			newNormalMapResult.textureName = bake.second.textureName;
+			newNormalMapResult.normalmap = output;
+			result.push_back(newNormalMapResult);
 
-				if (!TaskManager::GetSingleton().IsValidTaskID(taskID))
-				{
-					logger::error("{}::{} : Invalid taskID", _func_, taskID.taskID);
-					return;
-				}
-
-				RE::NiPointer<RE::NiSourceTexture> output = nullptr;
-				bool texCreated = false;
-				Shader::TextureLoadManager::GetSingleton().CreateNiTexture(a_bakeSet[bakeIndex].textureName, a_bakeSet[bakeIndex].detailTexturePath.empty() ? "None" : a_bakeSet[bakeIndex].detailTexturePath, dstTexture2D, dstShaderResourceView, output, texCreated);
-				if (!output)
-					return;
-
-				NormalMapResult newNormalMapResult;
-				newNormalMapResult.geometry = bake.second.geometry;
-				newNormalMapResult.index = bakeIndex;
-				newNormalMapResult.vertexCount = a_data.geometries[bakeIndex].second.info.vertexCount;
-				newNormalMapResult.geoName = a_bakeSet[bakeIndex].geometryName;
-				newNormalMapResult.textureName = a_bakeSet[bakeIndex].textureName;
-				newNormalMapResult.normalmap = output;
-				result.push_back(newNormalMapResult);
-				logger::info("{}::{}::{} : normalmap baked", _func_, taskID.taskID, a_bakeSet[bakeIndex].geometryName);
-			}));
-		}
-		for (auto& parallelBaking : parallelBakings) {
-			parallelBaking.get();
+			ResourceDataMap[bake.second.textureName].srcShaderResourceView = srcShaderResourceView;
+			ResourceDataMap[bake.second.textureName].detailShaderResourceView = detailShaderResourceView;
+			ResourceDataMap[bake.second.textureName].overlayShaderResourceView = overlayShaderResourceView;
+			ResourceDataMap[bake.second.textureName].maskShaderResourceView = maskShaderResourceView;
+			ResourceDataMap[bake.second.textureName].dstWriteTexture2D = dstWriteTexture2D;
+			ResourceDataMap[bake.second.textureName].dstWriteTextureUAV = dstWriteTextureUAV;
+			ResourceDataMap[bake.second.textureName].pixelBuffer = pixelBuffer;
+			ResourceDataMap[bake.second.textureName].pixelBufferUAV = pixelBufferUAV;
+			logger::info("{}::{:x}::{} : normalmap baked", _func_, a_actorID, bake.second.geometryName);
 		}
 #ifdef BAKE_TEST1
-		PerformanceLog(std::string(_func_) + "::" + std::to_string(taskID.taskID), true, false);
+		PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID), true, false);
 #endif // BAKE_TEST1
 		return result;
 	}
-
-
 
 	bool ObjectNormalMapUpdater::IsDetailNormalMap(std::string a_normalMapPath)
 	{
@@ -1295,8 +1146,20 @@ namespace Mus {
 			return false;
 		}
 
-		bufferOut = buffer;
-		srvOut = srv;
+		bufferOut.Reset();
+		hr = buffer.As(&bufferOut);
+		if (FAILED(hr))
+		{
+			logger::error("Failed to move buffer ({})", hr);
+			return false;
+		}
+		srvOut.Reset();
+		hr = srv.As(&srvOut);
+		if (FAILED(hr))
+		{
+			logger::error("Failed to move buffer resource view ({})", hr);
+			return false;
+		}
 		return true;
 	};
 
@@ -1310,7 +1173,7 @@ namespace Mus {
 		PerformanceLog(std::string(__func__) + "::" + std::to_string(width) + "|" + std::to_string(height), false, false);
 #endif // BLEED_TEST1
 
-		if (margin <= 0) 
+		if (margin <= 0)
 			return true;
 
 		const DirectX::XMINT2 offsets[8] = {
@@ -1324,69 +1187,71 @@ namespace Mus {
 			DirectX::XMINT2(1,  1)  // right down
 		};
 
-		for (std::uint32_t m = 0; m < margin; m++)
-		{
-			cpuTask->submitAsync([&]() {
-				concurrency::concurrent_unordered_map<std::uint32_t*, RGBA> resultColorMap;
-				concurrency::parallel_for(UINT(0), height, [&](UINT y) {
-					std::uint8_t* rowData = pData + y * RowPitch;
-					for (int x = 0; x < width; ++x)
-					{
-						std::uint32_t* pixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
-						if (IsValidPixel(*pixel))
-							continue;
+		std::vector<std::future<void>> processes;
+		concurrency::concurrent_unordered_map<std::uint32_t*, RGBA> resultColorMap;
+		for (UINT y = 0; y < height; y++) {
+			std::uint8_t* rowData = pData + y * RowPitch;
+			for (int x = 0; x < width; ++x)
+			{
+				processes.push_back(processingThreads->submitAsync([&, rowData, y, x]() {
+					std::uint32_t* pixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
+					if (IsValidPixel(*pixel))
+						return;
 
-						RGBA averageColor(0.0f, 0.0f, 0.0f, 0.0f);
-						std::uint8_t validCount = 0;
+					RGBA averageColor(0.0f, 0.0f, 0.0f, 0.0f);
+					std::uint8_t validCount = 0;
 #pragma unroll(8)
-						for (std::uint8_t i = 0; i < 8; i++)
+					for (std::uint8_t i = 0; i < 8; i++)
+					{
+						DirectX::XMINT2 nearCoord = { (INT)x + offsets[i].x, (INT)y + offsets[i].y };
+						if (nearCoord.x < 0 || nearCoord.y < 0 ||
+							nearCoord.x >= width || nearCoord.y >= height)
+							return;
+
+						std::uint8_t* nearRowData = pData + nearCoord.y * RowPitch;
+						std::uint32_t* nearPixel = reinterpret_cast<uint32_t*>(nearRowData + nearCoord.x * 4);
+						if (IsValidPixel(*nearPixel))
 						{
-							DirectX::XMINT2 nearCoord = { (INT)x + offsets[i].x, (INT)y + offsets[i].y };
-							if (nearCoord.x < 0 || nearCoord.y < 0 ||
-								nearCoord.x >= width || nearCoord.y >= height)
-								continue;
-
-							std::uint8_t* nearRowData = pData + nearCoord.y * RowPitch;
-							std::uint32_t* nearPixel = reinterpret_cast<uint32_t*>(nearRowData + nearCoord.x * 4);
-							if (IsValidPixel(*nearPixel))
-							{
-								RGBA nearColor;
-								nearColor.SetReverse(*nearPixel);
-								averageColor += nearColor;
-								validCount++;
-							}
+							RGBA nearColor;
+							nearColor.SetReverse(*nearPixel);
+							averageColor += nearColor;
+							validCount++;
 						}
-
-						if (validCount == 0)
-							continue;
-
-						RGBA resultColor = averageColor / validCount;
-						resultColorMap[pixel] = resultColor;
 					}
-				});
-				for (auto& map : resultColorMap)
-				{
-					*map.first = map.second.GetReverse();
-				}
-			}).get();
-		}
 
+					if (validCount == 0)
+						return;
+
+					RGBA resultColor = averageColor / validCount;
+					resultColorMap[pixel] = resultColor;
+				}));
+			}
+		}
+		for (auto& process : processes)
+		{
+			process.get();
+		}
+		for (auto& map : resultColorMap)
+		{
+			*map.first = map.second.GetReverse();
+		}
 #ifdef BLEED_TEST1
 		PerformanceLog(std::string(__func__) + "::" + std::to_string(width) + "|" + std::to_string(height), true, false);
 #endif // BLEED_TEST1
-
 		return true;
 	}
 
-	bool ObjectNormalMapUpdater::BleedTextureGPU(TaskID taskID, std::uint32_t margin, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut)
+	bool ObjectNormalMapUpdater::BleedTextureGPU(std::string textureName, std::uint32_t margin, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut)
 	{
 		std::string_view _func_ = __func__;
 #ifdef BLEED_TEST1
-		PerformanceLog(std::string(_func_) + "::" + std::to_string(taskID.taskID), false, false);
+		PerformanceLog(std::string(_func_) + "::" + textureName, false, false);
 #endif // BLEED_TEST1
 
 		if (margin <= 0)
 			return true;
+
+		logger::debug("{}::{} : Bleed texture... {}", _func_, textureName, margin);
 
 		auto device = Shader::ShaderManager::GetSingleton().GetDevice();
 		auto context = Shader::ShaderManager::GetSingleton().GetContext();
@@ -1404,10 +1269,10 @@ namespace Mus {
 		//create buffers
 		struct ConstBufferData
 		{
-			UINT texWidth;
-			UINT texHeight;
-			INT margin;
-			UINT mipLevel;
+			UINT width;
+			UINT height;
+			UINT widthStart;
+			UINT heightStart;
 		};
 		static_assert(sizeof(ConstBufferData) % 16 == 0, "Constant buffer must be 16-byte aligned.");
 
@@ -1436,10 +1301,178 @@ namespace Mus {
 		const UINT height = desc.Height;
 
 		ConstBufferData cbData = {};
-		cbData.texWidth = width;
-		cbData.texHeight = height;
-		cbData.margin = margin;
-		cbData.mipLevel = 0;
+		cbData.width = width;
+		cbData.height = height;
+
+		D3D11_BUFFER_DESC cbDesc = {};
+		cbDesc.Usage = D3D11_USAGE_DEFAULT;
+		cbDesc.ByteWidth = sizeof(ConstBufferData);
+		cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+		cbDesc.CPUAccessFlags = 0;
+		cbDesc.MiscFlags = 0;
+		cbDesc.StructureByteStride = 0;
+
+		desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		desc.Usage = D3D11_USAGE_DEFAULT;
+		desc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
+		desc.MiscFlags = 0;
+		desc.MipLevels = srvDesc.Texture2D.MipLevels;
+		desc.CPUAccessFlags = 0;
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D;
+		hr = device->CreateTexture2D(&desc, nullptr, &texture2D);
+		if (FAILED(hr)) {
+			logger::error("{} : Failed to create const buffer ({})", _func_, hr);
+			return false;
+		}
+
+		D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+		uavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		uavDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
+		uavDesc.Texture2D.MipSlice = 0;
+		Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav;
+		hr = device->CreateUnorderedAccessView(texture2D.Get(), &uavDesc, &uav);
+		if (FAILED(hr)) {
+			logger::error("{} : Failed to create const buffer ({})", _func_, hr);
+			return false;
+		}
+
+#ifdef BLEED_TEST1
+		PerformanceLog(std::string(_func_) + "::" + textureName, true, false);
+#endif // BLEED_TEST1
+
+		std::mutex constBuffersLock;
+		std::vector<std::future<void>> gpuTasks;
+		const std::uint32_t subResolution = 4096 / (1u << Config::GetSingleton().GetDivideTaskQ());
+		const DirectX::XMUINT2 dispatch = { (std::min(width, subResolution) + 8 - 1) / 8, (std::min(height, subResolution) + 8 - 1) / 8};
+		const std::uint32_t marginUnit = std::max(std::uint32_t(1), std::min(margin, subResolution / width + subResolution / height));
+		const std::uint32_t marginMax = std::max(std::uint32_t(1), margin / marginUnit);
+		const std::uint32_t subXSize = std::max(std::uint32_t(1), width / subResolution);
+		const std::uint32_t subYSize = std::max(std::uint32_t(1), height / subResolution);
+		for (std::uint32_t mi = 0; mi < marginMax; mi++)
+		{
+			for (std::uint32_t subX = 0; subX < subXSize; subX++)
+			{
+				for (std::uint32_t subY = 0; subY < subYSize; subY++)
+				{
+					gpuTasks.push_back(gpuTask->submitAsync([&, subX, subY, mi]() {
+#ifdef BLEED_TEST2
+						GPUPerformanceLog(std::string(_func_) + "::" + textureName + "::" + std::to_string(width) + "|" + std::to_string(height) 
+										  + "::" + std::to_string(subX) + "|" + std::to_string(subY) + "::" + std::to_string(mi), false, false);
+#endif // BLEED_TEST2
+						auto cbData_ = cbData;
+						cbData_.widthStart = subResolution * subX;
+						cbData_.heightStart = subResolution * subY;
+						D3D11_SUBRESOURCE_DATA cbInitData = {};
+						cbInitData.pSysMem = &cbData_;
+						cbInitData.SysMemPitch = 0;
+						cbInitData.SysMemSlicePitch = 0;
+						Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
+						hr = device->CreateBuffer(&cbDesc, &cbInitData, &constBuffer);
+						if (FAILED(hr)) {
+							logger::error("{} : Failed to create const buffer ({})", _func_, hr);
+							return;
+						}
+						Shader::ShaderManager::GetSingleton().ShaderContextLock();
+						sb.Backup(context);
+						context->CopyResource(texture2D.Get(), texInOut.Get());
+						context->CSSetShader(shader.Get(), nullptr, 0);
+						context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
+						context->CSSetShaderResources(0, 1, srvInOut.GetAddressOf());
+						context->CSSetUnorderedAccessViews(0, 1, uav.GetAddressOf(), nullptr);
+						context->Dispatch(dispatch.x, dispatch.y, 1);
+						if (subX == subXSize - 1 && subY == subYSize - 1)
+							context->CopyResource(texInOut.Get(), texture2D.Get());
+						for (std::uint32_t mu = 1; mu < marginUnit; mu++)
+						{
+							context->Dispatch(dispatch.x, dispatch.y, 1);
+							context->CopyResource(texInOut.Get(), texture2D.Get());
+						}
+						sb.Revert(context);
+						Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+						constBuffersLock.lock();
+						ResourceDataMap[textureName].bleedTextureData.constBuffers.push_back(constBuffer);
+						constBuffersLock.unlock();
+#ifdef BLEED_TEST2
+						GPUPerformanceLog(std::string(_func_) + "::" + textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
+										  + "::" + std::to_string(subX) + "|" + std::to_string(subY) + "::" + std::to_string(mi), true, false);
+#endif // BLEED_TEST2
+					}));
+				}
+			}
+		}
+		for (auto& task : gpuTasks)
+		{
+			task.get();
+		}
+
+		ResourceDataMap[textureName].bleedTextureData.texture2D = texture2D;
+		ResourceDataMap[textureName].bleedTextureData.uav = uav;
+		return true;
+	}
+
+	bool ObjectNormalMapUpdater::TexturePostProcessingGPU(std::string textureName, float threshold, float blendStrength, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut)
+	{
+		std::string_view _func_ = __func__;
+#ifdef BLEED_TEST1
+		PerformanceLog(std::string(__func__) + "::" + std::to_string(width) + "|" + std::to_string(height), false, false);
+#endif // BLEED_TEST1
+		if (threshold <= floatPrecision || blendStrength <= floatPrecision)
+			return true;
+
+		logger::debug("{}::{} : TexturePostProcessing... {} / {}", _func_, textureName, threshold, blendStrength);
+
+		auto device = Shader::ShaderManager::GetSingleton().GetDevice();
+		auto context = Shader::ShaderManager::GetSingleton().GetContext();
+		auto shader = Shader::ShaderManager::GetSingleton().GetComputeShader(TexturePostProcessingShaderName.data());
+		if (!device || !context || !shader)
+			return false;
+
+		HRESULT hr;
+
+		D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
+		srvInOut->GetDesc(&srvDesc);
+		D3D11_TEXTURE2D_DESC desc;
+		texInOut->GetDesc(&desc);
+
+		//create buffers
+		struct ConstBufferData
+		{
+			UINT width;
+			UINT height;
+			float threshold;
+			float blendStrength;
+		};
+		static_assert(sizeof(ConstBufferData) % 16 == 0, "Constant buffer must be 16-byte aligned.");
+
+		struct ShaderBackup {
+		public:
+			void Backup(ID3D11DeviceContext* context) {
+				context->CSGetShader(&shader, nullptr, 0);
+				context->CSGetConstantBuffers(0, 1, &constBuffer);
+				context->CSGetShaderResources(0, 1, &srv);
+				context->CSGetUnorderedAccessViews(0, 1, &uav);
+			}
+			void Revert(ID3D11DeviceContext* context) {
+				context->CSSetShader(shader.Get(), nullptr, 0);
+				context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
+				context->CSSetShaderResources(0, 1, srv.GetAddressOf());
+				context->CSSetUnorderedAccessViews(0, 1, uav.GetAddressOf(), nullptr);
+			}
+			Shader::ShaderManager::ComputeShader shader;
+			Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
+			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+			Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav;
+		private:
+		} sb;
+
+		const UINT width = desc.Width;
+		const UINT height = desc.Height;
+
+		ConstBufferData cbData = {};
+		cbData.width = width;
+		cbData.height = height;
+		cbData.threshold = threshold;
+		cbData.blendStrength = blendStrength;
 
 		D3D11_BUFFER_DESC cbDesc = {};
 		cbDesc.Usage = D3D11_USAGE_DEFAULT;
@@ -1456,7 +1489,7 @@ namespace Mus {
 		Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
 		hr = device->CreateBuffer(&cbDesc, &cbInitData, &constBuffer);
 		if (FAILED(hr)) {
-			logger::error("{}::{} : Failed to create const buffer ({})", _func_, taskID.taskID, hr);
+			logger::error("{} : Failed to create const buffer ({})", _func_, hr);
 			return false;
 		}
 
@@ -1469,7 +1502,7 @@ namespace Mus {
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D;
 		hr = device->CreateTexture2D(&desc, nullptr, &texture2D);
 		if (FAILED(hr)) {
-			logger::error("{}::{} : Failed to create const buffer ({})", _func_, taskID.taskID, hr);
+			logger::error("{} : Failed to create const buffer ({})", _func_, hr);
 			return false;
 		}
 
@@ -1480,47 +1513,51 @@ namespace Mus {
 		Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav;
 		hr = device->CreateUnorderedAccessView(texture2D.Get(), &uavDesc, &uav);
 		if (FAILED(hr)) {
-			logger::error("{}::{} : Failed to create const buffer ({})", _func_, taskID.taskID, hr);
+			logger::error("{} : Failed to create const buffer ({})", _func_, hr);
 			return false;
 		}
-
 #ifdef BLEED_TEST1
-		PerformanceLog(std::string(_func_) + "::" + std::to_string(taskID.taskID), true, false);
+		PerformanceLog(std::string(_func_) + "::" + textureName, true, false);
 #endif // BLEED_TEST1
 
-		DirectX::XMUINT2 dispatch = { width / 8 + 1, height / 8 + 1 };
-
-		const std::uint32_t subSize = std::max(std::uint32_t(1), (width / 4096 * height / 4096)) * (margin / 4);
-		const std::uint32_t numSubMargins = (margin + subSize - 1) / subSize;
-
-		for (std::uint32_t subIndex = 0; subIndex < subSize; subIndex++)
+		std::vector<std::future<void>> gpuTasks;
+		const std::uint32_t subResolution = 4096 / (1u << Config::GetSingleton().GetDivideTaskQ());
+		const DirectX::XMUINT2 dispatch = { (std::min(width, subResolution) + 8 - 1) / 8, (std::min(height, subResolution) + 8 - 1) / 8 };
+		const std::uint32_t subXSize = std::max(std::uint32_t(1), width / subResolution);
+		const std::uint32_t subYSize = std::max(std::uint32_t(1), height / subResolution);
+		for (std::uint32_t subX = 0; subX < subXSize; subX++)
 		{
-			const std::uint32_t subOffset = subIndex * numSubMargins;
-			const std::uint32_t localMarginMax = std::min(margin, subOffset + numSubMargins);
-
-			gpuTask->submitAsync([&, subOffset, localMarginMax]() {
+			for (std::uint32_t subY = 0; subY < subYSize; subY++)
+			{
+				gpuTasks.push_back(gpuTask->submitAsync([&, subX, subY]() {
 #ifdef BLEED_TEST2
-				GPUPerformanceLog(std::string(_func_) + "::" + std::to_string(width) + "|" + std::to_string(height), false, false);
+					GPUPerformanceLog(std::string(_func_) + "::" + textureName + "::" + std::to_string(width) + "|" + std::to_string(height), false, false);
 #endif // BLEED_TEST2
-				Shader::ShaderManager::GetSingleton().ShaderContextLock();
-				sb.Backup(context);
-				context->CopyResource(texture2D.Get(), texInOut.Get());
-				context->CSSetShader(shader.Get(), nullptr, 0);
-				context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
-				context->CSSetShaderResources(0, 1, srvInOut.GetAddressOf());
-				context->CSSetUnorderedAccessViews(0, 1, uav.GetAddressOf(), nullptr);
-				for (std::uint32_t mi = subOffset; mi < localMarginMax; mi++)
-				{
+					Shader::ShaderManager::GetSingleton().ShaderContextLock();
+					sb.Backup(context);
+					context->CopyResource(texture2D.Get(), texInOut.Get());
+					context->CSSetShader(shader.Get(), nullptr, 0);
+					context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
+					context->CSSetShaderResources(0, 1, srvInOut.GetAddressOf());
+					context->CSSetUnorderedAccessViews(0, 1, uav.GetAddressOf(), nullptr);
 					context->Dispatch(dispatch.x, dispatch.y, 1);
+					sb.Revert(context);
 					context->CopyResource(texInOut.Get(), texture2D.Get());
-				}
-				sb.Revert(context);
-				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 #ifdef BLEED_TEST2
-				GPUPerformanceLog(std::string(_func_) + "::" + std::to_string(width) + "|" + std::to_string(height), true, false);
+					GPUPerformanceLog(std::string(_func_) + "::" + textureName + "::" + std::to_string(width) + "|" + std::to_string(height), true, false);
 #endif // BLEED_TEST2
-			}).get();
+				}));
+			}
 		}
+		for (auto& task : gpuTasks)
+		{
+			task.get();
+		}
+		ResourceDataMap[textureName].texturePostProcessingData.constBuffer = constBuffer;
+		ResourceDataMap[textureName].texturePostProcessingData.texture2D = texture2D;
+		ResourceDataMap[textureName].texturePostProcessingData.uav = uav;
+
 		return true;
 	}
 

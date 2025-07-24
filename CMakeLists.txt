@@ -143,6 +143,8 @@ install(TARGETS ${PROJECT_NAME}
 set(compute_shader_sources 
    ${CMAKE_CURRENT_SOURCE_DIR}/shader/UpdateNormalMap.hlsl
    ${CMAKE_CURRENT_SOURCE_DIR}/shader/BleedTexture.hlsl
+   ${CMAKE_CURRENT_SOURCE_DIR}/shader/TexturePostProcessing.hlsl
+   ${CMAKE_CURRENT_SOURCE_DIR}/shader/MiniBenchmark.hlsl
 )
 set(vertex_shader_sources 
 

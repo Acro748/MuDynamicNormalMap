@@ -12,6 +12,20 @@ namespace Mus {
 	{
 		return netimmerse_cast<RE::BSFaceGenBaseMorphExtraData*>(a_geometry->GetExtraData("FOD"));
 	}
+	std::uint32_t GeometryData::GetVertexCount(RE::BSGeometry* a_geometry)
+	{
+		if (!a_geometry || a_geometry->name.empty())
+			return 0;
+		const RE::BSTriShape* triShape = a_geometry->AsTriShape();
+		if (!triShape)
+			return 0;
+		std::uint32_t vertexCount = triShape->GetTrishapeRuntimeData().vertexCount;
+		const RE::NiPointer<RE::NiSkinPartition> skinPartition = GetSkinPartition(a_geometry);
+		if (!skinPartition)
+			return vertexCount;
+		vertexCount = vertexCount > 0 ? vertexCount : skinPartition->vertexCount;
+		return vertexCount;
+	}
 
 	bool GeometryData::GetGeometryInfo(RE::BSGeometry* a_geo, GeometryInfo& info)
 	{
@@ -20,7 +34,7 @@ namespace Mus {
 
 		info.desc = a_geo->GetGeometryRuntimeData().vertexDesc;
 		info.name = a_geo->name.c_str();
-		info.hasVertices = a_geo->AsDynamicTriShape() ? true : info.desc.HasFlag(RE::BSGraphics::Vertex::VF_VERTEX);
+		info.hasVertices = info.desc.HasFlag(RE::BSGraphics::Vertex::VF_VERTEX);
 		info.hasUVs = info.desc.HasFlag(RE::BSGraphics::Vertex::VF_UV);
 		info.hasNormals = info.desc.HasFlag(RE::BSGraphics::Vertex::VF_NORMAL);
 		info.hasTangents = info.desc.HasFlag(RE::BSGraphics::Vertex::VF_TANGENT);
@@ -44,9 +58,6 @@ namespace Mus {
 		const RE::BSDynamicTriShape* dynamicTriShape = a_geo->AsDynamicTriShape();
 		const RE::BSTriShape* triShape = a_geo->AsTriShape();
 		if (!triShape)
-			return false;
-
-		if (!newObjInfo.info.hasVertices || !newObjInfo.info.hasUVs)
 			return false;
 
 		newObjInfo.info.vertexCount = triShape->GetTrishapeRuntimeData().vertexCount;
@@ -90,13 +101,7 @@ namespace Mus {
 			std::memcpy(&newObjInfo.indicesBlockData[indexOffset], partition.triList, sizeof(std::uint16_t) * partition.triangles * 3);
 			indexOffset += partition.triangles * 3;
 		}
-		geometries.push_back(std::make_pair(std::string(a_geo->name.c_str()), newObjInfo));
-
-		mainInfo.hasVertices |= newObjInfo.info.hasVertices;
-		mainInfo.hasUVs |= newObjInfo.info.hasUVs;
-		mainInfo.hasNormals |= newObjInfo.info.hasNormals;
-		mainInfo.hasTangents |= newObjInfo.info.hasTangents;
-		mainInfo.hasBitangents |= newObjInfo.info.hasBitangents;
+		geometries.push_back(std::make_pair(a_geo, newObjInfo));
 
 		if (geometries.size() > 1) {
 			if (geometries[mainGeometryIndex].second.indicesBlockData.size() < geometries[geometries.size() - 1].second.indicesBlockData.size())
@@ -152,11 +157,13 @@ namespace Mus {
 				}
 				else if (!geo.second.dynamicBlockData2.empty())
 				{
-					DirectX::XMStoreFloat3(&vertices[vi], geo.second.dynamicBlockData2[i]);
+					vertices[vi].x = geo.second.dynamicBlockData2[i].x;
+					vertices[vi].y = geo.second.dynamicBlockData2[i].y;
+					vertices[vi].z = geo.second.dynamicBlockData2[i].z;
 					/*if (geo.second.info.hasBitangents)
-						bitangents[bi].x = geo.second.dynamicBlockData[i].m128_f32[3];*/
+						bitangents[bi].x = geo.second.dynamicBlockData[i].w*/
 				}
-				else
+				if (geo.second.info.hasVertices)
 				{
 					vertices[vi] = *reinterpret_cast<DirectX::XMFLOAT3*>(block);
 					block += 12;
@@ -165,10 +172,12 @@ namespace Mus {
 						bitangents[bi].x = *reinterpret_cast<float*>(block);*/
 					block += 4;
 				}
-
-				uvs[ui].x = DirectX::PackedVector::XMConvertHalfToFloat(*reinterpret_cast<std::uint16_t*>(block));
-				uvs[ui].y = DirectX::PackedVector::XMConvertHalfToFloat(*reinterpret_cast<std::uint16_t*>(block + 2));
-				block += 4;
+				if (geo.second.info.hasUVs)
+				{
+					uvs[ui].x = DirectX::PackedVector::XMConvertHalfToFloat(*reinterpret_cast<std::uint16_t*>(block));
+					uvs[ui].y = DirectX::PackedVector::XMConvertHalfToFloat(*reinterpret_cast<std::uint16_t*>(block + 2));
+					block += 4;
+				}
 
 				/*if (geo.second.info.hasNormals)
 				{
@@ -216,12 +225,185 @@ namespace Mus {
 			geo.second.indicesStart = beforeIndices;
 			geo.second.indicesEnd = indices.size();
 
-			logger::info("{}::{} : get geometry data {} => vertices {} / uvs {} / tris {}", __func__, geo.second.info.name.c_str(), geometries.size(),
+			logger::info("{}::{} : get geometry data => vertices {} / uvs {} / tris {}", __func__, geo.second.info.name.c_str(),
 						 geo.second.vertexCount(), geo.second.uvCount(), geo.second.indicesCount() / 3);
 		}
 #ifdef GEOMETRY_TEST
 		PerformanceLog(std::string(__func__) + "::" + mainInfo.name, true, false);
 #endif // GEOMETRY_TEST
+	}
+
+	bool GeometryData::GetGeometryData(RE::BSGeometry* a_geo)
+	{
+		if (!a_geo || a_geo->name.empty())
+			return false;
+
+		GeometryInfo info;
+		if (!GetGeometryInfo(a_geo, info))
+			return false;
+
+#ifdef GEOMETRY_TEST
+		PerformanceLog(std::string(__func__) + "::" + info.name, false, false);
+#endif // GEOMETRY_TEST
+
+		const RE::BSDynamicTriShape* dynamicTriShape = a_geo->AsDynamicTriShape();
+		const RE::BSTriShape* triShape = a_geo->AsTriShape();
+		if (!triShape)
+			return false;
+
+		info.vertexCount = triShape->GetTrishapeRuntimeData().vertexCount;
+		const RE::NiPointer<RE::NiSkinPartition> skinPartition = GetSkinPartition(a_geo);
+		if (!skinPartition)
+			return false;
+
+		RE::BSGraphics::VertexDesc desc = a_geo->GetGeometryRuntimeData().vertexDesc;
+
+		logger::debug("{}::{} : get geometry data...", __func__, info.name);
+
+		info.vertexCount = info.vertexCount > 0 ? info.vertexCount : skinPartition->vertexCount;
+		const std::size_t beforeVertexCount = vertices.size();
+		const std::size_t beforeUVCount = uvs.size();
+		 const std::size_t beforeNormalCount = normals.size();
+		const std::size_t beforeTangentCount = tangents.size();
+		const std::size_t beforeBitangentCount = bitangents.size();
+		vertices.resize(beforeVertexCount + info.vertexCount);
+		uvs.resize(beforeUVCount + info.vertexCount);
+		/* normals.resize(beforeNormalCount + vertexCount);
+		tangents.resize(beforeTangentCount + vertexCount);
+		bitangents.resize(beforeBitangentCount + vertexCount);*/
+
+		const std::uint32_t vertexSize = desc.GetSize();
+		std::uint8_t* vertexBlock = skinPartition->partitions[0].buffData->rawVertexData;
+
+		RE::NiPoint3* dynamicVertex1 = nullptr;
+		DirectX::XMFLOAT4* dynamicVertex2 = nullptr;
+		if (dynamicTriShape)
+		{
+			if (Config::GetSingleton().GetRealtimeDetectHead() < 2)
+			{
+				if (const auto morphData = GetMorphExtraData(a_geo); morphData)
+				{
+					dynamicVertex1 = morphData->vertexData;
+				}
+			}
+			else
+			{
+				if (dynamicTriShape->GetDynamicTrishapeRuntimeData().dynamicData)
+				{
+					dynamicVertex2 = reinterpret_cast<DirectX::XMFLOAT4*>(dynamicTriShape->GetDynamicTrishapeRuntimeData().dynamicData);
+				}
+			}
+		}
+
+		float colorConvert = 1.0f / 255.0f;
+		for (std::uint32_t i = 0; i < info.vertexCount; i++) {
+			std::uint8_t* block = &vertexBlock[i * vertexSize];
+			const std::uint32_t vi = beforeVertexCount + i;
+			const std::uint32_t ui = beforeUVCount + i;
+			const std::uint32_t ni = beforeNormalCount + i;
+			const std::uint32_t ti = beforeTangentCount + i;
+			const std::uint32_t bi = beforeBitangentCount + i;
+
+			if (dynamicVertex1)
+			{
+				vertices[vi].x = dynamicVertex1[i].x;
+				vertices[vi].y = dynamicVertex1[i].y;
+				vertices[vi].z = dynamicVertex1[i].z;
+			}
+			else if (dynamicVertex2)
+			{
+				vertices[vi].x = dynamicVertex2[i].x;
+				vertices[vi].y = dynamicVertex2[i].y;
+				vertices[vi].z = dynamicVertex2[i].z;
+
+				/*if (info.hasBitangents)
+					bitangents[bi].x = dynamicVertex2[i].w;*/
+			}
+			if (info.hasVertices)
+			{
+				vertices[vi] = *reinterpret_cast<DirectX::XMFLOAT3*>(block);
+				block += 12;
+
+				/*if (info.hasBitangents)
+					bitangents[bi].x = *reinterpret_cast<float*>(block);*/
+				block += 4;
+			}
+
+			uvs[ui].x = DirectX::PackedVector::XMConvertHalfToFloat(*reinterpret_cast<std::uint16_t*>(block));
+			uvs[ui].y = DirectX::PackedVector::XMConvertHalfToFloat(*reinterpret_cast<std::uint16_t*>(block + 2));
+			block += 4;
+
+			/*if (info.hasNormals)
+			{
+				normals[ni].x = static_cast<float>(*block) * colorConvert;
+				normals[ni].y = static_cast<float>(*(block + 1)) * colorConvert;
+				normals[ni].z = static_cast<float>(*(block + 2)) * colorConvert;
+				block += 3;
+
+				if (info.hasBitangents)
+					bitangents[bi].y = static_cast<float>(*block);
+				block += 1;
+
+				if (info.hasTangents)
+				{
+					tangents[ti].x = static_cast<float>(*block) * colorConvert;
+					tangents[ti].y = static_cast<float>(*(block + 1)) * colorConvert;
+					tangents[ti].z = static_cast<float>(*(block + 2)) * colorConvert;
+					block += 3;
+
+					if (info.hasBitangents)
+						bitangents[bi].z = static_cast<float>(*block);
+				}
+			}*/
+		}
+
+		std::uint32_t indexOffset = 0;
+		for (auto& partition : skinPartition->partitions)
+		{
+			indexOffset += partition.triangles * 3;
+		}
+		const std::size_t beforeIndices = indices.size();
+		indices.resize(beforeIndices + indexOffset);
+		indexOffset = 0;
+		for (auto& partition : skinPartition->partitions)
+		{
+			for (std::uint32_t t = 0; t < partition.triangles * 3; t += 3)
+			{
+				indices[beforeIndices + indexOffset + t + 0] = beforeVertexCount + partition.triList[t + 0];
+				indices[beforeIndices + indexOffset + t + 1] = beforeVertexCount + partition.triList[t + 1];
+				indices[beforeIndices + indexOffset + t + 2] = beforeVertexCount + partition.triList[t + 2];
+			}
+			indexOffset += partition.triangles * 3;
+		}
+
+		ObjectInfo newObjInfo;
+		newObjInfo.info = info;
+		newObjInfo.vertexStart = beforeVertexCount;
+		newObjInfo.vertexEnd = vertices.size();
+		newObjInfo.uvStart = beforeUVCount;
+		newObjInfo.uvEnd = uvs.size();
+		newObjInfo.normalStart = beforeNormalCount;
+		newObjInfo.normalEnd = normals.size();
+		newObjInfo.tangentStart = beforeTangentCount;
+		newObjInfo.tangentEnd = tangents.size();
+		newObjInfo.bitangentStart = beforeBitangentCount;
+		newObjInfo.bitangentEnd = bitangents.size();
+		newObjInfo.indicesStart = beforeIndices;
+		newObjInfo.indicesEnd = indices.size();
+		geometries.push_back(std::make_pair(a_geo, newObjInfo));
+
+		if (geometries.size() > 1) {
+			if (geometries[mainGeometryIndex].second.indicesCount() < geometries[geometries.size() - 1].second.indicesCount())
+				mainGeometryIndex = geometries.size() - 1;
+		}
+
+#ifdef GEOMETRY_TEST
+		PerformanceLog(std::string(__func__) + "::" + info.name, true, false);
+#endif // GEOMETRY_TEST
+
+		logger::info("{}::{} : get geometry data {} => vertices {} / uvs {} / tris {}", __func__, a_geo->name.c_str(), geometries.size(),
+					 newObjInfo.vertexCount(), newObjInfo.uvCount(), newObjInfo.normalCount(), newObjInfo.tangentCount(), newObjInfo.indicesCount() / 3);
+		return true;
 	}
 
 	void GeometryData::UpdateMap() {
@@ -240,74 +422,81 @@ namespace Mus {
 #ifdef GEOMETRY_TEST
 		PerformanceLog(std::string(__func__) + "::" + std::to_string(indices.size()), false, false);
 #endif // GEOMETRY_TEST
-		concurrency::parallel_for(std::size_t(0), triCount, [&](std::size_t i) {
-			std::size_t offset = i * 3;
-			std::uint32_t i0 = indices[offset + 0];
-			std::uint32_t i1 = indices[offset + 1];
-			std::uint32_t i2 = indices[offset + 2];
 
-			const DirectX::XMFLOAT3& p0 = vertices[i0];
-			const DirectX::XMFLOAT3& p1 = vertices[i1];
-			const DirectX::XMFLOAT3& p2 = vertices[i2];
+		std::vector<std::future<void>> processes;
+		for (std::size_t i = 0; i < triCount; i++) {
+			processes.push_back(processingThreads->submitAsync([&, i]() {
+				std::size_t offset = i * 3;
+				std::uint32_t i0 = indices[offset + 0];
+				std::uint32_t i1 = indices[offset + 1];
+				std::uint32_t i2 = indices[offset + 2];
 
-			DirectX::XMVECTOR v0 = DirectX::XMLoadFloat3(&p0);
-			DirectX::XMVECTOR v1 = DirectX::XMLoadFloat3(&p1);
-			DirectX::XMVECTOR v2 = DirectX::XMLoadFloat3(&p2);
+				const DirectX::XMFLOAT3& p0 = vertices[i0];
+				const DirectX::XMFLOAT3& p1 = vertices[i1];
+				const DirectX::XMFLOAT3& p2 = vertices[i2];
 
-			const DirectX::XMFLOAT2& uv0 = uvs[i0];
-			const DirectX::XMFLOAT2& uv1 = uvs[i1];
-			const DirectX::XMFLOAT2& uv2 = uvs[i2];
+				DirectX::XMVECTOR v0 = DirectX::XMLoadFloat3(&p0);
+				DirectX::XMVECTOR v1 = DirectX::XMLoadFloat3(&p1);
+				DirectX::XMVECTOR v2 = DirectX::XMLoadFloat3(&p2);
 
-			// Normal
-			DirectX::XMVECTOR normalVec = DirectX::XMVector3Normalize(
-				DirectX::XMVector3Cross(
-					DirectX::XMVectorSubtract(v1, v0),
-					DirectX::XMVectorSubtract(v2, v0)
-				)
-			);
-			DirectX::XMFLOAT3 normal;
-			DirectX::XMStoreFloat3(&normal, normalVec);
-			faceNormals[i] = { i0, i1, i2, normal };
+				const DirectX::XMFLOAT2& uv0 = uvs[i0];
+				const DirectX::XMFLOAT2& uv1 = uvs[i1];
+				const DirectX::XMFLOAT2& uv2 = uvs[i2];
 
-			vertexToFaceMap[i0].push_back(i);
-			vertexToFaceMap[i1].push_back(i);
-			vertexToFaceMap[i2].push_back(i);
+				// Normal
+				DirectX::XMVECTOR normalVec = DirectX::XMVector3Normalize(
+					DirectX::XMVector3Cross(
+						DirectX::XMVectorSubtract(v1, v0),
+						DirectX::XMVectorSubtract(v2, v0)
+					)
+				);
+				DirectX::XMFLOAT3 normal;
+				DirectX::XMStoreFloat3(&normal, normalVec);
+				faceNormals[i] = { i0, i1, i2, normal };
 
-			// Tangent / Bitangent
-			DirectX::XMVECTOR dp1 = DirectX::XMVectorSubtract(v1, v0);
-			DirectX::XMVECTOR dp2 = DirectX::XMVectorSubtract(v2, v0);
+				vertexToFaceMap[i0].push_back(i);
+				vertexToFaceMap[i1].push_back(i);
+				vertexToFaceMap[i2].push_back(i);
 
-			DirectX::XMFLOAT2 duv1 = { uv1.x - uv0.x, uv1.y - uv0.y };
-			DirectX::XMFLOAT2 duv2 = { uv2.x - uv0.x, uv2.y - uv0.y };
+				// Tangent / Bitangent
+				DirectX::XMVECTOR dp1 = DirectX::XMVectorSubtract(v1, v0);
+				DirectX::XMVECTOR dp2 = DirectX::XMVectorSubtract(v2, v0);
 
-			float r = duv1.x * duv2.y - duv2.x * duv1.y;
-			r = (fabs(r) < floatPrecision) ? 1.0f : 1.0f / r;
+				DirectX::XMFLOAT2 duv1 = { uv1.x - uv0.x, uv1.y - uv0.y };
+				DirectX::XMFLOAT2 duv2 = { uv2.x - uv0.x, uv2.y - uv0.y };
 
-			DirectX::XMVECTOR tangentVec = DirectX::XMVectorScale(
-				DirectX::XMVectorSubtract(
-					DirectX::XMVectorScale(dp1, duv2.y),
-					DirectX::XMVectorScale(dp2, duv1.y)
-				), r);
+				float r = duv1.x * duv2.y - duv2.x * duv1.y;
+				r = (fabs(r) < floatPrecision) ? 1.0f : 1.0f / r;
 
-			DirectX::XMVECTOR bitangentVec = DirectX::XMVectorScale(
-				DirectX::XMVectorSubtract(
-					DirectX::XMVectorScale(dp2, duv1.x),
-					DirectX::XMVectorScale(dp1, duv2.x)
-				), r);
+				DirectX::XMVECTOR tangentVec = DirectX::XMVectorScale(
+					DirectX::XMVectorSubtract(
+						DirectX::XMVectorScale(dp1, duv2.y),
+						DirectX::XMVectorScale(dp2, duv1.y)
+					), r);
 
-			DirectX::XMFLOAT3 tangent, bitangent;
-			DirectX::XMStoreFloat3(&tangent, tangentVec);
-			DirectX::XMStoreFloat3(&bitangent, bitangentVec);
-			faceTangents[i] = { i0, i1, i2, tangent, bitangent };
+				DirectX::XMVECTOR bitangentVec = DirectX::XMVectorScale(
+					DirectX::XMVectorSubtract(
+						DirectX::XMVectorScale(dp2, duv1.x),
+						DirectX::XMVectorScale(dp1, duv2.x)
+					), r);
 
-			vertexMap[{ p0, uv0 }].push_back(i);
-			vertexMap[{ p1, uv1 }].push_back(i);
-			vertexMap[{ p2, uv2 }].push_back(i);
+				DirectX::XMFLOAT3 tangent, bitangent;
+				DirectX::XMStoreFloat3(&tangent, tangentVec);
+				DirectX::XMStoreFloat3(&bitangent, bitangentVec);
+				faceTangents[i] = { i0, i1, i2, tangent, bitangent };
 
-			positionMap[{ p0 }].push_back(i0);
-			positionMap[{ p1 }].push_back(i1);
-			positionMap[{ p2 }].push_back(i2);
-		});
+				vertexMap[{ p0, uv0 }].push_back(i);
+				vertexMap[{ p1, uv1 }].push_back(i);
+				vertexMap[{ p2, uv2 }].push_back(i);
+
+				positionMap[{ p0 }].push_back(i0);
+				positionMap[{ p1 }].push_back(i1);
+				positionMap[{ p2 }].push_back(i2);
+			}));
+		}
+		for (auto& process : processes) {
+			process.get();
+		}
 		logger::debug("{}::{} : vertex map updated, vertices {} / uvs {} / tris {}", __func__,
 					 mainInfo.name, vertices.size(), uvs.size(), indices.size() / 3);
 #ifdef GEOMETRY_TEST
@@ -317,7 +506,7 @@ namespace Mus {
 
 	void GeometryData::RecalculateNormals(float a_smooth)
 	{
-		if (!mainInfo.hasVertices || vertices.empty() || indices.empty())
+		if (vertices.empty() || indices.empty())
 			return;
 
 		mainInfo.hasNormals = true;
@@ -350,75 +539,79 @@ namespace Mus {
 #endif // GEOMETRY_TEST
 		const float smoothCos = std::cosf(DirectX::XMConvertToRadians(a_smooth));
 
-		concurrency::parallel_for(std::size_t(0), vertices.size(), [&](std::size_t i) {
-			const DirectX::XMFLOAT3& pos = vertices[i];
-			const DirectX::XMFLOAT2& uv = uvs[i];
+		std::vector<std::future<void>> processes;
+		for (std::size_t i = 0; i < vertices.size(); i++) {
+			processes.push_back(processingThreads->submitAsync([&, i]() {
+				const DirectX::XMFLOAT3& pos = vertices[i];
+				const DirectX::XMFLOAT2& uv = uvs[i];
 
-			VertexKey vkey = { pos, uv };
-			auto it = vertexMap.find(vkey);
-			if (it == vertexMap.end())
-				return;
+				VertexKey vkey = { pos, uv };
+				auto it = vertexMap.find(vkey);
+				if (it == vertexMap.end())
+					return;
 
-			const auto& exactFaceIndices = it->second;
+				const auto& exactFaceIndices = it->second;
 
-			DirectX::XMVECTOR nSelf = DirectX::XMVectorZero();
-			bool foundSelf = false;
-			for (auto fi : exactFaceIndices) {
-				const auto& fn = faceNormals[fi];
-				if (fn.v0 == i || fn.v1 == i || fn.v2 == i) {
-					nSelf = DirectX::XMLoadFloat3(&fn.normal);
-					foundSelf = true;
-					break;
-				}
-			}
-			if (!foundSelf)
-				return;
-
-			PositionKey pkey = { pos };
-			auto posIt = positionMap.find(pkey);
-			if (posIt == positionMap.end())
-				return;
-
-			DirectX::XMVECTOR nSum = DirectX::XMVectorZero();
-			DirectX::XMVECTOR tSum = DirectX::XMVectorZero();
-			DirectX::XMVECTOR bSum = DirectX::XMVectorZero();
-
-			for (auto vi : posIt->second) {
-				for (auto fi : vertexToFaceMap[vi]) {
+				DirectX::XMVECTOR nSelf = DirectX::XMVectorZero();
+				bool foundSelf = false;
+				for (auto& fi : exactFaceIndices) {
 					const auto& fn = faceNormals[fi];
-					if (fn.v0 == vi || fn.v1 == vi || fn.v2 == vi) {
-						DirectX::XMVECTOR fnVec = DirectX::XMLoadFloat3(&fn.normal);
-						float dot = DirectX::XMVectorGetX(DirectX::XMVector3Dot(fnVec, nSelf));
-						if (dot < smoothCos)
-							continue;
-						const auto& ft = faceTangents[fi];
-						nSum = DirectX::XMVectorAdd(nSum, fnVec);
-						tSum = DirectX::XMVectorAdd(tSum, DirectX::XMLoadFloat3(&ft.tangent));
-						bSum = DirectX::XMVectorAdd(bSum, DirectX::XMLoadFloat3(&ft.bitangent));
+					if (fn.v0 == i || fn.v1 == i || fn.v2 == i) {
+						nSelf = DirectX::XMLoadFloat3(&fn.normal);
+						foundSelf = true;
+						break;
 					}
 				}
-			}
+				if (!foundSelf)
+					return;
 
-			if (DirectX::XMVector3Equal(nSum, DirectX::XMVectorZero()))
-				return;
+				PositionKey pkey = { pos };
+				auto posIt = positionMap.find(pkey);
+				if (posIt == positionMap.end())
+					return;
 
-			DirectX::XMVECTOR t = DirectX::XMVectorGetX(DirectX::XMVector3Length(tSum)) > floatPrecision ? DirectX::XMVector3Normalize(tSum) : DirectX::XMVectorZero();
-			DirectX::XMVECTOR b = DirectX::XMVectorGetX(DirectX::XMVector3Length(bSum)) > floatPrecision ? DirectX::XMVector3Normalize(bSum) : DirectX::XMVectorZero();
-			const DirectX::XMVECTOR n = DirectX::XMVector3Normalize(nSum);
+				DirectX::XMVECTOR nSum = DirectX::XMVectorZero();
+				DirectX::XMVECTOR tSum = DirectX::XMVectorZero();
+				DirectX::XMVECTOR bSum = DirectX::XMVectorZero();
 
-			if (!DirectX::XMVector3Equal(t, DirectX::XMVectorZero())) {
-				t = DirectX::XMVector3Normalize(DirectX::XMVectorSubtract(t, DirectX::XMVectorScale(n, DirectX::XMVectorGetX(DirectX::XMVector3Dot(n, t)))));
-				const DirectX::XMVECTOR cross = DirectX::XMVector3Cross(n, t);
-				const float handedness = (DirectX::XMVectorGetX(DirectX::XMVector3Dot(cross, b)) < 0.0f) ? -1.0f : 1.0f;
-				b = DirectX::XMVector3Normalize(DirectX::XMVectorScale(cross, handedness));
-			}
+				for (auto& vi : posIt->second) {
+					for (auto& fi : vertexToFaceMap[vi]) {
+						const auto& fn = faceNormals[fi];
+						if (fn.v0 == vi || fn.v1 == vi || fn.v2 == vi) {
+							DirectX::XMVECTOR fnVec = DirectX::XMLoadFloat3(&fn.normal);
+							float dot = DirectX::XMVectorGetX(DirectX::XMVector3Dot(fnVec, nSelf));
+							if (dot < smoothCos)
+								continue;
+							const auto& ft = faceTangents[fi];
+							nSum = DirectX::XMVectorAdd(nSum, fnVec);
+							tSum = DirectX::XMVectorAdd(tSum, DirectX::XMLoadFloat3(&ft.tangent));
+							bSum = DirectX::XMVectorAdd(bSum, DirectX::XMLoadFloat3(&ft.bitangent));
+						}
+					}
+				}
 
-			if (!DirectX::XMVector3Equal(t, DirectX::XMVectorZero()))
-				DirectX::XMStoreFloat3(&tangents[i], t);
-			if (!DirectX::XMVector3Equal(b, DirectX::XMVectorZero()))
-				DirectX::XMStoreFloat3(&bitangents[i], b);
-			DirectX::XMStoreFloat3(&normals[i], n);
-		});
+				if (DirectX::XMVector3Equal(nSum, DirectX::XMVectorZero()))
+					return;
+
+				DirectX::XMVECTOR t = DirectX::XMVectorGetX(DirectX::XMVector3Length(tSum)) > floatPrecision ? DirectX::XMVector3Normalize(tSum) : DirectX::XMVectorZero();
+				DirectX::XMVECTOR b = DirectX::XMVectorGetX(DirectX::XMVector3Length(bSum)) > floatPrecision ? DirectX::XMVector3Normalize(bSum) : DirectX::XMVectorZero();
+				const DirectX::XMVECTOR n = DirectX::XMVector3Normalize(nSum);
+
+				if (!DirectX::XMVector3Equal(t, DirectX::XMVectorZero())) {
+					t = DirectX::XMVector3Normalize(DirectX::XMVectorSubtract(t, DirectX::XMVectorScale(n, DirectX::XMVectorGetX(DirectX::XMVector3Dot(n, t)))));
+					b = DirectX::XMVector3Normalize(DirectX::XMVector3Cross(n, t));
+				}
+
+				if (!DirectX::XMVector3Equal(t, DirectX::XMVectorZero()))
+					DirectX::XMStoreFloat3(&tangents[i], t);
+				if (!DirectX::XMVector3Equal(b, DirectX::XMVectorZero()))
+					DirectX::XMStoreFloat3(&bitangents[i], b);
+				DirectX::XMStoreFloat3(&normals[i], n);
+			}));
+		}
+		for (auto& process : processes) {
+			process.get();
+		}
 
 #ifdef GEOMETRY_TEST
 		PerformanceLog(std::string(__func__) + "::" + std::to_string(normals.size()), true, false);
@@ -440,6 +633,7 @@ namespace Mus {
 		logger::debug("{} : {} subdivition({})...", __func__, vertices.size(), a_subCount);
 
 		struct LocalDate {
+			RE::BSGeometry* geometry;
 			std::string geoName;
 			GeometryInfo geoInfo;
 			std::vector<DirectX::XMFLOAT3> vertices;
@@ -454,6 +648,7 @@ namespace Mus {
 		{
 			LocalDate data(
 				geometry.first,
+				geometry.second.info.name,
 				geometry.second.info
 			);
 
@@ -566,11 +761,11 @@ namespace Mus {
 			newObjInfo.uvEnd = totalData.uvs.size();
 			newObjInfo.indicesEnd = totalData.indices.size();
 
-			geometries.push_back(std::make_pair(subdividedData.geoName, newObjInfo));
+			geometries.push_back(std::make_pair(subdividedData.geometry, newObjInfo));
 		}
-		vertices = concurrency::concurrent_vector<DirectX::XMFLOAT3>(totalData.vertices.begin(), totalData.vertices.end());
-		uvs = concurrency::concurrent_vector<DirectX::XMFLOAT2>(totalData.uvs.begin(), totalData.uvs.end());
-		indices = concurrency::concurrent_vector<std::uint32_t>(totalData.indices.begin(), totalData.indices.end());
+		vertices = std::vector<DirectX::XMFLOAT3>(totalData.vertices.begin(), totalData.vertices.end());
+		uvs = std::vector<DirectX::XMFLOAT2>(totalData.uvs.begin(), totalData.uvs.end());
+		indices = std::vector<std::uint32_t>(totalData.indices.begin(), totalData.indices.end());
 
 		logger::debug("{} : {} subdivition done", __func__, vertices.size());
 
@@ -582,7 +777,7 @@ namespace Mus {
 
 	void GeometryData::VertexSmooth(float a_strength, std::uint32_t a_smoothCount)
 	{
-		if (!mainInfo.hasVertices || vertices.empty() || a_smoothCount == 0)
+		if (vertices.empty() || a_smoothCount == 0)
 			return;
 
 		logger::debug("{} : {} vertex smooth({})...", __func__, vertices.size(), a_smoothCount);
@@ -593,49 +788,56 @@ namespace Mus {
 			PerformanceLog(std::string(__func__) + "::" + std::to_string(vertices.size()), false, false);
 #endif // GEOMETRY_TEST
 			auto tempVertices = vertices;
+			std::vector<std::future<void>> processes;
+			for (std::size_t i = 0; i < vertices.size(); i++) {
+				processes.push_back(processingThreads->submitAsync([&, i]() {
+					const DirectX::XMFLOAT3& pos = vertices[i];
+					const DirectX::XMFLOAT2& uv = uvs[i];
 
-			concurrency::parallel_for(std::size_t(0), vertices.size(), [&](std::size_t i) {
-				const DirectX::XMFLOAT3& pos = vertices[i];
-				const DirectX::XMFLOAT2& uv = uvs[i];
+					PositionKey pkey = { pos };
+					auto posIt = positionMap.find(pkey);
+					if (posIt == positionMap.end())
+						return;
 
-				PositionKey pkey = { pos };
-				auto posIt = positionMap.find(pkey);
-				if (posIt == positionMap.end())
-					return;
+					DirectX::XMVECTOR avgPos = DirectX::XMVectorZero();
+					int totalCount = 0;
 
-				DirectX::XMVECTOR avgPos = DirectX::XMVectorZero();
-				int totalCount = 0;
-
-				std::unordered_set<std::uint32_t> connectedVertices;
-				for (auto vi : posIt->second) {
-					for (auto fi : vertexToFaceMap[vi]) {
-						const auto& fn = faceNormals[fi];
-						if (fn.v0 == vi || fn.v1 == vi || fn.v2 == vi) {
-							connectedVertices.insert(fn.v0);
-							connectedVertices.insert(fn.v1);
-							connectedVertices.insert(fn.v2);
+					std::unordered_set<std::uint32_t> connectedVertices;
+					for (auto vi : posIt->second) {
+						for (auto fi : vertexToFaceMap[vi]) {
+							const auto& fn = faceNormals[fi];
+							if (fn.v0 == vi || fn.v1 == vi || fn.v2 == vi) {
+								connectedVertices.insert(fn.v0);
+								connectedVertices.insert(fn.v1);
+								connectedVertices.insert(fn.v2);
+							}
 						}
 					}
-				}
 
-				for (auto vi : connectedVertices) {
-					if (std::abs(uvs[vi].x - uv.x) <= weldDistance &&
-						std::abs(uvs[vi].y - uv.y) <= weldDistance) {
-						avgPos = DirectX::XMVectorAdd(avgPos, DirectX::XMLoadFloat3(&vertices[vi]));
-						totalCount++;
+					for (auto vi : connectedVertices) {
+						if (std::abs(uvs[vi].x - uv.x) <= weldDistance &&
+							std::abs(uvs[vi].y - uv.y) <= weldDistance) {
+							avgPos = DirectX::XMVectorAdd(avgPos, DirectX::XMLoadFloat3(&vertices[vi]));
+							totalCount++;
+						}
 					}
-				}
 
-				if (totalCount == 0)
-					return;
+					if (totalCount == 0)
+						return;
 
-				avgPos = DirectX::XMVectorScale(avgPos, 1.0f / totalCount);
-				DirectX::XMVECTOR original = DirectX::XMLoadFloat3(&pos);
-				DirectX::XMVECTOR smoothed = DirectX::XMVectorLerp(original, avgPos, a_strength);
-				DirectX::XMStoreFloat3(&tempVertices[i], smoothed);
-			});
+					avgPos = DirectX::XMVectorScale(avgPos, 1.0f / totalCount);
+					DirectX::XMVECTOR original = DirectX::XMLoadFloat3(&pos);
+					DirectX::XMVECTOR smoothed = DirectX::XMVectorLerp(original, avgPos, a_strength);
+					DirectX::XMStoreFloat3(&tempVertices[i], smoothed);
+				}));
+			}
+			for (auto& process : processes) {
+				process.get();
+			}
 
 			vertices = tempVertices;
+
+			UpdateMap();
 #ifdef GEOMETRY_TEST
 			PerformanceLog(std::string(__func__) + "::" + std::to_string(vertices.size()), true, false);
 #endif // GEOMETRY_TEST

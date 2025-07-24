@@ -1,9 +1,9 @@
-cbuffer Params : register(b0)
+cbuffer ConstBuffer : register(b0)
 {
     uint width;
     uint height;
-    uint padding1;
-    uint mipLevel;
+    uint widthStart;
+    uint heightStart;
 }
 
 Texture2D<float4> src        : register(t0);
@@ -23,11 +23,11 @@ static const int2 offsets[8] = {
 [numthreads(8, 8, 1)]
 void CSMain(uint3 threadID : SV_DispatchThreadID)
 {
-    int2 coord = int2(threadID.xy);
+    int2 coord = int2(threadID.xy) + int2(widthStart, heightStart);
     if (coord.x >= (int)width || coord.y >= (int)height)
         return;
 
-    float4 orgPixel = src.Load(int3(coord, mipLevel));
+    float4 orgPixel = src.Load(int3(coord, 0));
 
     if (orgPixel.a > 0.5f)
     {
@@ -45,7 +45,7 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
             nearCoord.x >= (int)width || nearCoord.y >= (int)height)
             continue;
 
-        float4 nearPixel = src.Load(int3(nearCoord, mipLevel));
+        float4 nearPixel = src.Load(int3(nearCoord, 0));
 
         if (nearPixel.a > 0.5f)
         {

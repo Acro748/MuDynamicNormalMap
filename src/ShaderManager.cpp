@@ -548,7 +548,8 @@ namespace Mus {
 			{
 				textureDesc = found->second.texDesc;
 				srvDesc = found->second.srvDesc;
-				return CopyTexture(found->second.texture, output);
+				output = found->second.texture;
+				return true;
 			}
 
 			if (!IsExistFileInStream(filePath, ExistType::textures))
@@ -588,7 +589,8 @@ namespace Mus {
 
 			textureDesc = data.texDesc;
 			srvDesc = data.srvDesc;
-			return CopyTexture(data.texture, output);
+			output = data.texture;
+			return true;
 		}
 		bool TextureLoadManager::GetTexture2D(std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
 		{

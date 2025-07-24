@@ -142,7 +142,7 @@ using EventResult = RE::BSEventNotifyControl;
 
 #include "B/BSFaceGenBaseMorphExtraData.h"
 
-#include "MiniBenchmark.h"
+#include "NiOverride/NiOverride.h"
 
 #include "RGBA.h"
 
@@ -165,6 +165,8 @@ using EventResult = RE::BSEventNotifyControl;
 #include "ActorVertexHasher.h"
 #include "TaskManager.h"
 #include "PapyrusScripts.h"
+
+#include "MiniBenchmark.h"
 
 #include "Interface/Interface.h"
 #include "Interface/InterfaceImpl.h"

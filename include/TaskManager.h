@@ -64,8 +64,9 @@ namespace Mus {
 		};
 
 		void RunDelayTask();
-		void RegisterDelayTask(std::string id, std::function<void()> func);
-		void RegisterDelayTask(std::string id, std::uint8_t delayTick, std::function<void()> func);
+		void RunBakeQueue();
+		void RegisterDelayTask(std::function<void()> func);
+		void RegisterDelayTask(std::uint8_t delayTick, std::function<void()> func);
 		std::string GetDelayTaskID(RE::FormID refrID, std::uint32_t bipedSlot);
 
 		std::unordered_set<RE::BSGeometry*> GetGeometries(RE::Actor* a_actor, std::uint32_t bipedSlot);
@@ -74,16 +75,9 @@ namespace Mus {
 		bool QUpdateNormalMap(RE::Actor* a_actor, std::uint32_t bipedSlot);
 		bool QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::uint32_t bipedSlot);
 		bool QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::unordered_set<RE::BSGeometry*> a_updateTargets);
-		void QUpdateNormalMap(TaskID& taskIDsrc, RE::FormID& id, std::string& actorName, BakeData& bakeData);
+		void QUpdateNormalMap(RE::FormID a_actorID, std::string a_actorName, GeometryData& a_geoData, BakeSet& a_bakeSet);
 
 		std::int64_t GenerateUniqueID();
-		std::uint64_t AttachTaskID(TaskID& taskIDsrc);
-		void DetachTaskID(TaskID taskIDsrc, std::int64_t a_ownID);
-		void ReleaseTaskID(TaskID taskIDsrc);
-		void ResetTaskID();
-		std::uint64_t GetCurrentTaskID(TaskID taskIDsrc);
-		bool IsValidTaskID(TaskID taskIDsrc);
-
 	protected:
 		void onEvent(const FrameEvent& e) override;
 		void onEvent(const FacegenNiNodeEvent& e) override;
@@ -94,7 +88,7 @@ namespace Mus {
 		EventResult ProcessEvent(const RE::MenuOpenCloseEvent* evn, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override;
 
 	private:
-		std::unordered_map<std::string, std::function<void()>> delayTask; //id, task;
+		std::vector<std::function<void()>> delayTask; //id, task;
 		std::mutex delayTaskLock;
 
 		bool isPressedHotKey1 = false;
@@ -110,8 +104,9 @@ namespace Mus {
 		std::string GetMaskNormalMapPath(std::string a_normalMapPath);
 		std::string GetMaskNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder);
 
-		std::unordered_map<RE::FormID, std::unordered_map<std::string, std::int64_t>> updateNormalMapTaskID; // ActorID, GeometryName, BakeID
-		std::shared_mutex updateNormalMapLock;
+		concurrency::concurrent_unordered_map<RE::FormID, BakeSet> bakeQueue;
+		std::shared_mutex bakeQueueLock;
+		concurrency::concurrent_unordered_map<RE::FormID, bool> isBaking;
 		concurrency::concurrent_unordered_map<RE::FormID, concurrency::concurrent_unordered_map<std::uint32_t, std::string>> lastNormalMap; // ActorID, VertexCount, TextureName>
 	};
 }

@@ -18,13 +18,12 @@ namespace Mus {
 			return;
 		if (isDetecting.load())
 			return;
-		if (DetectTick <= 0)
+		auto currentTime = std::clock();
+		if (Config::GetSingleton().GetDetectTickMS() <= currentTime - beforeDetectTickMS)
 		{
 			CheckingActorHash();
-			DetectTick = Config::GetSingleton().GetDetectTick();
+			beforeDetectTickMS = currentTime;
 		}
-		else
-			DetectTick--;
 	}
 
 	void ActorVertexHasher::onEvent(const FacegenNiNodeEvent& e)
@@ -91,7 +90,86 @@ namespace Mus {
 			return;
 		auto playerPosition = p->loadedData->data3D->world.translate;
 
-		auto HasherFunction = [this, playerPosition]() {
+		if (Config::GetSingleton().GetRealtimeDetectOnBackGround())
+		{
+			if (!BackGroundHasher)
+				BackGroundHasher = std::make_unique<ThreadPool_ParallelModule>(1);
+
+			BlockActors.clear();
+
+			BackGroundHasher->submitAsync([&]() {
+				isDetecting.store(true);
+#ifdef HASHER_TEST1
+				PerformanceLog(std::string(__func__), false, true);
+#endif // HASHER_TEST1
+				concurrency::concurrent_vector<RE::FormID> garbages;
+				std::vector<std::future<void>> processes;
+				auto ActorHash_ = ActorHash;
+				for(auto& map : ActorHash_) {
+					processes.push_back(processingThreads->submitAsync([&, map]() {
+						RE::TESForm* form = GetFormByID(map.first);
+						if (!form || !form->Is(RE::FormType::ActorCharacter))
+						{
+							garbages.push_back(map.first);
+							return;
+						}
+						RE::Actor* actor = skyrim_cast<RE::Actor*>(form);
+						if (!actor || !actor->loadedData || !actor->loadedData->data3D)
+						{
+							garbages.push_back(map.first);
+							return;
+						}
+						if (BlockActors[actor->formID])
+							return;
+						if (!isPlayer(actor->formID) && playerPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) > Config::GetSingleton().GetDetectDistance())
+							return;
+						if (!GetHash(actor, map.second))
+							return;
+
+						std::uint32_t bipedSlot = 0;
+						for (auto& hashmap : map.second)
+						{
+							std::size_t hash = hashmap.second->GetNewHash();
+							hashmap.second->Reset();
+							if (hashmap.second->hashValue != 0 && hash != 0)
+							{
+								if (hashmap.second->hashValue != hash)
+								{
+									bipedSlot |= 1 << hashmap.first;
+									logger::trace("{:x} {} {} : found different hash {:x}", actor->formID, actor->GetName(), std::to_underlying(hashmap.first), hash);
+								}
+							}
+							hashmap.second->hashValue = hash;
+						}
+						ActorQueue[actor->formID] |= bipedSlot;
+						if (ActorQueue[actor->formID] != 0)
+						{
+							if (TaskManager::GetSingleton().QUpdateNormalMap(actor, bipedSlot))
+							{
+								ActorQueue[actor->formID] = 0;
+							}
+						}
+					}));
+				}
+				for (auto& process : processes)
+				{
+					process.get();
+				}
+				ActorHashLock.lock();
+				for (auto& garbage : garbages)
+				{
+					ActorHash.unsafe_erase(garbage);
+					ActorQueue.unsafe_erase(garbage);
+				}
+				ActorHashLock.unlock();
+#ifdef HASHER_TEST1
+				PerformanceLog(std::string(__func__), true, true, ActorHash.size());
+#endif // HASHER_TEST1
+				isDetecting.store(false);
+			});
+		}
+		else
+		{
 #ifdef HASHER_TEST1
 			PerformanceLog(std::string(__func__), false, true);
 #endif // HASHER_TEST1
@@ -140,7 +218,7 @@ namespace Mus {
 						ActorQueue[actor->formID] = 0;
 					}
 				}
-			});
+			 });
 			ActorHashLock.lock();
 			for (auto& garbage : garbages)
 			{
@@ -151,28 +229,10 @@ namespace Mus {
 #ifdef HASHER_TEST1
 			PerformanceLog(std::string(__func__), true, true, ActorHash.size());
 #endif // HASHER_TEST1
-		};
-
-		if (Config::GetSingleton().GetRealtimeDetectOnBackGround())
-		{
-			if (!BackGroundHasher)
-				BackGroundHasher = std::make_unique<ThreadPool_ParallelModule>(1);
-
-			BlockActors.clear();
-
-			BackGroundHasher->submitAsync([this, HasherFunction]() {
-				isDetecting.store(true);
-				HasherFunction();
-				isDetecting.store(false);
-			});
-		}
-		else
-		{
-			HasherFunction();
 		}
 	}
 
-	bool ActorVertexHasher::GetHash(RE::Actor* a_actor, GeometryHash& hash)
+	bool ActorVertexHasher::GetHash(RE::Actor* a_actor, GeometryHash hash)
 	{
 		if (!a_actor || !a_actor->loadedData || !a_actor->loadedData->data3D)
 			return false;

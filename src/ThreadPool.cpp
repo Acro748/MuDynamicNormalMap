@@ -2,7 +2,7 @@
 
 namespace Mus {
     std::unique_ptr<ThreadPool_ParallelModule> actorThreads;
-    std::unique_ptr<ThreadPool_ParallelModule> bakingThreads;
+    std::unique_ptr<ThreadPool_ParallelModule> processingThreads;
 
     ThreadPool_ParallelModule::ThreadPool_ParallelModule(std::uint32_t threadSize)
         : stop(false), priorityCoreMask(Config::GetSingleton().GetPriorityCores())
@@ -24,10 +24,8 @@ namespace Mus {
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
         if (priorityCoreMask > 0)
             SetThreadAffinityMask(GetCurrentThread(), priorityCoreMask);
-        concurrency::SchedulerPolicy policy = concurrency::CurrentScheduler::GetPolicy();
-        policy.SetPolicyValue(concurrency::DynamicProgressFeedback, true);
-        concurrency::CurrentScheduler::Create(policy);
         while (true) {
+            Sleep(0);
             std::function<void()> task;
             {
                 std::unique_lock lock(queueMutex);
@@ -43,7 +41,6 @@ namespace Mus {
         }
     }
 
-    std::unique_ptr<ThreadPool_TaskModule> cpuTask;
     std::unique_ptr<ThreadPool_TaskModule> gpuTask;
 
     ThreadPool_TaskModule::ThreadPool_TaskModule(std::uint8_t a_taskQTick, bool a_directTaskQ, std::uint8_t a_taskQMax)
@@ -68,9 +65,6 @@ namespace Mus {
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
         if (priorityCoreMask > 0)
             SetThreadAffinityMask(GetCurrentThread(), priorityCoreMask);
-        concurrency::SchedulerPolicy policy = concurrency::CurrentScheduler::GetPolicy();
-        policy.SetPolicyValue(concurrency::DynamicProgressFeedback, true);
-        concurrency::CurrentScheduler::Create(policy);
         while (true) {
             std::function<void()> task;
             {

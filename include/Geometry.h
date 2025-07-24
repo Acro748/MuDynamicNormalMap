@@ -21,46 +21,48 @@ namespace Mus {
 			GeometryInfo info;
 			std::size_t vertexStart = 0;
 			std::size_t vertexEnd = 0;
-			std::size_t vertexCount() { return info.hasVertices ? vertexEnd - vertexStart : 0; }
+			std::size_t vertexCount() { return vertexEnd - vertexStart; }
 			std::size_t uvStart = 0;
 			std::size_t uvEnd = 0;
-			std::size_t uvCount() { return info.hasUVs ? uvEnd - uvStart : 0; }
+			std::size_t uvCount() { return uvEnd - uvStart; }
 			std::size_t normalStart = 0;
 			std::size_t normalEnd = 0;
-			std::size_t normalCount() { return info.hasNormals ? normalEnd - normalStart : 0; }
+			std::size_t normalCount() { return normalEnd - normalStart; }
 			std::size_t tangentStart = 0;
 			std::size_t tangentEnd = 0;
-			std::size_t tangentCount() { return info.hasTangents ? tangentEnd - tangentStart : 0; }
+			std::size_t tangentCount() { return tangentEnd - tangentStart; }
 			std::size_t bitangentStart = 0;
 			std::size_t bitangentEnd = 0;
-			std::size_t bitangentCount() { return info.hasBitangents ? bitangentEnd - bitangentStart : 0; }
+			std::size_t bitangentCount() { return bitangentEnd - bitangentStart; }
 			std::size_t indicesStart = 0;
 			std::size_t indicesEnd = 0;
 			std::size_t indicesCount() { return indicesEnd - indicesStart; }
 			std::vector<std::uint8_t> geometryBlockData;
 			std::vector<RE::NiPoint3> dynamicBlockData1; //without expression
-			std::vector<DirectX::XMVECTOR> dynamicBlockData2; //with expression
+			std::vector<DirectX::XMFLOAT4> dynamicBlockData2; //with expression
 			std::vector<std::uint16_t> indicesBlockData;
 		};
 		static RE::BSFaceGenBaseMorphExtraData* GetMorphExtraData(RE::BSGeometry* a_geometry);
+		static std::uint32_t GetVertexCount(RE::BSGeometry* a_geometry);
 
 		bool GetGeometryInfo(RE::BSGeometry* a_geo, GeometryInfo& info);
 		bool CopyGeometryData(RE::BSGeometry* a_geo);
 		void GetGeometryData();
+		bool GetGeometryData(RE::BSGeometry* a_geo);
 		void UpdateMap();
 		void RecalculateNormals(float a_smooth);
 		void Subdivision(std::uint32_t a_subCount);
 		void VertexSmooth(float a_strength, std::uint32_t a_smoothCount);
 
 		GeometryInfo mainInfo;
-		concurrency::concurrent_vector<DirectX::XMFLOAT3> vertices;
-		concurrency::concurrent_vector<DirectX::XMFLOAT2> uvs;
-		concurrency::concurrent_vector<DirectX::XMFLOAT3> normals;
-		concurrency::concurrent_vector<DirectX::XMFLOAT3> tangents;
-		concurrency::concurrent_vector<DirectX::XMFLOAT3> bitangents;
-		concurrency::concurrent_vector<std::uint32_t> indices;
+		std::vector<DirectX::XMFLOAT3> vertices;
+		std::vector<DirectX::XMFLOAT2> uvs;
+		std::vector<DirectX::XMFLOAT3> normals;
+		std::vector<DirectX::XMFLOAT3> tangents;
+		std::vector<DirectX::XMFLOAT3> bitangents;
+		std::vector<std::uint32_t> indices;
 
-		concurrency::concurrent_vector<std::pair<std::string, ObjectInfo>> geometries; //geometry name, ObjectInfo
+		concurrency::concurrent_vector<std::pair<RE::BSGeometry*, ObjectInfo>> geometries; //geometry name, ObjectInfo
 		std::uint32_t mainGeometryIndex = 0;
 
 		struct VertexKey {
