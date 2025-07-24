@@ -6,7 +6,7 @@ message("Using toolchain file ${CMAKE_TOOLCHAIN_FILE}.")
 ########################################################################################################################
 project(
         MuDynamicNormalMap
-        VERSION 1.1.1
+        VERSION 1.2.0
         DESCRIPTION "MuDynamicNormalMap by Acro."
         LANGUAGES CXX
 )
