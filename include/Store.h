@@ -28,7 +28,7 @@ namespace Mus {
 	constexpr float TimeTick60 = 1.0f / 60.0f;
 	constexpr float TimeTick60msec = TimeTick60 * 1000;
 
-	constexpr float TaskQTickBase = 30.0f;
+	constexpr float TaskQTickBase = 15.0f;
 
 	constexpr float floatPrecision = 1e-6f;
 	extern float weldDistance;
