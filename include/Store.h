@@ -15,6 +15,8 @@ namespace Mus {
 	extern bool PerformanceCheckConsolePrint;
 	extern bool PerformanceCheckTick;
 
+	static OverrideInterfaceAPI* overrideInterfaceAPI = new OverrideInterfaceAPI();
+
 	#define MATH_PI       3.14159265358979323846
 	constexpr float toDegree = 180 / MATH_PI;
 	constexpr float toRadian = MATH_PI / 180;
@@ -26,7 +28,7 @@ namespace Mus {
 	constexpr float TimeTick60 = 1.0f / 60.0f;
 	constexpr float TimeTick60msec = TimeTick60 * 1000;
 
-	constexpr float TaskQTickBase = 13.0f;
+	constexpr float TaskQTickBase = 15.0f;
 
 	constexpr float floatPrecision = 1e-6f;
 	extern float weldDistance;

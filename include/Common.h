@@ -8,7 +8,6 @@ namespace Mus {
 	};
 
 	struct BakeTextureSet {
-		RE::BSGeometry* geometry;
 		std::string geometryName;
 		std::string textureName;
 		std::string srcTexturePath;
@@ -17,11 +16,7 @@ namespace Mus {
 		std::string maskTexturePath;
 		float detailStrength = 0.5f;
 	};
-
-	struct BakeData {
-		GeometryData geoData;
-		std::unordered_map<std::size_t, BakeTextureSet> bakeTextureSet;
-	};
+	typedef concurrency::concurrent_unordered_map<RE::BSGeometry*, BakeTextureSet> BakeSet;
 
 	struct TextureInfo {
 		RE::FormID actorID;

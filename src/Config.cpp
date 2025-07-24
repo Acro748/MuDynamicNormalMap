@@ -78,7 +78,6 @@ namespace Mus {
     bool Config::LoadConfig(std::ifstream& configfile)
     {
         std::int32_t detectPriorityCores = 0;
-        std::unordered_set<std::int32_t> priorityCores;
 
         std::string line;
         std::string currentSetting;
@@ -140,9 +139,9 @@ namespace Mus {
                     float value = GetFloatValue(variableValue);
                     DetectDistance = value * value;
 				}
-                else if (variableName == "DetectTick")
+                else if (variableName == "DetectTickMS")
 				{
-                    DetectTick = GetIntValue(variableValue);
+                    DetectTickMS = GetUIntValue(variableValue);
 				}
                 else if (variableName == "GPUEnable")
                 {
@@ -152,12 +151,12 @@ namespace Mus {
 				{
                     auto list = split(variableValue, ',');
                     for (auto& c : list) {
-                        priorityCores.insert(GetUIntValue(c));
+                        PriorityCoreList.insert(GetUIntValue(c));
                     }
 				}
                 else if (variableName == "DetectPriorityCores")
                 {
-                    detectPriorityCores = GetIntValue(variableValue);
+                    DetectPriorityCores = GetIntValue(variableValue);
                 }
 				else if (variableName == "AutoTaskQ")
 				{
@@ -167,9 +166,9 @@ namespace Mus {
 				{
                     TaskQMax = GetUIntValue(variableValue);
 				}
-				else if (variableName == "TaskQTick")
+				else if (variableName == "TaskQTickMS")
 				{
-                    TaskQTick = GetUIntValue(variableValue);
+                    TaskQTickMS = GetUIntValue(variableValue);
 				}
 				else if (variableName == "DirectTaskQ")
 				{
@@ -227,40 +226,54 @@ namespace Mus {
 				{
                     DetailStrength = std::clamp(GetFloatValue(variableValue), 0.0f, 1.0f);
 				}
+                else if (variableName == "RemoveSkinOverrides")
+                {
+                    RemoveSkinOverrides = GetBoolValue(variableValue);
+                }
+                else if (variableName == "RemoveNodeOverrides")
+                {
+                    RemoveNodeOverrides = GetBoolValue(variableValue);
+                }
 			}
         }
+        return true;
+    }
 
-        PriorityCores = 0;
+    void Config::SetPriorityCores(std::int32_t detectPriorityCores)
+    {
+        if (detectPriorityCores == -1)
+            detectPriorityCores = DetectPriorityCores;
+
+        PriorityCoreMask = 0;
         std::uint32_t cores = std::thread::hardware_concurrency();
         logger::info("Detected cores : {}", cores);
-        if (priorityCores.empty())
+        if (PriorityCoreList.empty())
         {
             PriorityCoreCount = std::max(2.0, cores / (std::pow(2, detectPriorityCores)));
             logger::info("Enable cores for task : {}", PriorityCoreCount);
         }
         else
         {
-            auto priorityCores_ = priorityCores;
-            priorityCores.clear();
-            for (auto& core : priorityCores_) {
+            auto PriorityCoreList_ = PriorityCoreList;
+            auto PriorityCoreList__ = PriorityCoreList_;
+            PriorityCoreList_.clear();
+            for (auto& core : PriorityCoreList__) {
                 if (core < 0 || core >= cores)
                     continue;
-                priorityCores.insert(core);
+                PriorityCoreList_.insert(core);
             }
-            if (priorityCores.empty() && detectPriorityCores == 0)
-                detectPriorityCores = 1;
             if (detectPriorityCores > 0)
             {
                 detectPriorityCores = cores / (std::pow(2, detectPriorityCores));
                 detectPriorityCores = std::max(std::int32_t(1), detectPriorityCores);
-                detectPriorityCores -= priorityCores.size();
+                detectPriorityCores -= PriorityCoreList_.size();
                 if (detectPriorityCores > 0)
                 {
                     for (std::int32_t i = cores; i > 1; i--) { //excluding first core
                         std::int32_t coreNum = i - 1;
-                        if (priorityCores.find(coreNum) != priorityCores.end())
+                        if (PriorityCoreList_.find(coreNum) != PriorityCoreList_.end())
                             continue;
-                        priorityCores.insert(coreNum);
+                        PriorityCoreList_.insert(coreNum);
                         detectPriorityCores--;
                         if (detectPriorityCores == 0)
                             break;
@@ -268,17 +281,15 @@ namespace Mus {
                 }
             }
             std::string coreList = "";
-            for (auto core : priorityCores) {
+            for (auto core : PriorityCoreList_) {
                 if (!coreList.empty())
                     coreList += ", ";
                 coreList += std::to_string(core);
-                PriorityCores |= 1 << core;
+                PriorityCoreMask |= 1 << core;
                 PriorityCoreCount += 1;
             }
-            logger::info("Enable cores for task : {} / {:x}", coreList, PriorityCores);
+            logger::info("Enable cores for task : {} / {:x}", coreList, PriorityCoreMask);
         }
-
-        return true;
     }
 
     bool MultipleConfig::LoadConditionFile()

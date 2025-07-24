@@ -28,10 +28,7 @@ namespace MDNM {
 		virtual void QUpdateNormalmap(RE::Actor* a_actor, std::uint32_t a_updateBipedSlot) = 0;
 
 		// a_geometries == recalculate meshes for update normalmaps, all of the meshes included here are welded into one geometry
-		// a_updateGeometryNames/a_updateGeometries == Geometries to update normalmaps, the same mesh must exist in a_geometries
-		virtual void QUpdateNormalmap(RE::Actor* a_actor, RE::BSGeometry** a_geometries, std::uint32_t a_geometryCount, std::uint32_t a_updateBipedSlot) = 0;
-		virtual void QUpdateNormalmap(RE::Actor* a_actor, RE::BSGeometry** a_geometries, std::uint32_t a_geometryCount, const char** a_updateGeometryNames, std::uint32_t a_updateGeometryCount) = 0;
-		virtual void QUpdateNormalmap(RE::Actor* a_actor, RE::BSGeometry** a_geometries, std::uint32_t a_geometryCount, RE::BSGeometry** a_updateGeometries, std::uint32_t a_updateGeometryCount) = 0;
+		virtual void QUpdateNormalmap(RE::Actor* a_actor, RE::BSGeometry** a_geometries, std::uint32_t a_geometryCount) = 0;
 		
 		// Not saved in save file
 		// If you want to continue the same value in the save, you need to call this again after loading the save

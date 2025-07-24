@@ -59,15 +59,15 @@ namespace Mus {
         [[nodiscard]] inline float GetDetectDistance() const noexcept {
             return DetectDistance;
         }
-        [[nodiscard]] inline std::int16_t GetDetectTick() const noexcept {
-            return DetectTick;
+        [[nodiscard]] inline std::clock_t GetDetectTickMS() const noexcept {
+            return DetectTickMS;
         }
 
         [[nodiscard]] inline bool GetGPUEnable() const noexcept {
             return GPUEnable;
         }
         [[nodiscard]] inline unsigned long GetPriorityCores() const noexcept {
-            return PriorityCores;
+            return PriorityCoreMask;
         }
         [[nodiscard]] inline unsigned long GetPriorityCoreCount() const noexcept {
             return PriorityCoreCount;
@@ -78,13 +78,13 @@ namespace Mus {
         [[nodiscard]] inline std::uint8_t GetTaskQMax() const noexcept {
             return TaskQMax;
         }
-        [[nodiscard]] inline std::uint8_t GetTaskQTick() const noexcept {
-            return TaskQTick;
+        [[nodiscard]] inline std::clock_t GetTaskQmsTick() const noexcept {
+            return TaskQTickMS;
         }
         [[nodiscard]] inline bool GetDirectTaskQ() const noexcept {
             return DirectTaskQ;
         }
-        [[nodiscard]] inline bool GetDivideTaskQ() const noexcept {
+        [[nodiscard]] inline std::uint8_t GetDivideTaskQ() const noexcept {
             return DivideTaskQ;
         }
         [[nodiscard]] inline std::uint8_t GetUpdateDelayTick() const noexcept {
@@ -124,13 +124,20 @@ namespace Mus {
             return TangentZCorrection;
         }
 
+        [[nodiscard]] inline bool GetRemoveSkinOverrides() const noexcept {
+            return RemoveSkinOverrides;
+        }
+        [[nodiscard]] inline bool GetRemoveNodeOverrides() const noexcept {
+            return RemoveNodeOverrides;
+		}
+
         inline void SetTaskQMax(std::uint8_t newTaskQMax) {
             TaskQMax = newTaskQMax;
             logger::info("Set TaskQMax {}", newTaskQMax);
         }
-        inline void SetTaskQTick(std::uint8_t newTaskQTick) {
-            TaskQTick = newTaskQTick;
-            logger::info("Set TaskQTick {}", newTaskQTick);
+        inline void SetTaskQmsTick(std::uint8_t newTaskQTick) {
+            TaskQTickMS = newTaskQTick;
+            logger::info("Set TaskQTickMS {}", newTaskQTick);
         }
         inline void SetDirectTaskQ(bool isEnable) {
             DirectTaskQ = isEnable;
@@ -156,15 +163,17 @@ namespace Mus {
         std::uint8_t RealtimeDetectHead = 1; //0 disable, 1 morph data only, all data
         bool RealtimeDetectOnBackGround = false;
         float DetectDistance = 512.0f * 512.0f;
-        std::int16_t DetectTick = 2; //2 frames
+        std::clock_t DetectTickMS = 1000; //1sec
 
         bool GPUEnable = true;
-        unsigned long PriorityCores = 0;
+        std::unordered_set<std::int32_t> PriorityCoreList;
+        unsigned long PriorityCoreMask = 0;
+        std::int32_t DetectPriorityCores = 0;
         unsigned long PriorityCoreCount = 0;
 
         std::uint8_t AutoTaskQ = AutoTaskQList::Disable;
         std::uint8_t TaskQMax = 1;
-        std::clock_t TaskQTick = 13;
+        std::clock_t TaskQTickMS = 13;
         bool DirectTaskQ = false;
         std::uint8_t DivideTaskQ = 1;
 
@@ -183,6 +192,9 @@ namespace Mus {
         std::uint32_t TextureMargin = 2;
         bool TextureMarginGPU = true;
         bool TangentZCorrection = true;
+
+        bool RemoveSkinOverrides = true;
+        bool RemoveNodeOverrides = true;
 
     public:
         inline std::string getCurrentSettingValue(std::string s)
@@ -269,6 +281,8 @@ namespace Mus {
             }
             return value;
         }
+
+        void SetPriorityCores(std::int32_t DetectPriorityCores);
 
     protected:
         inline std::vector<RE::FormID> ConfigLineSplitterFormID(std::string valuestr)

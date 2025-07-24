@@ -40,7 +40,7 @@ namespace Mus {
         void workerLoop();
     };
     extern std::unique_ptr<ThreadPool_ParallelModule> actorThreads;
-    extern std::unique_ptr<ThreadPool_ParallelModule> bakingThreads;
+    extern std::unique_ptr<ThreadPool_ParallelModule> processingThreads;
 
     class ThreadPool_TaskModule
         : public IEventListener<FrameEvent>
@@ -110,6 +110,5 @@ namespace Mus {
 
         void workerLoop();
     };
-    extern std::unique_ptr<ThreadPool_TaskModule> cpuTask;
     extern std::unique_ptr<ThreadPool_TaskModule> gpuTask;
 }

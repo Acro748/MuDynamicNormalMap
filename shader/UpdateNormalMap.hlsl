@@ -148,9 +148,7 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
                         float3 b = normalize(b0 * bary.x + b1 * bary.y + b2 * bary.z);
 
                         float3 ft = normalize(t - n * dot(n, t).x);
-                        float3 cr = cross(n, ft);
-                        float handedness = (dot(cr, b).x < 0.0f) ? -1.0f : 1.0f;
-                        float3 fb = normalize(cr * handedness);
+                        float3 fb = normalize(cross(n, ft));
 
                         float3x3 tbn = float3x3(ft, fb, n);
 

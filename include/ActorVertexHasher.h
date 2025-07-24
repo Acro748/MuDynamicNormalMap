@@ -42,9 +42,9 @@ namespace Mus {
 
 	private:
 		void CheckingActorHash();
-		bool GetHash(RE::Actor* a_actor, GeometryHash& hash);
+		bool GetHash(RE::Actor* a_actor, GeometryHash hash);
 
-		std::int16_t DetectTick = 0;
+		std::clock_t beforeDetectTickMS = 0;
 		std::atomic<bool> isDetecting = false;
 
 		concurrency::concurrent_unordered_map<RE::FormID, bool> BlockActors;

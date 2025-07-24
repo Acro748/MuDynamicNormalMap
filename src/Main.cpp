@@ -163,55 +163,70 @@ namespace {
 
         if (Mus::Config::GetSingleton().GetAutoTaskQ() > 0)
         {
-            float benchMarkResult = Mus::miniBenchMark();
+            //float benchMarkResult = Mus::miniBenchMark();
             //55~high-end, 35~middle-end, 15~low-end
-            logger::info("CPU bench mark score : {}", (std::uint32_t)benchMarkResult);
-            float CPUPerformanceMult = std::max(1.0f, 55.0f / benchMarkResult);
+            //logger::info("CPU bench mark score : {}", (std::uint32_t)benchMarkResult);
+            //float CPUPerformanceMult = std::max(1.0f, 55.0f / benchMarkResult);
+            float gpuBenchMarkResult = Mus::miniBenchMarkGPU();
+            float GPUPerformanceMult = 1.0f;
+            if (gpuBenchMarkResult < 0.0f) {
+			}
+            else
+            {
+                //55 middle-end
+                logger::info("GPU bench mark score : {}", (std::int32_t)gpuBenchMarkResult);
+                GPUPerformanceMult = std::max(0.01f, 55.0f / gpuBenchMarkResult);
+            }
 
             switch (Mus::Config::GetSingleton().GetAutoTaskQ()) {
             case Mus::Config::AutoTaskQList::Fastest:
-                Mus::Config::GetSingleton().SetTaskQMax(8);
-                Mus::Config::GetSingleton().SetTaskQTick(0);
+                Mus::Config::GetSingleton().SetTaskQMax(4);
+                Mus::Config::GetSingleton().SetTaskQmsTick(0);
                 Mus::Config::GetSingleton().SetDirectTaskQ(true);
                 Mus::Config::GetSingleton().SetDivideTaskQ(0);
+                Mus::Config::GetSingleton().SetPriorityCores(0);
                 break;
             case Mus::Config::AutoTaskQList::Faster:
                 Mus::Config::GetSingleton().SetTaskQMax(2);
-                Mus::Config::GetSingleton().SetTaskQTick(Mus::TaskQTickBase * CPUPerformanceMult);
+                Mus::Config::GetSingleton().SetTaskQmsTick(Mus::TaskQTickBase * GPUPerformanceMult);
                 Mus::Config::GetSingleton().SetDirectTaskQ(false);
                 Mus::Config::GetSingleton().SetDivideTaskQ(0);
+                Mus::Config::GetSingleton().SetPriorityCores(1);
                 break;
             case Mus::Config::AutoTaskQList::Balanced:
                 Mus::Config::GetSingleton().SetTaskQMax(1);
-                Mus::Config::GetSingleton().SetTaskQTick(Mus::TaskQTickBase * CPUPerformanceMult);
+                Mus::Config::GetSingleton().SetTaskQmsTick(Mus::TaskQTickBase * GPUPerformanceMult);
                 Mus::Config::GetSingleton().SetDirectTaskQ(false);
                 Mus::Config::GetSingleton().SetDivideTaskQ(0);
+                Mus::Config::GetSingleton().SetPriorityCores(1);
                 break;
             case Mus::Config::AutoTaskQList::BetterPerformance:
                 Mus::Config::GetSingleton().SetTaskQMax(1);
-                Mus::Config::GetSingleton().SetTaskQTick(Mus::TaskQTickBase * CPUPerformanceMult);
+                Mus::Config::GetSingleton().SetTaskQmsTick(Mus::TaskQTickBase * GPUPerformanceMult);
                 Mus::Config::GetSingleton().SetDirectTaskQ(false);
                 Mus::Config::GetSingleton().SetDivideTaskQ(1);
+                Mus::Config::GetSingleton().SetPriorityCores(2);
                 break;
             case Mus::Config::AutoTaskQList::BestPerformance:
                 Mus::Config::GetSingleton().SetTaskQMax(1);
-                Mus::Config::GetSingleton().SetTaskQTick(Mus::TaskQTickBase * CPUPerformanceMult);
+                Mus::Config::GetSingleton().SetTaskQmsTick(Mus::TaskQTickBase * GPUPerformanceMult * 2);
                 Mus::Config::GetSingleton().SetDirectTaskQ(false);
-                Mus::Config::GetSingleton().SetDivideTaskQ(2);
+                Mus::Config::GetSingleton().SetDivideTaskQ(1);
+                Mus::Config::GetSingleton().SetPriorityCores(2);
                 break;
             default:
+                Mus::Config::GetSingleton().SetPriorityCores(-1);
                 break;
             }
         }
 
-        Mus::cpuTask = std::make_unique<Mus::ThreadPool_TaskModule>(Mus::Config::GetSingleton().GetTaskQTick(), Mus::Config::GetSingleton().GetDirectTaskQ(), Mus::Config::GetSingleton().GetTaskQMax());
         Mus::gpuTask = std::make_unique<Mus::ThreadPool_TaskModule>(0, Mus::Config::GetSingleton().GetDirectTaskQ(), Mus::Config::GetSingleton().GetTaskQMax());
 
         Mus::weldDistance = Mus::Config::GetSingleton().GetWeldDistance();
         Mus::weldDistanceMult = 1.0f / Mus::weldDistance;
+		//Mus::g_frameEventDispatcher.addListener(&Mus::ObjectNormalMapUpdater::GetSingleton());
 		Mus::g_frameEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_frameEventDispatcher.addListener(&Mus::ActorVertexHasher::GetSingleton());
-		Mus::g_frameEventDispatcher.addListener(Mus::cpuTask.get());
         Mus::g_frameEventDispatcher.addListener(Mus::gpuTask.get());
 
         if (Mus::Config::GetSingleton().GetRealtimeDetectOnBackGround())
@@ -226,16 +241,17 @@ namespace {
 		Mus::g_facegenNiNodeEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_actorChangeHeadPartEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
         Mus::TaskManager::GetSingleton().Init(true);
+        Mus::ObjectNormalMapUpdater::GetSingleton().Init();
 
         auto coreCount = Mus::Config::GetSingleton().GetPriorityCoreCount();
 
-        std::uint32_t actorThreads = std::max(2.0f, ceil((float)coreCount / 4.0f));
+        std::uint32_t actorThreads = std::max(2.0f, ceil((float)coreCount / 2.0f));
         Mus::actorThreads = std::make_unique<Mus::ThreadPool_ParallelModule>(actorThreads);
         logger::info("set actorThreads {}", actorThreads);
 
-        std::uint32_t bakingThreads = std::max(2.0f, ceil((float)coreCount / 4.0f * 3.0f));
-        Mus::bakingThreads = std::make_unique<Mus::ThreadPool_ParallelModule>(bakingThreads);
-        logger::info("set bakingThreads {}", bakingThreads);
+        std::uint32_t processingThreads = std::max(unsigned long(4), coreCount);
+        Mus::processingThreads = std::make_unique<Mus::ThreadPool_ParallelModule>(processingThreads);
+        logger::info("set processingThreads {}", processingThreads);
     }
 
     void kNewGameFunction()
