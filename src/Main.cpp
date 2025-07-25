@@ -175,7 +175,7 @@ namespace {
             {
                 //55 middle-end
                 logger::info("GPU bench mark score : {}", (std::int32_t)gpuBenchMarkResult);
-                GPUPerformanceMult = std::max(0.01f, 55.0f / gpuBenchMarkResult);
+                GPUPerformanceMult = std::max(1.0f, 55.0f / gpuBenchMarkResult);
             }
 
             switch (Mus::Config::GetSingleton().GetAutoTaskQ()) {
@@ -224,7 +224,7 @@ namespace {
 
         Mus::weldDistance = Mus::Config::GetSingleton().GetWeldDistance();
         Mus::weldDistanceMult = 1.0f / Mus::weldDistance;
-		//Mus::g_frameEventDispatcher.addListener(&Mus::ObjectNormalMapUpdater::GetSingleton());
+		Mus::g_frameEventDispatcher.addListener(&Mus::ObjectNormalMapUpdater::GetSingleton());
 		Mus::g_frameEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_frameEventDispatcher.addListener(&Mus::ActorVertexHasher::GetSingleton());
         Mus::g_frameEventDispatcher.addListener(Mus::gpuTask.get());

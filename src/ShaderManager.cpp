@@ -543,14 +543,14 @@ namespace Mus {
 				filePath = "Textures\\" + filePath;
 			filePath = FixPath(filePath);
 
-			if (auto found = textures.find(filePath); found != textures.end() &&
+			/*if (auto found = textures.find(filePath); found != textures.end() &&
 				(found->second.metaData.newFormat == newFormat && found->second.metaData.newWidth == newWidth && found->second.metaData.newHeight == newHeight))
 			{
 				textureDesc = found->second.texDesc;
 				srvDesc = found->second.srvDesc;
 				output = found->second.texture;
 				return true;
-			}
+			}*/
 
 			if (!IsExistFileInStream(filePath, ExistType::textures))
 			{
@@ -579,13 +579,21 @@ namespace Mus {
 			data.metaData.newFormat = newFormat;
 			data.metaData.newWidth = newWidth;
 			data.metaData.newHeight = newHeight;
-			ConvertTexture(texture2D, data.metaData.newFormat, data.metaData.newWidth, data.metaData.newHeight, DirectX::TEX_FILTER_FLAGS::TEX_FILTER_DEFAULT, data.texture);
+
+			if (newFormat == DXGI_FORMAT_UNKNOWN && newWidth == 0 && newHeight == 0)
+			{
+				data.texture = texture2D;
+			}
+			else
+			{
+				ConvertTexture(texture2D, data.metaData.newFormat, data.metaData.newWidth, data.metaData.newHeight, DirectX::TEX_FILTER_FLAGS::TEX_FILTER_DEFAULT, data.texture);
+			}
 			if (!data.texture)
 			{
 				logger::error("Failed to convert texture : {}", filePath);
 				return false;
 			}
-			textures[filePath] =  data;
+			//textures[filePath] =  data;
 
 			textureDesc = data.texDesc;
 			srvDesc = data.srvDesc;
@@ -622,45 +630,7 @@ namespace Mus {
 			if (!UpdateNiTexture(filePath))
 				return false;
 			logger::info("Update NiTexture Done : {}", filePath);
-
-			auto found = textures.find(filePath);
-			if (found == textures.end())
-				return true;
-			RE::NiPointer<RE::NiSourceTexture> sourceTexture;
-			LoadTexture(filePath.c_str(), 1, sourceTexture, false);
-			if (!sourceTexture || !sourceTexture->rendererTexture || !sourceTexture->rendererTexture->resourceView)
-			{
-				logger::error("Failed to load texture file : {}", filePath);
-				return false;
-			}
-			Microsoft::WRL::ComPtr<ID3D11Resource> resource;
-			sourceTexture->rendererTexture->resourceView->GetDesc(&found->second.srvDesc);
-			sourceTexture->rendererTexture->resourceView->GetResource(&resource);
-			Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D;
-			HRESULT hr = resource.As(&texture2D);
-			if (FAILED(hr))
-			{
-				logger::error("Failed to load texture resource ({})", hr);
-				return false;
-			}
-			texture2D->GetDesc(&found->second.texDesc);
-			ConvertTexture(texture2D, found->second.metaData.newFormat, found->second.metaData.newWidth, found->second.metaData.newHeight, DirectX::TEX_FILTER_FLAGS::TEX_FILTER_DEFAULT, found->second.texture);
-			if (!found->second.texture)
-			{
-				logger::error("Failed to convert texture : {}", filePath);
-				return false;
-			}
-			logger::info("Update Texture Done : {}", filePath);
 			return true;
-		}
-		bool TextureLoadManager::UpdateTexturesAll()
-		{
-			bool result = true;
-			for (auto& texture : textures)
-			{
-				result = UpdateTexture(texture.first) ? result : false;
-			}
-			return result;
 		}
 		std::string TextureLoadManager::GetOrgTexturePath(std::string name)
 		{
@@ -668,6 +638,7 @@ namespace Mus {
 			if (found == textureOrgPath.end())
 				return "";
 			return found->second;
+			return "";
 		}
 		void TextureLoadManager::SetOrgTexturePath(std::string name, std::string texturePath)
 		{

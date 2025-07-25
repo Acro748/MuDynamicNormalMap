@@ -73,9 +73,10 @@ namespace Mus {
 		std::unordered_set<RE::BSGeometry*> GetAllGeometries(RE::Actor* a_actor);
 
 		bool QUpdateNormalMap(RE::Actor* a_actor, std::uint32_t bipedSlot);
-		bool QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::uint32_t bipedSlot);
-		bool QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::unordered_set<RE::BSGeometry*> a_updateTargets);
-		void QUpdateNormalMap(RE::FormID a_actorID, std::string a_actorName, GeometryData& a_geoData, BakeSet& a_bakeSet);
+		bool QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_updateTargets);
+
+		bool QUpdateNormalMapImpl(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::unordered_set<RE::BSGeometry*> a_updateTargets);
+		void QUpdateNormalMapImpl(RE::FormID a_actorID, std::string a_actorName, GeometryData& a_geoData, BakeSet& a_bakeSet);
 
 		std::int64_t GenerateUniqueID();
 	protected:
@@ -104,7 +105,8 @@ namespace Mus {
 		std::string GetMaskNormalMapPath(std::string a_normalMapPath);
 		std::string GetMaskNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder);
 
-		concurrency::concurrent_unordered_map<RE::FormID, BakeSet> bakeQueue;
+		concurrency::concurrent_unordered_map<RE::FormID, std::uint32_t> bakeSlotQueue;
+		concurrency::concurrent_unordered_map<RE::FormID, concurrency::concurrent_vector<RE::BSGeometry*>> bakeGeometryQueue;
 		std::shared_mutex bakeQueueLock;
 		concurrency::concurrent_unordered_map<RE::FormID, bool> isBaking;
 		concurrency::concurrent_unordered_map<RE::FormID, concurrency::concurrent_unordered_map<std::uint32_t, std::string>> lastNormalMap; // ActorID, VertexCount, TextureName>

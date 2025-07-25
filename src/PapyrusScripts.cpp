@@ -28,7 +28,7 @@ namespace Mus {
 
 		void QUpdateNormalmap(RE::StaticFunctionTag*, RE::Actor* a_actor, std::uint32_t bipedSlot)
 		{
-			TaskManager::GetSingleton().QUpdateNormalMap(a_actor, TaskManager::GetSingleton().GetAllGeometries(a_actor), bipedSlot);
+			TaskManager::GetSingleton().QUpdateNormalMap(a_actor, bipedSlot);
 		}
 
 		concurrency::concurrent_unordered_map<RE::FormID, float> detailStrengthMap;

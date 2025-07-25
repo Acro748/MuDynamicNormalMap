@@ -6,6 +6,35 @@ namespace Mus {
 //#define BLEED_TEST1
 //#define BLEED_TEST2
 
+	void ObjectNormalMapUpdater::onEvent(const FrameEvent& e)
+	{
+		ResourceDataMapLock.lock();
+		auto ResourceDataMap_ = ResourceDataMap;
+		ResourceDataMap.clear();
+		ResourceDataMapLock.unlock();
+		processingThreads->submitAsync([&, ResourceDataMap_]() {
+			for (auto map : ResourceDataMap_)
+			{
+				if (map.IsQueryDone(Shader::ShaderManager::GetSingleton().GetContext()))
+					continue;
+
+				ResourceDataMapLock.lock_shared();
+				ResourceDataMap.push_back(map);
+				ResourceDataMapLock.unlock_shared();
+
+			}
+		});
+		processingThreads->submitAsync([&]() {
+			for (auto& map : GeometryResourceDataMap)
+			{
+				if (!map.second.query)
+					continue;
+				if (map.second.IsQueryDone(Shader::ShaderManager::GetSingleton().GetContext()))
+					map.second.clear();
+			}
+		});
+	}
+
 	void ObjectNormalMapUpdater::Init()
 	{
 		if (Config::GetSingleton().GetGPUEnable())
@@ -58,8 +87,8 @@ namespace Mus {
 		}
 		a_data.UpdateMap();
 		//a_data.Subdivision(Config::GetSingleton().GetSubdivision());
-		a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree());
 		//a_data.VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
+		a_data.RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree());
 
 		if (a_data.vertices.size() != a_data.uvs.size() ||
 			a_data.vertices.size() != a_data.normals.size() ||
@@ -72,6 +101,7 @@ namespace Mus {
 
 		if (Config::GetSingleton().GetGPUEnable())
 		{
+			GeometryResourceDataMap[a_actorID].query.Reset();
 			if (!CreateStructuredBuffer(a_data.vertices.data(), UINT(sizeof(DirectX::XMFLOAT3) * a_data.vertices.size()), sizeof(DirectX::XMFLOAT3), GeometryResourceDataMap[a_actorID].vertexBuffer, GeometryResourceDataMap[a_actorID].vertexSRV))
 				return false;
 			if (!CreateStructuredBuffer(a_data.uvs.data(), UINT(sizeof(DirectX::XMFLOAT2) * a_data.uvs.size()), sizeof(DirectX::XMFLOAT2), GeometryResourceDataMap[a_actorID].uvBuffer, GeometryResourceDataMap[a_actorID].uvSRV))
@@ -109,7 +139,6 @@ namespace Mus {
 		const std::int32_t margin = Config::GetSingleton().GetTextureMargin();
 		logger::debug("{}::{:x} : updating... {}", _func_, a_actorID, a_bakeSet.size());
 
-		std::vector<std::future<void>> parallelBakings;
 		for (auto& bake : a_bakeSet)
 		{
 			auto found = std::find_if(a_data.geometries.begin(), a_data.geometries.end(), [&](std::pair<RE::BSGeometry*, GeometryData::ObjectInfo>& geometry) {
@@ -121,7 +150,8 @@ namespace Mus {
 				continue;
 			}
 			GeometryData::ObjectInfo& objInfo = found->second;
-			ResourceDataMap[bake.second.textureName].clear();
+			TextureResourceData newResourceData;
+			newResourceData.textureName = bake.second.textureName;
 
 			Microsoft::WRL::ComPtr<ID3D11Texture2D> srcStagingTexture2D, detailStagingTexture2D, overlayStagingTexture2D, maskStagingTexture2D, dstStagingTexture2D;
 			D3D11_TEXTURE2D_DESC srcStagingDesc = {}, detailStagingDesc = {}, overlayStagingDesc = {}, maskStagingDesc = {}, dstStagingDesc = {}, dstDesc = {};
@@ -624,11 +654,13 @@ namespace Mus {
 			}
 
 			if (Config::GetSingleton().GetTextureMarginGPU() && !Shader::ShaderManager::GetSingleton().IsFailedShader(BleedTextureShaderName.data()))
-				BleedTextureGPU(bake.second.textureName, margin, dstShaderResourceView, dstTexture2D);
+				BleedTextureGPU(newResourceData, margin, dstShaderResourceView, dstTexture2D);
 
 			Shader::ShaderManager::GetSingleton().ShaderContextLock();
 			context->GenerateMips(dstShaderResourceView.Get());
 			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+
+			newResourceData.GetQuery(device, context);
 
 			RE::NiPointer<RE::NiSourceTexture> output = nullptr;
 			bool texCreated = false;
@@ -643,11 +675,13 @@ namespace Mus {
 			newNormalMapResult.textureName = bake.second.textureName;
 			newNormalMapResult.normalmap = output;
 			result.push_back(newNormalMapResult);
+
+			ResourceDataMapLock.lock_shared();
+			ResourceDataMap.push_back(newResourceData);
+			ResourceDataMapLock.unlock_shared();
 			logger::info("{}::{:x}::{} : normalmap baked", _func_, a_actorID, bake.second.geometryName);
 		}
-		for (auto& parallelBaking : parallelBakings) {
-			parallelBaking.get();
-		}
+		GeometryResourceDataMap[a_actorID].GetQuery(device, context);
 #ifdef BAKE_TEST1
 		PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID), true, false);
 #endif // BAKE_TEST1
@@ -692,7 +726,8 @@ namespace Mus {
 				continue;
 			}
 			GeometryData::ObjectInfo& objInfo = found->second;
-			ResourceDataMap[bake.second.textureName].clear();
+			TextureResourceData newResourceData;
+			newResourceData.textureName = bake.second.textureName;
 
 			Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture2D, detailTexture2D, overlayTexture2D, maskTexture2D;
 			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcShaderResourceView, detailShaderResourceView, overlayShaderResourceView, maskShaderResourceView;
@@ -989,7 +1024,7 @@ namespace Mus {
 					sb.Revert(context);
 					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 					constBuffersLock.lock();
-					ResourceDataMap[bake.second.textureName].constBuffers.push_back(constBuffer);
+					newResourceData.constBuffers.push_back(constBuffer);
 					constBuffersLock.unlock();
 #ifdef BAKE_TEST2
 					GPUPerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + bake.second.geometryName + "::" + std::to_string(subIndex), true, false);
@@ -1037,12 +1072,14 @@ namespace Mus {
 				continue;
 			}
 
-			BleedTextureGPU(bake.second.textureName, margin, dstShaderResourceView, dstTexture2D);
-			//TexturePostProcessingGPU(bake.second.textureName, 0.3f, 0.5f, dstShaderResourceView, dstTexture2D);
+			//TexturePostProcessingGPU(newResourceData, 0.3f, 1.0f, dstShaderResourceView, dstTexture2D);
+			BleedTextureGPU(newResourceData, margin, dstShaderResourceView, dstTexture2D);
 
 			Shader::ShaderManager::GetSingleton().ShaderContextLock();
 			context->GenerateMips(dstShaderResourceView.Get());
 			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+
+			newResourceData.GetQuery(device, context);
 
 			RE::NiPointer<RE::NiSourceTexture> output = nullptr;
 			bool texCreated = false;
@@ -1058,16 +1095,25 @@ namespace Mus {
 			newNormalMapResult.normalmap = output;
 			result.push_back(newNormalMapResult);
 
-			ResourceDataMap[bake.second.textureName].srcShaderResourceView = srcShaderResourceView;
-			ResourceDataMap[bake.second.textureName].detailShaderResourceView = detailShaderResourceView;
-			ResourceDataMap[bake.second.textureName].overlayShaderResourceView = overlayShaderResourceView;
-			ResourceDataMap[bake.second.textureName].maskShaderResourceView = maskShaderResourceView;
-			ResourceDataMap[bake.second.textureName].dstWriteTexture2D = dstWriteTexture2D;
-			ResourceDataMap[bake.second.textureName].dstWriteTextureUAV = dstWriteTextureUAV;
-			ResourceDataMap[bake.second.textureName].pixelBuffer = pixelBuffer;
-			ResourceDataMap[bake.second.textureName].pixelBufferUAV = pixelBufferUAV;
+			newResourceData.srcTexture2D = srcTexture2D;
+			newResourceData.srcShaderResourceView = srcShaderResourceView;
+			newResourceData.detailTexture2D = detailTexture2D;
+			newResourceData.detailShaderResourceView = detailShaderResourceView;
+			newResourceData.overlayTexture2D = overlayTexture2D;
+			newResourceData.overlayShaderResourceView = overlayShaderResourceView;
+			newResourceData.maskTexture2D = maskTexture2D;
+			newResourceData.maskShaderResourceView = maskShaderResourceView;
+			newResourceData.dstWriteTexture2D = dstWriteTexture2D;
+			newResourceData.dstWriteTextureUAV = dstWriteTextureUAV;
+			newResourceData.pixelBuffer = pixelBuffer;
+			newResourceData.pixelBufferUAV = pixelBufferUAV;
+
+			ResourceDataMapLock.lock_shared();
+			ResourceDataMap.push_back(newResourceData);
+			ResourceDataMapLock.unlock_shared();
 			logger::info("{}::{:x}::{} : normalmap baked", _func_, a_actorID, bake.second.geometryName);
 		}
+		GeometryResourceDataMap[a_actorID].GetQuery(device, context);
 #ifdef BAKE_TEST1
 		PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID), true, false);
 #endif // BAKE_TEST1
@@ -1241,7 +1287,7 @@ namespace Mus {
 		return true;
 	}
 
-	bool ObjectNormalMapUpdater::BleedTextureGPU(std::string textureName, std::uint32_t margin, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut)
+	bool ObjectNormalMapUpdater::BleedTextureGPU(TextureResourceData& resourceData, std::uint32_t margin, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut)
 	{
 		std::string_view _func_ = __func__;
 #ifdef BLEED_TEST1
@@ -1251,7 +1297,7 @@ namespace Mus {
 		if (margin <= 0)
 			return true;
 
-		logger::debug("{}::{} : Bleed texture... {}", _func_, textureName, margin);
+		logger::debug("{} : Bleed texture... {}", _func_, margin);
 
 		auto device = Shader::ShaderManager::GetSingleton().GetDevice();
 		auto context = Shader::ShaderManager::GetSingleton().GetContext();
@@ -1332,13 +1378,17 @@ namespace Mus {
 		Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav;
 		hr = device->CreateUnorderedAccessView(texture2D.Get(), &uavDesc, &uav);
 		if (FAILED(hr)) {
-			logger::error("{} : Failed to create const buffer ({})", _func_, hr);
+			logger::error("{} : Failed to create unordered access view ({})", _func_, hr);
 			return false;
 		}
 
 #ifdef BLEED_TEST1
 		PerformanceLog(std::string(_func_) + "::" + textureName, true, false);
 #endif // BLEED_TEST1
+
+		Shader::ShaderManager::GetSingleton().ShaderContextLock();
+		context->CopyResource(texture2D.Get(), texInOut.Get());
+		Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 
 		std::mutex constBuffersLock;
 		std::vector<std::future<void>> gpuTasks;
@@ -1350,13 +1400,13 @@ namespace Mus {
 		const std::uint32_t subYSize = std::max(std::uint32_t(1), height / subResolution);
 		for (std::uint32_t mi = 0; mi < marginMax; mi++)
 		{
-			for (std::uint32_t subX = 0; subX < subXSize; subX++)
+			for (std::uint32_t subY = 0; subY < subYSize; subY++)
 			{
-				for (std::uint32_t subY = 0; subY < subYSize; subY++)
+				for (std::uint32_t subX = 0; subX < subXSize; subX++)
 				{
 					gpuTasks.push_back(gpuTask->submitAsync([&, subX, subY, mi]() {
 #ifdef BLEED_TEST2
-						GPUPerformanceLog(std::string(_func_) + "::" + textureName + "::" + std::to_string(width) + "|" + std::to_string(height) 
+						GPUPerformanceLog(std::string(_func_) + "::" + resourceData.textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
 										  + "::" + std::to_string(subX) + "|" + std::to_string(subY) + "::" + std::to_string(mi), false, false);
 #endif // BLEED_TEST2
 						auto cbData_ = cbData;
@@ -1364,8 +1414,6 @@ namespace Mus {
 						cbData_.heightStart = subResolution * subY;
 						D3D11_SUBRESOURCE_DATA cbInitData = {};
 						cbInitData.pSysMem = &cbData_;
-						cbInitData.SysMemPitch = 0;
-						cbInitData.SysMemSlicePitch = 0;
 						Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
 						hr = device->CreateBuffer(&cbDesc, &cbInitData, &constBuffer);
 						if (FAILED(hr)) {
@@ -1374,7 +1422,6 @@ namespace Mus {
 						}
 						Shader::ShaderManager::GetSingleton().ShaderContextLock();
 						sb.Backup(context);
-						context->CopyResource(texture2D.Get(), texInOut.Get());
 						context->CSSetShader(shader.Get(), nullptr, 0);
 						context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
 						context->CSSetShaderResources(0, 1, srvInOut.GetAddressOf());
@@ -1390,10 +1437,10 @@ namespace Mus {
 						sb.Revert(context);
 						Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 						constBuffersLock.lock();
-						ResourceDataMap[textureName].bleedTextureData.constBuffers.push_back(constBuffer);
+						resourceData.bleedTextureData.constBuffers.push_back(constBuffer);
 						constBuffersLock.unlock();
 #ifdef BLEED_TEST2
-						GPUPerformanceLog(std::string(_func_) + "::" + textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
+						GPUPerformanceLog(std::string(_func_) + "::" + resourceData.textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
 										  + "::" + std::to_string(subX) + "|" + std::to_string(subY) + "::" + std::to_string(mi), true, false);
 #endif // BLEED_TEST2
 					}));
@@ -1405,12 +1452,12 @@ namespace Mus {
 			task.get();
 		}
 
-		ResourceDataMap[textureName].bleedTextureData.texture2D = texture2D;
-		ResourceDataMap[textureName].bleedTextureData.uav = uav;
+		resourceData.bleedTextureData.texture2D = texture2D;
+		resourceData.bleedTextureData.uav = uav;
 		return true;
 	}
 
-	bool ObjectNormalMapUpdater::TexturePostProcessingGPU(std::string textureName, float threshold, float blendStrength, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut)
+	bool ObjectNormalMapUpdater::TexturePostProcessingGPU(TextureResourceData& resourceData, float threshold, float blendStrength, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut)
 	{
 		std::string_view _func_ = __func__;
 #ifdef BLEED_TEST1
@@ -1419,7 +1466,7 @@ namespace Mus {
 		if (threshold <= floatPrecision || blendStrength <= floatPrecision)
 			return true;
 
-		logger::debug("{}::{} : TexturePostProcessing... {} / {}", _func_, textureName, threshold, blendStrength);
+		logger::debug("{}::{} : TexturePostProcessing... {} / {}", _func_, resourceData.textureName, threshold, blendStrength);
 
 		auto device = Shader::ShaderManager::GetSingleton().GetDevice();
 		auto context = Shader::ShaderManager::GetSingleton().GetContext();
@@ -1439,8 +1486,13 @@ namespace Mus {
 		{
 			UINT width;
 			UINT height;
+			UINT widthStart;
+			UINT heightStart;
+
 			float threshold;
 			float blendStrength;
+			UINT padding1;
+			UINT padding2;
 		};
 		static_assert(sizeof(ConstBufferData) % 16 == 0, "Constant buffer must be 16-byte aligned.");
 
@@ -1513,50 +1565,48 @@ namespace Mus {
 		Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav;
 		hr = device->CreateUnorderedAccessView(texture2D.Get(), &uavDesc, &uav);
 		if (FAILED(hr)) {
-			logger::error("{} : Failed to create const buffer ({})", _func_, hr);
+			logger::error("{} : Failed to create unordered access view ({})", _func_, hr);
 			return false;
 		}
 #ifdef BLEED_TEST1
 		PerformanceLog(std::string(_func_) + "::" + textureName, true, false);
 #endif // BLEED_TEST1
 
-		std::vector<std::future<void>> gpuTasks;
-		const std::uint32_t subResolution = 4096 / (1u << Config::GetSingleton().GetDivideTaskQ());
-		const DirectX::XMUINT2 dispatch = { (std::min(width, subResolution) + 8 - 1) / 8, (std::min(height, subResolution) + 8 - 1) / 8 };
-		const std::uint32_t subXSize = std::max(std::uint32_t(1), width / subResolution);
-		const std::uint32_t subYSize = std::max(std::uint32_t(1), height / subResolution);
-		for (std::uint32_t subX = 0; subX < subXSize; subX++)
-		{
-			for (std::uint32_t subY = 0; subY < subYSize; subY++)
+		const DirectX::XMUINT2 dispatch = { (width + 8 - 1) / 8, 1 };
+		gpuTask->submitAsync([&]() {
+#ifdef BLEED_TEST2
+			GPUPerformanceLog(std::string(_func_) + "::" + textureName + "::" + std::to_string(width) + "|" + std::to_string(height), false, false);
+#endif // BLEED_TEST2
+			Shader::ShaderManager::GetSingleton().ShaderContextLock();
+			sb.Backup(context);
+			context->CopyResource(texture2D.Get(), texInOut.Get());
+			context->CSSetShader(shader.Get(), nullptr, 0);
+			context->CSSetShaderResources(0, 1, srvInOut.GetAddressOf());
+			context->CSSetUnorderedAccessViews(0, 1, uav.GetAddressOf(), nullptr);
+			for (std::uint32_t i = 0; i < height; i++)
 			{
-				gpuTasks.push_back(gpuTask->submitAsync([&, subX, subY]() {
-#ifdef BLEED_TEST2
-					GPUPerformanceLog(std::string(_func_) + "::" + textureName + "::" + std::to_string(width) + "|" + std::to_string(height), false, false);
-#endif // BLEED_TEST2
-					Shader::ShaderManager::GetSingleton().ShaderContextLock();
-					sb.Backup(context);
-					context->CopyResource(texture2D.Get(), texInOut.Get());
-					context->CSSetShader(shader.Get(), nullptr, 0);
+				auto cbData_ = cbData;
+				cbData_.widthStart = 0;
+				cbData_.heightStart = i;
+				D3D11_SUBRESOURCE_DATA cbInitData = {};
+				cbInitData.pSysMem = &cbData_;
+				Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
+				hr = device->CreateBuffer(&cbDesc, &cbInitData, &constBuffer);
+				if (SUCCEEDED(hr)) {
 					context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
-					context->CSSetShaderResources(0, 1, srvInOut.GetAddressOf());
-					context->CSSetUnorderedAccessViews(0, 1, uav.GetAddressOf(), nullptr);
 					context->Dispatch(dispatch.x, dispatch.y, 1);
-					sb.Revert(context);
-					context->CopyResource(texInOut.Get(), texture2D.Get());
-					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-#ifdef BLEED_TEST2
-					GPUPerformanceLog(std::string(_func_) + "::" + textureName + "::" + std::to_string(width) + "|" + std::to_string(height), true, false);
-#endif // BLEED_TEST2
-				}));
+					resourceData.texturePostProcessingData.constBuffer.push_back(constBuffer);
+				}
 			}
-		}
-		for (auto& task : gpuTasks)
-		{
-			task.get();
-		}
-		ResourceDataMap[textureName].texturePostProcessingData.constBuffer = constBuffer;
-		ResourceDataMap[textureName].texturePostProcessingData.texture2D = texture2D;
-		ResourceDataMap[textureName].texturePostProcessingData.uav = uav;
+			sb.Revert(context);
+			context->CopyResource(texInOut.Get(), texture2D.Get());
+			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+#ifdef BLEED_TEST2
+			GPUPerformanceLog(std::string(_func_) + "::" + textureName + "::" + std::to_string(width) + "|" + std::to_string(height), true, false);
+#endif // BLEED_TEST2
+		}).get();
+		resourceData.texturePostProcessingData.texture2D = texture2D;
+		resourceData.texturePostProcessingData.uav = uav;
 
 		return true;
 	}
@@ -1694,12 +1744,13 @@ namespace Mus {
 		context->End(query.Get());
 		Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 		std::uint32_t spinCount = 0;
-		bool isDone = false;
 		while (true) {
 			Shader::ShaderManager::GetSingleton().ShaderContextLock();
-			isDone = context->GetData(query.Get(), nullptr, 0, 0) == S_FALSE;
+			hr = context->GetData(query.Get(), nullptr, 0, 0);
 			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-			if (isDone)
+			if (FAILED(hr))
+				break;
+			if (hr == S_OK)
 				break;
 			if (spinCount < 100)
 				std::this_thread::yield();
