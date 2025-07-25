@@ -99,7 +99,6 @@ namespace Mus {
 			bool GetTexture2D(std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
 			bool GetTexture2D(std::string filePath, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
 			bool UpdateTexture(std::string filePath);
-			bool UpdateTexturesAll();
 
 			std::string GetOrgTexturePath(std::string name);
 			void SetOrgTexturePath(std::string name, std::string texturePath);
@@ -174,7 +173,6 @@ namespace Mus {
 				};
 				MetaData metaData;
 			};
-			concurrency::concurrent_unordered_map<std::string, textureData> textures;
 			concurrency::concurrent_unordered_map<std::string, RE::NiPointer<RE::NiSourceTexture>> niTextures;
 			concurrency::concurrent_unordered_map<std::string, std::string> textureOrgPath;
 		};

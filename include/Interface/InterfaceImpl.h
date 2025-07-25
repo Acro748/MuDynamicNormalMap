@@ -8,7 +8,7 @@ namespace MDNM {
 		virtual std::uint32_t GetVersion() override { return 0; };
 		
 		virtual void QUpdateNormalmap(RE::Actor* a_actor, std::uint32_t a_updateBipedSlot) override {
-			Mus::TaskManager::GetSingleton().QUpdateNormalMap(a_actor, Mus::TaskManager::GetSingleton().GetAllGeometries(a_actor), a_updateBipedSlot);
+			Mus::TaskManager::GetSingleton().QUpdateNormalMap(a_actor, a_updateBipedSlot);
 		}
 		virtual void QUpdateNormalmap(RE::Actor* a_actor, RE::BSGeometry** a_geometries, std::uint32_t a_geometryCount) {
 			if (!a_actor || !a_actor->loadedData || !a_actor->loadedData->data3D)
@@ -21,7 +21,7 @@ namespace MDNM {
 					continue;
 				geos.insert(a_geometries[i]);
 			}
-			Mus::TaskManager::GetSingleton().QUpdateNormalMap(a_actor, Mus::TaskManager::GetSingleton().GetAllGeometries(a_actor), geos);
+			Mus::TaskManager::GetSingleton().QUpdateNormalMap(a_actor, geos);
 		}
 		virtual void SetDetailStrength(RE::Actor* a_actor, float a_strength) {
 			if (!a_actor)

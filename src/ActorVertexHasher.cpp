@@ -69,10 +69,7 @@ namespace Mus {
 		if (!a_actor || !a_actor->loadedData || !a_actor->loadedData->data3D)
 			return false;
 		ActorHashLock.lock_shared();
-		auto found = ActorHash[a_actor->formID].find(bipedSlot);
-		if (found != ActorHash[a_actor->formID].end())
-			found->second->hashValue = 0;
-		else
+		if (ActorHash[a_actor->formID].find(bipedSlot) == ActorHash[a_actor->formID].end())
 		{
 			ActorHash[a_actor->formID][bipedSlot] = std::make_shared<Hash>();
 		}
@@ -141,14 +138,7 @@ namespace Mus {
 							}
 							hashmap.second->hashValue = hash;
 						}
-						ActorQueue[actor->formID] |= bipedSlot;
-						if (ActorQueue[actor->formID] != 0)
-						{
-							if (TaskManager::GetSingleton().QUpdateNormalMap(actor, bipedSlot))
-							{
-								ActorQueue[actor->formID] = 0;
-							}
-						}
+						TaskManager::GetSingleton().QUpdateNormalMap(actor, bipedSlot);
 					}));
 				}
 				for (auto& process : processes)
@@ -159,7 +149,6 @@ namespace Mus {
 				for (auto& garbage : garbages)
 				{
 					ActorHash.unsafe_erase(garbage);
-					ActorQueue.unsafe_erase(garbage);
 				}
 				ActorHashLock.unlock();
 #ifdef HASHER_TEST1
@@ -188,8 +177,6 @@ namespace Mus {
 					garbages.push_back(map.first);
 					return;
 				}
-				if (BlockActors[actor->formID])
-					return;
 				if (!isPlayer(actor->formID) && playerPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) > Config::GetSingleton().GetDetectDistance())
 					return;
 				if (!GetHash(actor, map.second))
@@ -210,20 +197,12 @@ namespace Mus {
 					}
 					hashmap.second->hashValue = hash;
 				}
-				ActorQueue[actor->formID] |= bipedSlot;
-				if (ActorQueue[actor->formID] != 0)
-				{
-					if (TaskManager::GetSingleton().QUpdateNormalMap(actor, bipedSlot))
-					{
-						ActorQueue[actor->formID] = 0;
-					}
-				}
+				TaskManager::GetSingleton().QUpdateNormalMap(actor, bipedSlot);
 			 });
 			ActorHashLock.lock();
 			for (auto& garbage : garbages)
 			{
 				ActorHash.unsafe_erase(garbage);
-				ActorQueue.unsafe_erase(garbage);
 			}
 			ActorHashLock.unlock();
 #ifdef HASHER_TEST1

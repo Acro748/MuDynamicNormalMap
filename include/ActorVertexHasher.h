@@ -49,7 +49,6 @@ namespace Mus {
 
 		concurrency::concurrent_unordered_map<RE::FormID, bool> BlockActors;
 		concurrency::concurrent_unordered_map<RE::FormID, GeometryHash> ActorHash;
-		concurrency::concurrent_unordered_map<RE::FormID, std::uint32_t> ActorQueue;
 		std::unique_ptr<ThreadPool_ParallelModule> BackGroundHasher = nullptr;
 		std::shared_mutex ActorHashLock;
 	};

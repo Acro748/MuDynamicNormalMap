@@ -2,6 +2,8 @@ cbuffer ConstBuffer : register(b0)
 {
     uint texWidth;
     uint texHeight;
+    uint widthStart;
+    uint heightStart;
     float threshold;
     float blendStrength;
 }
@@ -9,34 +11,30 @@ cbuffer ConstBuffer : register(b0)
 Texture2D<float4> srcTexture : register(t0);
 RWTexture2D<float4> dstTexture : register(u0);
 
-static const int2 offsets[8] = {
+static const int2 offsets[4] = {
     int2(-1, -1), // left up
     int2(0, -1), // up
     int2(1, -1), // right up
     int2(-1,  0), // left
-    int2(1,  0), // right
-    int2(-1,  1), // left down
-    int2(0,  1), // down
-    int2(1,  1)  // right down
 };
 
-[numthreads(8, 8, 1)]
+[numthreads(64, 1, 1)]
 void CSMain(uint3 threadID : SV_DispatchThreadID)
 {
-    if (threadID.x >= texWidth || threadID.y >= texHeight)
+    int2 coord = int2(threadID.xy) + int2(widthStart, heightStart);
+    if (coord.x >= texWidth || coord.y >= texHeight)
         return; 
 
-    int2 coord = int2(threadID.xy);
     if (srcTexture.Load(int3(coord, 0)).a < 1.0f)
         return;
     float3 pixel = srcTexture.Load(int3(coord, 0)).rgb;
 
     float3 sum = 0;
     float weightSum = 0;
-
-    for (uint j = 0; j < 8; j++)
+	int validCount = 0;
+    for (uint i = 0; i < 4; i++)
     {
-        int2 nearCoord = coord + (offsets[j] * i);
+        int2 nearCoord = coord + offsets[i];
 
         if (nearCoord.x < 0 || nearCoord.y < 0 ||
             nearCoord.x >= (int)texWidth || nearCoord.y >= (int)texHeight)
@@ -50,11 +48,11 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
             float weight = 1.0 - saturate(diff);
             sum += neighbor * weight;
             weightSum += weight;
+            validCount++;
         }
     }
-    
 
-    if (weightSum > 0)
+    if (weightSum > 0 && validCount >= 3)
     {
         float3 smooth = sum / weightSum;
         dstTexture[coord].rgba = float4(lerp(pixel, smooth, blendStrength), 1.0f);

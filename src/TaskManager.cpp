@@ -92,26 +92,36 @@ namespace Mus {
 	void TaskManager::RunBakeQueue()
 	{
 		bakeQueueLock.lock();
-		auto bakeQueue_ = bakeQueue;
-		bakeQueue.clear();
+		auto bakeQueue_ = bakeSlotQueue;
+		bakeSlotQueue.clear();
 		bakeQueueLock.unlock();
 		concurrency::parallel_for_each(bakeQueue_.begin(), bakeQueue_.end(), [&](auto& queue) {
 			RE::Actor* actor = GetFormByID<RE::Actor*>(queue.first);
 			if (!actor || !actor->loadedData || !actor->loadedData->data3D)
 				return;
+			bakeQueueLock.lock_shared();
+			for (auto& target : GetGeometries(actor, queue.second))
+			{
+				bakeGeometryQueue[actor->formID].push_back(target);
+			}
+			bakeQueueLock.unlock_shared();
+		});
+		bakeQueueLock.lock();
+		auto bakeGeometryQueue_ = bakeGeometryQueue;
+		bakeGeometryQueue.clear();
+		concurrency::parallel_for_each(bakeGeometryQueue_.begin(), bakeGeometryQueue_.end(), [&](auto& queue) {
+			RE::Actor* actor = GetFormByID<RE::Actor*>(queue.first);
+			if (!actor || !actor->loadedData || !actor->loadedData->data3D)
+				return;
 			if (isBaking[actor->formID])
 			{
-				bakeQueue[actor->formID] = queue.second;
+				bakeGeometryQueue[actor->formID] = queue.second;
 				return;
 			}
-			isBaking[actor->formID] = true;
-			GeometryData geoData;
-			for (auto& geo : GetAllGeometries(actor)) 
-			{
-				geoData.CopyGeometryData(geo);
-			}
-			QUpdateNormalMap(actor->formID, actor->GetName(), geoData, queue.second);
+			std::unordered_set<RE::BSGeometry*> targets(queue.second.begin(), queue.second.end());
+			QUpdateNormalMapImpl(actor, GetAllGeometries(actor), targets);
 		});
+		bakeQueueLock.unlock();
 	}
 
 	void TaskManager::RunDelayTask()
@@ -153,7 +163,7 @@ namespace Mus {
 		auto root = a_actor->loadedData->data3D.get();
 		if (!root)
 			return geometries;
-		RE::BSVisit::TraverseScenegraphGeometries(root, [&geometries](RE::BSGeometry* geometry) -> RE::BSVisit::BSVisitControl {
+		RE::BSVisit::TraverseScenegraphGeometries(root, [&](RE::BSGeometry* geometry) -> RE::BSVisit::BSVisitControl {
 			using State = RE::BSGeometry::States;
 			using Feature = RE::BSShaderMaterial::Feature;
 			if (!geometry || geometry->name.empty())
@@ -183,55 +193,58 @@ namespace Mus {
 		std::unordered_set<RE::BSGeometry*> geometries;
 		if (!a_actor || !a_actor->loadedData || !a_actor->loadedData->data3D)
 			return geometries;
-		auto slots = SubBipedObjectSlots(bipedSlot);
 		auto root = a_actor->loadedData->data3D.get();
 		if (!root)
 			return geometries;
-		bool isHeadInclude = std::find(slots.begin(), slots.end(), std::to_underlying(BipedObjectSlot::kHead)) != slots.end();
-		RE::BSVisit::TraverseScenegraphGeometries(root, [&geometries, &slots, isHeadInclude](RE::BSGeometry* geometry) -> RE::BSVisit::BSVisitControl {
+		RE::BSVisit::TraverseScenegraphGeometries(root, [&](RE::BSGeometry* geo) -> RE::BSVisit::BSVisitControl {
 			using State = RE::BSGeometry::States;
 			using Feature = RE::BSShaderMaterial::Feature;
-			if (!geometry || geometry->name.empty())
+			if (!geo || geo->name.empty())
 				return RE::BSVisit::BSVisitControl::kContinue;
-			if (IsContainString(geometry->name.c_str(), "[Ovl") || IsContainString(geometry->name.c_str(), "[SOvl") || IsContainString(geometry->name.c_str(), "overlay")) //without overlay
+			if (!geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
 				return RE::BSVisit::BSVisitControl::kContinue;
-			if (!geometry->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
-				return RE::BSVisit::BSVisitControl::kContinue;
-			auto effect = geometry->GetGeometryRuntimeData().properties[State::kEffect].get();
-			if (!effect)
-				return RE::BSVisit::BSVisitControl::kContinue;
+			auto effect = geo->GetGeometryRuntimeData().properties[State::kEffect].get();
 			auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
 			if (!lightingShader || !lightingShader->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
 				return RE::BSVisit::BSVisitControl::kContinue;
-
-			if (geometry->AsDynamicTriShape() && isHeadInclude)
+			if (auto property = geo->GetGeometryRuntimeData().properties[State::kProperty].get(); property)
 			{
-				geometries.insert(geometry);
+				if (auto alphaProperty = netimmerse_cast<RE::NiAlphaProperty*>(property); alphaProperty)
+					return RE::BSVisit::BSVisitControl::kContinue;
 			}
-			else
+			RE::BSLightingShaderMaterialBase* material = skyrim_cast<RE::BSLightingShaderMaterialBase*>(lightingShader->material);
+			if (!material || !material->normalTexture || !material->textureSet)
+				return RE::BSVisit::BSVisitControl::kContinue;
+			std::string texturePath = GetTexturePath(material->textureSet.get(), RE::BSTextureSet::Texture::kNormal);
+			if (texturePath.empty())
+				return RE::BSVisit::BSVisitControl::kContinue;
+			if (!geo->GetGeometryRuntimeData().skinInstance)
+				return RE::BSVisit::BSVisitControl::kContinue;
+
+			std::uint32_t slot = 0;
+			auto skinInstance = geo->GetGeometryRuntimeData().skinInstance.get();
+			auto dismember = netimmerse_cast<RE::BSDismemberSkinInstance*>(skinInstance);
+			if (dismember)
 			{
-				std::uint32_t pslot = 0;
-				auto skinInstance = geometry->GetGeometryRuntimeData().skinInstance.get();
-				auto dismember = netimmerse_cast<RE::BSDismemberSkinInstance*>(skinInstance);
-				if (!dismember) //maybe it's just skinInstance in headpart
-					return RE::BSVisit::BSVisitControl::kContinue;
-				bool found = false;
-				for (std::uint32_t p = 0; p < dismember->GetRuntimeData().numPartitions; p++)
+				if (dismember->GetRuntimeData().partitions[0].slot < 30 || dismember->GetRuntimeData().partitions[0].slot >= RE::BIPED_OBJECT::kEditorTotal + 30)
 				{
-					auto& partition = dismember->GetRuntimeData().partitions[p];
-					if (partition.slot < 30 || partition.slot >= RE::BIPED_OBJECT::kEditorTotal + 30)
-						return RE::BSVisit::BSVisitControl::kContinue; //unknown slot
-					else
-						pslot = 1 << (partition.slot - 30);
-					if (std::find(slots.begin(), slots.end(), pslot) != slots.end())
-					{
-						found = true;
-						break;
+					if (auto dynamicTri = geo->AsDynamicTriShape(); dynamicTri) { //maybe head
+						slot = RE::BIPED_OBJECT::kHead;
 					}
+					else //unknown slot
+						return RE::BSVisit::BSVisitControl::kContinue;
 				}
-				if (!found)
-					return RE::BSVisit::BSVisitControl::kContinue;
-				geometries.insert(geometry);
+				else
+					slot = dismember->GetRuntimeData().partitions[0].slot - 30;
+			}
+			else //maybe it's just skinInstance in headpart
+			{
+				slot = RE::BIPED_OBJECT::kHead;
+			}
+
+			if (bipedSlot & 1 << slot)
+			{
+				geometries.emplace(geo);
 			}
 			return RE::BSVisit::BSVisitControl::kContinue;
 		});
@@ -252,31 +265,62 @@ namespace Mus {
 			return true;
 		if (GetSex(a_actor) == RE::SEX::kFemale && !Config::GetSingleton().GetFemaleEnable())
 			return true;
-		if (!Config::GetSingleton().GetHeadEnable())
+		if (bipedSlot & BipedObjectSlot::kHead && !Config::GetSingleton().GetHeadEnable())
+			bipedSlot &= ~BipedObjectSlot::kHead;
+		bakeQueueLock.lock_shared();
+		bakeSlotQueue[id] |= bipedSlot;
+		bakeQueueLock.unlock_shared();
+		logger::debug("{}::{:x}::{} : queue added 0x{:x}", __func__, id, actorName, bipedSlot);
+		return true;
+	}
+	bool TaskManager::QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_updateTargets)
+	{
+		if (!a_actor)
+			return false;
+		RE::FormID id = a_actor->formID;
+		std::string actorName = a_actor->GetName();
+		if (isPlayer(id) && !Config::GetSingleton().GetPlayerEnable())
 			return true;
-		return QUpdateNormalMap(a_actor, GetAllGeometries(a_actor), bipedSlot);
+		if (!isPlayer(id) && !Config::GetSingleton().GetNPCEnable())
+			return true;
+		if (GetSex(a_actor) == RE::SEX::kMale && !Config::GetSingleton().GetMaleEnable())
+			return true;
+		if (GetSex(a_actor) == RE::SEX::kFemale && !Config::GetSingleton().GetFemaleEnable())
+			return true;
+		bakeQueueLock.lock_shared();
+		for (auto& target : a_updateTargets)
+		{
+			bakeGeometryQueue[a_actor->formID].push_back(target);
+		}
+		bakeQueueLock.unlock_shared();
+		logger::debug("{}::{:x}::{} : queue added {}", __func__, id, actorName, a_updateTargets.size());
+		return true;
 	}
 
-	bool TaskManager::QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::uint32_t bipedSlot)
+	bool TaskManager::QUpdateNormalMapImpl(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::unordered_set<RE::BSGeometry*> a_updateTargets)
 	{
 		if (!a_actor)
 			return false;
 
-		if (a_srcGeometies.empty() || bipedSlot == 0)
+		if (a_srcGeometies.empty() || a_updateTargets.empty())
 		{
 			logger::error("{}::{:x}::{} : no valid geometry found", __func__, a_actor->formID, a_actor->GetName());
 			return false;
 		}
 
-		RE::FormID id = a_actor->formID;
-		std::string actorName = a_actor->GetName();
 		auto condition = ConditionManager::GetSingleton().GetCondition(a_actor);
 		if (!condition.Enable)
 			return true;
+
+		logger::debug("{}::{:x}::{} : get geometry datas...", __func__, a_actor->formID, a_actor->GetName());
+		RE::FormID id = a_actor->formID;
+		std::string actorName = a_actor->GetName();
 		float detailStrength = condition.DetailStrength;
 		if (Papyrus::detailStrengthMap.find(id) != Papyrus::detailStrengthMap.end())
 			detailStrength = Papyrus::detailStrengthMap[id];
 		auto gender = GetSex(a_actor);
+		GeometryData newGeometryData;
+		BakeSet newBakeSet;
 		for (auto& geo : a_srcGeometies)
 		{
 			using State = RE::BSGeometry::States;
@@ -289,6 +333,11 @@ namespace Mus {
 			auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
 			if (!lightingShader || !lightingShader->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
 				continue;
+			if (auto property = geo->GetGeometryRuntimeData().properties[State::kProperty].get(); property)
+			{
+				if (auto alphaProperty = netimmerse_cast<RE::NiAlphaProperty*>(property); alphaProperty)
+					continue;
+			}
 			RE::BSLightingShaderMaterialBase* material = skyrim_cast<RE::BSLightingShaderMaterialBase*>(lightingShader->material);
 			if (!material || !material->normalTexture || !material->textureSet)
 				continue;
@@ -319,140 +368,44 @@ namespace Mus {
 				slot = RE::BIPED_OBJECT::kHead;
 			}
 
-			if (!condition.HeadEnable && slot == RE::BIPED_OBJECT::kHead)
+			if ((!condition.HeadEnable || !Config::GetSingleton().GetHeadEnable()) && slot == RE::BIPED_OBJECT::kHead)
 				continue;
 
-			if (bipedSlot & 1 << slot)
-			{
-				bakeQueueLock.lock_shared();
-				bakeQueue[id][geo].geometryName = geo->name.c_str();
-				bakeQueue[id][geo].textureName = GetTextureName(a_actor, slot, geo);
-				bakeQueue[id][geo].srcTexturePath = texturePath;
-				bakeQueue[id][geo].detailTexturePath = GetDetailNormalMapPath(texturePath, condition.ProxyDetailTextureFolder);
-				bakeQueue[id][geo].overlayTexturePath = GetOverlayNormalMapPath(texturePath, condition.ProxyOverlayTextureFolder);
-				bakeQueue[id][geo].maskTexturePath = GetMaskNormalMapPath(texturePath, condition.ProxyMaskTextureFolder);
-				bakeQueue[id][geo].detailStrength = detailStrength;
-				bakeQueueLock.unlock_shared();
-				logger::debug("{:x}::{} : {} - queue added on bake object normalmap", id, actorName, geo->name.c_str());
-
-				auto found = lastNormalMap[id].find(GeometryData::GetVertexCount(geo));
-				if (found != lastNormalMap[id].end())
-					Shader::TextureLoadManager::CreateSourceTexture(found->second, material->normalTexture);
-
-				ActorVertexHasher::GetSingleton().Register(a_actor, RE::BIPED_OBJECT(slot));
-
-				if (overrideInterfaceAPI->OverrideInterfaceload())
-				{
-					if (Config::GetSingleton().GetRemoveSkinOverrides())
-						overrideInterfaceAPI->RemoveSkinOverride(a_actor, gender == RE::SEX::kFemale, false, bipedSlot, OverrideInterfaceAPI::Key::ShaderTexture, RE::BGSTextureSet::Textures::kNormal);
-					if (Config::GetSingleton().GetRemoveNodeOverrides())
-						overrideInterfaceAPI->RemoveNodeOverride(a_actor, gender == RE::SEX::kFemale, geo->name, OverrideInterfaceAPI::Key::ShaderTexture, RE::BGSTextureSet::Textures::kNormal);
-					logger::info("{:x}::{} : {} - remove skin/node override for normalmap update", id, actorName, geo->name.c_str());
-				}
-			}
-		}
-		return true;
-	}
-	bool TaskManager::QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::unordered_set<RE::BSGeometry*> a_updateTargets)
-	{
-		if (!a_actor || a_srcGeometies.empty() || a_updateTargets.empty())
-		{
-			logger::error("{} : Invalid parameters", __func__);
-			return false;
-		}
-
-		RE::FormID id = a_actor->formID;
-		std::string actorName = a_actor->GetName();
-		std::uint32_t bipedSlot = 0;
-		auto condition = ConditionManager::GetSingleton().GetCondition(a_actor);
-		if (!condition.Enable)
-			return true;
-		float detailStrength = condition.DetailStrength;
-		if (Papyrus::detailStrengthMap.find(id) != Papyrus::detailStrengthMap.end())
-			detailStrength = Papyrus::detailStrengthMap[id];
-		auto gender = GetSex(a_actor);
-		for (auto& geo : a_srcGeometies)
-		{
-			using State = RE::BSGeometry::States;
-			using Feature = RE::BSShaderMaterial::Feature;
-			if (!geo || geo->name.empty())
-				continue;
-			if (!geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
-				continue;
-			auto effect = geo->GetGeometryRuntimeData().properties[State::kEffect].get();
-			auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
-			if (!lightingShader || !lightingShader->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
-				continue;
-			RE::BSLightingShaderMaterialBase* material = skyrim_cast<RE::BSLightingShaderMaterialBase*>(lightingShader->material);
-			if (!material || !material->normalTexture || !material->textureSet)
-				continue;
-			std::string texturePath = GetTexturePath(material->textureSet.get(), RE::BSTextureSet::Texture::kNormal);
-			if (texturePath.empty())
-				continue;
-			if (!geo->GetGeometryRuntimeData().skinInstance)
-				continue;
-
-			std::uint32_t slot = 0;
-			auto skinInstance = geo->GetGeometryRuntimeData().skinInstance.get();
-			auto dismember = netimmerse_cast<RE::BSDismemberSkinInstance*>(skinInstance);
-			if (dismember)
-			{
-				if (dismember->GetRuntimeData().partitions[0].slot < 30 || dismember->GetRuntimeData().partitions[0].slot >= RE::BIPED_OBJECT::kEditorTotal + 30)
-				{
-					if (auto dynamicTri = geo->AsDynamicTriShape(); dynamicTri) { //maybe head
-						slot = RE::BIPED_OBJECT::kHead;
-					}
-					else //unknown slot
-						continue;
-				}
-				else
-					slot = dismember->GetRuntimeData().partitions[0].slot - 30;
-			}
-			else //maybe it's just skinInstance in headpart
-			{
-				slot = RE::BIPED_OBJECT::kHead;
-			}
-
-			if (!condition.HeadEnable && slot == RE::BIPED_OBJECT::kHead)
-				continue;
+			newGeometryData.CopyGeometryData(geo);
 
 			if (a_updateTargets.find(geo) != a_updateTargets.end())
 			{
-				bipedSlot |= 1 << slot;
-
-				bakeQueueLock.lock_shared();
-				bakeQueue[id][geo].geometryName = geo->name.c_str();
-				bakeQueue[id][geo].textureName = GetTextureName(a_actor, slot, geo);
-				bakeQueue[id][geo].srcTexturePath = texturePath;
-				bakeQueue[id][geo].detailTexturePath = GetDetailNormalMapPath(texturePath, condition.ProxyDetailTextureFolder);
-				bakeQueue[id][geo].overlayTexturePath = GetOverlayNormalMapPath(texturePath, condition.ProxyOverlayTextureFolder);
-				bakeQueue[id][geo].maskTexturePath = GetMaskNormalMapPath(texturePath, condition.ProxyMaskTextureFolder);
-				bakeQueue[id][geo].detailStrength = detailStrength;
-				bakeQueueLock.unlock_shared();
+				newBakeSet[geo].geometryName = geo->name.c_str();
+				newBakeSet[geo].textureName = GetTextureName(a_actor, slot, geo);
+				newBakeSet[geo].srcTexturePath = texturePath;
+				newBakeSet[geo].detailTexturePath = GetDetailNormalMapPath(texturePath, condition.ProxyDetailTextureFolder);
+				newBakeSet[geo].overlayTexturePath = GetOverlayNormalMapPath(texturePath, condition.ProxyOverlayTextureFolder);
+				newBakeSet[geo].maskTexturePath = GetMaskNormalMapPath(texturePath, condition.ProxyMaskTextureFolder);
+				newBakeSet[geo].detailStrength = detailStrength;
 				logger::debug("{:x}::{} : {} - queue added on bake object normalmap", id, actorName, geo->name.c_str());
 
 				auto found = lastNormalMap[id].find(GeometryData::GetVertexCount(geo));
 				if (found != lastNormalMap[id].end())
-				{
 					Shader::TextureLoadManager::CreateSourceTexture(found->second, material->normalTexture);
-				}
 
 				ActorVertexHasher::GetSingleton().Register(a_actor, RE::BIPED_OBJECT(slot));
 
 				if (overrideInterfaceAPI->OverrideInterfaceload())
 				{
 					if (Config::GetSingleton().GetRemoveSkinOverrides())
-						overrideInterfaceAPI->RemoveSkinOverride(a_actor, gender == RE::SEX::kFemale, false, bipedSlot, OverrideInterfaceAPI::Key::ShaderTexture, RE::BGSTextureSet::Textures::kNormal);
+						overrideInterfaceAPI->RemoveSkinOverride(a_actor, gender == RE::SEX::kFemale, false, 1 << slot, OverrideInterfaceAPI::Key::ShaderTexture, RE::BGSTextureSet::Textures::kNormal);
 					if (Config::GetSingleton().GetRemoveNodeOverrides())
 						overrideInterfaceAPI->RemoveNodeOverride(a_actor, gender == RE::SEX::kFemale, geo->name, OverrideInterfaceAPI::Key::ShaderTexture, RE::BGSTextureSet::Textures::kNormal);
 					logger::info("{:x}::{} : {} - remove skin/node override for normalmap update", id, actorName, geo->name.c_str());
 				}
 			}
 		}
+		QUpdateNormalMapImpl(a_actor->formID, actorName, newGeometryData, newBakeSet);
 		return true;
 	}
-	void TaskManager::QUpdateNormalMap(RE::FormID a_actorID, std::string a_actorName, GeometryData& a_geoData, BakeSet& a_bakeSet)
+	void TaskManager::QUpdateNormalMapImpl(RE::FormID a_actorID, std::string a_actorName, GeometryData& a_geoData, BakeSet& a_bakeSet)
 	{
+		isBaking[a_actorID] = true;
 		actorThreads->submitAsync([this, a_actorID, a_actorName, a_geoData, a_bakeSet]() {
 			auto geoData = a_geoData;
 			auto bakeSet = a_bakeSet;
