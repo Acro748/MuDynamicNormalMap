@@ -138,7 +138,8 @@ namespace Mus {
 							}
 							hashmap.second->hashValue = hash;
 						}
-						TaskManager::GetSingleton().QUpdateNormalMap(actor, bipedSlot);
+						if (bipedSlot > 0)
+							TaskManager::GetSingleton().QUpdateNormalMap(actor, bipedSlot);
 					}));
 				}
 				for (auto& process : processes)

@@ -158,6 +158,7 @@ namespace Mus {
 			std::int8_t IsCompressFormat(DXGI_FORMAT format); // -1 non compress, 1 cpu compress, 2 gpu compress
 
 			void CreateNiTexture(std::string name, std::string texturePath, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTex, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& dstSRV, RE::NiPointer<RE::NiSourceTexture>& output, bool& texCreated);
+			void ReleaseNiTexture(std::string name);
 		private:
 			bool ConvertD3D11(DirectX::ScratchImage& image, Microsoft::WRL::ComPtr<ID3D11Resource>& output);
 			bool UpdateNiTexture(std::string filePath);

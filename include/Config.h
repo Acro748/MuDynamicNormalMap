@@ -114,12 +114,18 @@ namespace Mus {
         [[nodiscard]] inline float GetDetailStrength() const noexcept {
             return DetailStrength;
         }
+
         [[nodiscard]] inline std::uint32_t GetTextureMargin() const noexcept {
             return TextureMargin;
         }
         [[nodiscard]] inline bool GetTextureMarginGPU() const noexcept {
             return TextureMarginGPU;
         }
+
+        [[nodiscard]] inline std::uint32_t GetBlueRadius() const noexcept {
+            return BlueRadius;
+        }
+
         [[nodiscard]] inline bool GetTangentZCorrection() const noexcept {
             return TangentZCorrection;
         }
@@ -130,6 +136,8 @@ namespace Mus {
         [[nodiscard]] inline bool GetRemoveNodeOverrides() const noexcept {
             return RemoveNodeOverrides;
 		}
+
+
 
         inline void SetTaskQMax(std::uint8_t newTaskQMax) {
             TaskQMax = newTaskQMax;
@@ -189,9 +197,11 @@ namespace Mus {
         float VertexSmoothStrength = 0.5f;
         float DetailStrength = 0.5f;
 
-        std::uint32_t TextureMargin = 2;
+        std::uint32_t TextureMargin = 8;
         bool TextureMarginGPU = true;
         bool TangentZCorrection = true;
+
+        std::uint32_t BlueRadius = 8;
 
         bool RemoveSkinOverrides = true;
         bool RemoveNodeOverrides = true;

@@ -612,11 +612,13 @@ namespace Mus {
 
     inline bool IsNumber(std::string str)
     {
-        for (auto s : str)
-        {
-            if (!std::isdigit(s))
-                return false;
+        try {
+            std::int32_t n = std::stoi(str);
+            return true;
         }
+        catch (...) {
+            return false;
+		}
         return true;
     }
     inline std::int32_t GetInt(std::string str)
