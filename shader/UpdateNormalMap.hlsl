@@ -16,12 +16,12 @@ cbuffer ConstBuffer : register(b0)
     uint padding2;
 };
 
-StructuredBuffer<float3> vertices   : register(t0); // a_data.vertices
-StructuredBuffer<float2> uvs        : register(t1); // a_data.uvs
-StructuredBuffer<float3> normals    : register(t2); // a_data.normals
-StructuredBuffer<float3> tangent    : register(t3); // a_data.tangent
-StructuredBuffer<float3> bitangent  : register(t4); // a_data.bitangent
-StructuredBuffer<uint>   indices    : register(t5); // a_data.indices
+StructuredBuffer<float3> vertices   : register(t0); // a_data->vertices
+StructuredBuffer<float2> uvs        : register(t1); // a_data->uvs
+StructuredBuffer<float3> normals    : register(t2); // a_data->normals
+StructuredBuffer<float3> tangent    : register(t3); // a_data->tangent
+StructuredBuffer<float3> bitangent  : register(t4); // a_data->bitangent
+StructuredBuffer<uint>   indices    : register(t5); // a_data->indices
 
 Texture2D<float4> srcTexture        : register(t6);
 Texture2D<float4> detailTexture     : register(t7);

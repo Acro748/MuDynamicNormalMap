@@ -121,4 +121,5 @@ namespace Mus {
 		};
 		concurrency::concurrent_vector<FaceTangent> faceTangents;
 	};
+	typedef std::shared_ptr<GeometryData> GeometryDataPtr;
 }

@@ -23,6 +23,8 @@ namespace Mus {
 			IsActorBase,
 			IsActor,
 			IsRace,
+			IsInFaction,
+			IsFactionRankGreaterOrEquel,
 			HasHeadPart,
 			HasHeadPartEditorID,
 
@@ -50,6 +52,7 @@ namespace Mus {
 			std::vector<ConditionItemOr> AND;
 			bool Enable = true;
 			bool HeadEnable = true;
+			bool DynamicTriShapeAsHead = true;
 			float DetailStrength = 0.5f;
 			std::vector<std::string> ProxyDetailTextureFolder;
 			std::vector<std::string> ProxyOverlayTextureFolder;
@@ -151,6 +154,25 @@ namespace Mus {
 			bool Condition(RE::Actor* acto) override;
 		private:
 			RE::TESForm* form = nullptr;
+		};
+
+		class IsInFaction : public ConditionBase {
+		public:
+			IsInFaction() = default;
+			void Initial(ConditionManager::ConditionItem& item) override;
+			bool Condition(RE::Actor* acto) override;
+		private:
+			RE::TESForm* form = nullptr;
+		};
+
+		class IsFactionRankGreaterOrEquel : public ConditionBase {
+		public:
+			IsFactionRankGreaterOrEquel() = default;
+			void Initial(ConditionManager::ConditionItem& item) override;
+			bool Condition(RE::Actor* acto) override;
+		private:
+			RE::TESForm* form = nullptr;
+			std::int32_t rank = 0;
 		};
 
 		class HasHeadPart : public ConditionBase {

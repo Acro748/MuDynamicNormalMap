@@ -163,6 +163,12 @@ namespace Mus {
 		case ConditionType::IsRace:
 			item.conditionFunction = std::make_shared<ConditionFragment::IsRace>();
 			break;
+		case ConditionType::IsInFaction:
+			item.conditionFunction = std::make_shared<ConditionFragment::IsInFaction>();
+			break;
+		case ConditionType::IsFactionRankGreaterOrEquel:
+			item.conditionFunction = std::make_shared<ConditionFragment::IsFactionRankGreaterOrEquel>();
+			break;
 		case ConditionType::HasHeadPart:
 			item.conditionFunction = std::make_shared<ConditionFragment::HasHeadPart>();
 			break;
@@ -256,6 +262,35 @@ namespace Mus {
 				return false;
 			RE::TESRace* race = actor->GetRace();
 			return race && race->formID == form->formID;
+		}
+
+		void IsInFaction::Initial(ConditionManager::ConditionItem& item)
+		{
+			form = GetFormByID(item.id, item.pluginName);
+		}
+		bool IsInFaction::Condition(RE::Actor* actor)
+		{
+			if (!actor || !form)
+				return false;
+			RE::TESFaction* faction = skyrim_cast<RE::TESFaction*>(form);
+			if (!faction)
+				return false;
+			return actor->IsInFaction(faction);
+		}
+
+		void IsFactionRankGreaterOrEquel::Initial(ConditionManager::ConditionItem& item)
+		{
+			form = GetFormByID(item.id, item.pluginName);
+			rank = item.arg.empty() ? 0 : GetUInt(item.arg);
+		}
+		bool IsFactionRankGreaterOrEquel::Condition(RE::Actor* actor)
+		{
+			if (!actor || !form)
+				return false;
+			RE::TESFaction* faction = skyrim_cast<RE::TESFaction*>(form);
+			if (!faction)
+				return false;
+			return actor->IsInFaction(faction) && actor->GetFactionRank(faction, isPlayer(actor->formID)) >= rank;
 		}
 
 		void HasHeadPart::Initial(ConditionManager::ConditionItem& item)

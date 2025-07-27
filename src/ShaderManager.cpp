@@ -517,8 +517,10 @@ namespace Mus {
 				newTexture->rendererTexture->texture->AddRef();
 				newTexture->rendererTexture->resourceView = dstSRV.Get();
 				newTexture->rendererTexture->resourceView->AddRef();
-				oldTexture->Release();
-				oldResource->Release();
+				if (oldTexture)
+					oldTexture->Release();
+				if (oldResource)
+					oldResource->Release();
 				texCreated = false;
 			}
 			else if (result == 1)
@@ -536,6 +538,25 @@ namespace Mus {
 			return;
 		}
 
+		void TextureLoadManager::ReleaseNiTexture(std::string name)
+		{
+			auto found = niTextures.find(name);
+			if (found != niTextures.end())
+			{
+				if (found->second)
+				{
+					auto oldTexture = found->second->rendererTexture->texture;
+					auto oldResource = found->second->rendererTexture->resourceView;
+					found->second->rendererTexture->texture = nullptr;
+					found->second->rendererTexture->resourceView = nullptr;
+					if (oldTexture)
+						oldTexture->Release();
+					if (oldResource)
+						oldResource->Release();
+				}
+			}
+		}
+		
 		bool TextureLoadManager::GetTexture2D(std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, UINT newWidth, UINT newHeight, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
 		{
 			filePath = stringRemoveStarts(filePath, "Data\\");

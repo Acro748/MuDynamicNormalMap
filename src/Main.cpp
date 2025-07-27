@@ -237,6 +237,9 @@ namespace {
             Mus::ActorVertexHasher::GetSingleton().Init();
         }
 
+        Mus::g_playerCellChangeEventDispatcher.addListener(&Mus::ObjectNormalMapUpdater::GetSingleton());
+        Mus::g_playerCellChangeEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
+
 		Mus::g_armorAttachEventEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_facegenNiNodeEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_actorChangeHeadPartEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());

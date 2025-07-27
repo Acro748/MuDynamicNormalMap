@@ -6,6 +6,7 @@ namespace Mus {
 		public IEventListener<FacegenNiNodeEvent>,
 		public IEventListener<ActorChangeHeadPartEvent>,
 		public IEventListener<ArmorAttachEvent>,
+		public IEventListener<PlayerCellChangeEvent>,
 		public RE::BSTEventSink<SKSE::NiNodeUpdateEvent>, 
 		public RE::BSTEventSink<RE::MenuOpenCloseEvent>,
 		public RE::BSTEventSink<RE::InputEvent*> {
@@ -64,9 +65,9 @@ namespace Mus {
 		};
 
 		void RunDelayTask();
-		void RunBakeQueue();
+		void RunUpdateQueue();
 		void RegisterDelayTask(std::function<void()> func);
-		void RegisterDelayTask(std::uint8_t delayTick, std::function<void()> func);
+		void RegisterDelayTask(std::int16_t delayTick, std::function<void()> func);
 		std::string GetDelayTaskID(RE::FormID refrID, std::uint32_t bipedSlot);
 
 		std::unordered_set<RE::BSGeometry*> GetGeometries(RE::Actor* a_actor, std::uint32_t bipedSlot);
@@ -76,7 +77,7 @@ namespace Mus {
 		bool QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_updateTargets);
 
 		bool QUpdateNormalMapImpl(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::unordered_set<RE::BSGeometry*> a_updateTargets);
-		void QUpdateNormalMapImpl(RE::FormID a_actorID, std::string a_actorName, GeometryData& a_geoData, BakeSet& a_bakeSet);
+		void QUpdateNormalMapImpl(RE::FormID a_actorID, std::string a_actorName, GeometryDataPtr a_geoData, UpdateSet a_updateSet);
 
 		std::int64_t GenerateUniqueID();
 	protected:
@@ -84,6 +85,7 @@ namespace Mus {
 		void onEvent(const FacegenNiNodeEvent& e) override;
 		void onEvent(const ActorChangeHeadPartEvent& e) override;
 		void onEvent(const ArmorAttachEvent& e) override;
+		void onEvent(const PlayerCellChangeEvent& e) override;
 		EventResult ProcessEvent(const SKSE::NiNodeUpdateEvent* evn, RE::BSTEventSource<SKSE::NiNodeUpdateEvent>*) override;
 		EventResult ProcessEvent(RE::InputEvent* const* evn, RE::BSTEventSource<RE::InputEvent*>*) override;
 		EventResult ProcessEvent(const RE::MenuOpenCloseEvent* evn, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override;
@@ -105,10 +107,10 @@ namespace Mus {
 		std::string GetMaskNormalMapPath(std::string a_normalMapPath);
 		std::string GetMaskNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder);
 
-		concurrency::concurrent_unordered_map<RE::FormID, std::uint32_t> bakeSlotQueue;
-		concurrency::concurrent_unordered_map<RE::FormID, concurrency::concurrent_vector<RE::BSGeometry*>> bakeGeometryQueue;
-		std::shared_mutex bakeQueueLock;
-		concurrency::concurrent_unordered_map<RE::FormID, bool> isBaking;
-		concurrency::concurrent_unordered_map<RE::FormID, concurrency::concurrent_unordered_map<std::uint32_t, std::string>> lastNormalMap; // ActorID, VertexCount, TextureName>
+		concurrency::concurrent_unordered_map<RE::FormID, std::uint32_t> updateSlotQueue;
+		concurrency::concurrent_unordered_map<RE::FormID, concurrency::concurrent_vector<RE::BSGeometry*>> updateGeometryQueue;
+		std::shared_mutex updateQueueLock;
+		concurrency::concurrent_unordered_map<RE::FormID, bool> isUpdating;
+		concurrency::concurrent_unordered_map<RE::FormID, concurrency::concurrent_unordered_map<Pair3232Key, std::string, Pair3232Hash>> lastNormalMap; // ActorID, VertexCount, TextureName>
 	};
 }

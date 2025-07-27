@@ -218,6 +218,10 @@ namespace Mus {
 				{
                     TextureMarginGPU = GetBoolValue(variableValue);
 				}
+                else if (variableName == "BlueRadius")
+                {
+                    BlueRadius = GetUIntValue(variableValue);
+                }
 				else if (variableName == "TangentZCorrection")
 				{
                     TangentZCorrection = GetBoolValue(variableValue);
@@ -337,6 +341,11 @@ namespace Mus {
                     else if (variableName == "HeadEnable")
                     {
                         condition.HeadEnable = GetBoolValue(variableValue);
+                        isNormalConditionFile = true;
+                    }
+                    else if (variableName == "DynamicTriShapeAsHead")
+                    {
+                        condition.DynamicTriShapeAsHead = GetBoolValue(variableValue);
                         isNormalConditionFile = true;
                     }
                     else if (variableName == "DetailStrength")

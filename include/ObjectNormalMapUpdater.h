@@ -2,7 +2,8 @@
 
 namespace Mus {
 	class ObjectNormalMapUpdater :
-		public IEventListener<FrameEvent> {
+		public IEventListener<FrameEvent>,
+		public IEventListener<PlayerCellChangeEvent> {
 	public:
 		ObjectNormalMapUpdater() {};
 		~ObjectNormalMapUpdater() {};
@@ -13,25 +14,28 @@ namespace Mus {
 		}
 
 		void Init();
-		bool CreateGeometryResourceData(RE::FormID a_actorID, GeometryData& a_data);
+		bool CreateGeometryResourceData(RE::FormID a_actorID, GeometryDataPtr a_data);
 
 		struct NormalMapResult {
+			std::uint32_t slot;
 			RE::BSGeometry* geometry;
 			std::string geoName;
 			std::string textureName;
-			std::size_t vertexCount;
+			std::uint32_t vertexCount;
 			RE::NiPointer<RE::NiSourceTexture> normalmap;
 		};
-		typedef concurrency::concurrent_vector<NormalMapResult> BakeResult;
-		BakeResult UpdateObjectNormalMap(RE::FormID a_actorID, GeometryData& a_data, BakeSet& a_bakeSet);
-		BakeResult UpdateObjectNormalMapGPU(RE::FormID a_actorID, GeometryData& a_data, BakeSet& a_bakeSet);
+		typedef concurrency::concurrent_vector<NormalMapResult> UpdateResult;
+		UpdateResult UpdateObjectNormalMap(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet a_updateSet);
+		UpdateResult UpdateObjectNormalMapGPU(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet a_updateSet);
 
 	protected:
 		void onEvent(const FrameEvent& e) override;
+		void onEvent(const PlayerCellChangeEvent& e) override;
 
 	private:
 		struct TextureResourceData {
 			std::string textureName;
+			std::clock_t time = -1;
 
 			Microsoft::WRL::ComPtr<ID3D11Query> query = nullptr;
 			bool GetQuery(ID3D11Device* device, ID3D11DeviceContext* context) {
@@ -99,7 +103,7 @@ namespace Mus {
 		bool IsValidPixel(const std::uint32_t a_pixel);
 		bool BleedTexture(std::uint8_t* pData, UINT width, UINT height, UINT RowPitch, std::uint32_t margin);
 		bool BleedTextureGPU(TextureResourceData& resourceData, std::uint32_t margin, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut);
-		bool TexturePostProcessingGPU(TextureResourceData& resourceData, float threshold, float blendStrength, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut);
+		bool TexturePostProcessingGPU(TextureResourceData& resourceData, std::uint32_t blurRadius, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> maskSrv, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut);
 
 		void GPUPerformanceLog(std::string funcStr, bool isEnd, bool isAverage = true, std::uint32_t args = 0);
 		void WaitForGPU();
@@ -111,6 +115,8 @@ namespace Mus {
 		Microsoft::WRL::ComPtr<ID3D11SamplerState> samplerState = nullptr;
 
 		struct GeometryResourceData {
+			std::clock_t time = -1;
+
 			Microsoft::WRL::ComPtr<ID3D11Query> query = nullptr;
 			bool GetQuery(ID3D11Device* device, ID3D11DeviceContext* context) {
 				if (!device || !context)
