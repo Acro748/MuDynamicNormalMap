@@ -30,6 +30,19 @@ namespace MDNM {
 		// Not saved in save file
 		// If you want to continue the same value in the save, you need to call this again after loading the save
 		virtual void SetDetailStrength(RE::Actor* a_actor, float a_strength) = 0;
+
+		// Not saved in save file
+		// If you want to continue the same value in the save, you need to call this again after loading the save
+		enum normalmapTypes {
+			detail,
+			overlay,
+			mask,
+			max
+		};
+		// type == normalmapTypes
+		// 1 is success, 0 is invalid parameters, -1 is no exist file
+		// You must use the UpdateNormalmap to reflect immediate changes
+		virtual int SetNormalMap(RE::Actor* a_actor, const char* a_filePath, int type) = 0;
 	};
 
 	class InterfaceManager {

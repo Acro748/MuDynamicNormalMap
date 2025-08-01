@@ -382,10 +382,18 @@ namespace Mus {
 				newUpdateSet[geo].geometryName = geo->name.c_str();
 				newUpdateSet[geo].textureName = GetTextureName(a_actor, slot, texturePath);
 				newUpdateSet[geo].srcTexturePath = texturePath;
-				newUpdateSet[geo].detailTexturePath = GetDetailNormalMapPath(texturePath, condition.ProxyDetailTextureFolder);
-				newUpdateSet[geo].overlayTexturePath = GetOverlayNormalMapPath(texturePath, condition.ProxyOverlayTextureFolder);
-				newUpdateSet[geo].maskTexturePath = GetMaskNormalMapPath(texturePath, condition.ProxyMaskTextureFolder);
+
+				std::string saveDetailTexturePath = GetDetailNormalMapPath(a_actor);
+				newUpdateSet[geo].detailTexturePath = saveDetailTexturePath.empty() ? GetDetailNormalMapPath(texturePath, condition.ProxyDetailTextureFolder) : saveDetailTexturePath;
+
+				std::string saveOverlayTexturePath = GetOverlayNormalMapPath(a_actor);
+				newUpdateSet[geo].overlayTexturePath = saveOverlayTexturePath.empty() ? GetOverlayNormalMapPath(texturePath, condition.ProxyOverlayTextureFolder) : saveOverlayTexturePath;
+
+				std::string saveMaskTexturePath = GetMaskNormalMapPath(a_actor);
+				newUpdateSet[geo].maskTexturePath = saveMaskTexturePath.empty() ? GetMaskNormalMapPath(texturePath, condition.ProxyMaskTextureFolder) : saveMaskTexturePath;
+
 				newUpdateSet[geo].detailStrength = detailStrength;
+
 				logger::debug("{:x}::{} : {} - queue added on update object normalmap", id, actorName, geo->name.c_str());
 
 				lastNormalMapLock.lock_shared();
@@ -529,6 +537,15 @@ namespace Mus {
 		}
 		return "";
 	}
+	std::string TaskManager::GetDetailNormalMapPath(RE::Actor* a_actor)
+	{
+		if (!a_actor)
+			return "";
+		auto found = Papyrus::normalmaps[Papyrus::normalmapTypes::detail].find(a_actor->formID);
+		if (found == Papyrus::normalmaps[Papyrus::normalmapTypes::detail].end())
+			return "";
+		return found->second;
+	}
 
 	std::string TaskManager::GetOverlayNormalMapPath(std::string a_normalMapPath)
 	{
@@ -577,6 +594,15 @@ namespace Mus {
 		}
 		return "";
 	}
+	std::string TaskManager::GetOverlayNormalMapPath(RE::Actor* a_actor)
+	{
+		if (!a_actor)
+			return "";
+		auto found = Papyrus::normalmaps[Papyrus::normalmapTypes::overlay].find(a_actor->formID);
+		if (found == Papyrus::normalmaps[Papyrus::normalmapTypes::overlay].end())
+			return "";
+		return found->second;
+	}
 
 	std::string TaskManager::GetMaskNormalMapPath(std::string a_normalMapPath)
 	{
@@ -624,6 +650,15 @@ namespace Mus {
 				return result;
 		}
 		return "";
+	}
+	std::string TaskManager::GetMaskNormalMapPath(RE::Actor* a_actor)
+	{
+		if (!a_actor)
+			return "";
+		auto found = Papyrus::normalmaps[Papyrus::normalmapTypes::mask].find(a_actor->formID);
+		if (found == Papyrus::normalmaps[Papyrus::normalmapTypes::mask].end())
+			return "";
+		return found->second;
 	}
 
 	std::int64_t TaskManager::GenerateUniqueID()

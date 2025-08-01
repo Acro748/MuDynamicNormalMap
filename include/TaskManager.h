@@ -102,10 +102,13 @@ namespace Mus {
 		
 		std::string GetDetailNormalMapPath(std::string a_normalMapPath);
 		std::string GetDetailNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder);
+		std::string GetDetailNormalMapPath(RE::Actor* a_actor);
 		std::string GetOverlayNormalMapPath(std::string a_normalMapPath);
 		std::string GetOverlayNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder);
+		std::string GetOverlayNormalMapPath(RE::Actor* a_actor);
 		std::string GetMaskNormalMapPath(std::string a_normalMapPath);
 		std::string GetMaskNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder);
+		std::string GetMaskNormalMapPath(RE::Actor* a_actor);
 
 		concurrency::concurrent_unordered_map<RE::FormID, std::uint32_t> updateSlotQueue;
 		std::shared_mutex updateQueueLock;
