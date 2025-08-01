@@ -118,6 +118,7 @@ namespace Mus {
 		e.gamePaused = main ? main->freezeTime : false;
 		const auto menu = RE::UI::GetSingleton();
 		IsGamePaused.store(((e.gamePaused || (menu && menu->numPausesGame > 0)) && !IsRaceSexMenu.load()) || IsMainMenu.load());
+		currentTime = std::clock();
 		g_frameEventDispatcher.dispatch(e);
 	}
 	void hookEngineTrampoline(SKSE::Trampoline& trampoline)

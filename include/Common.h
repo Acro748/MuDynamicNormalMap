@@ -22,10 +22,8 @@ namespace Mus {
 
 	struct TextureInfo {
 		RE::FormID actorID;
-		RE::FormID armorID;
 		std::uint32_t bipedSlot;
-		std::string geoName;
-		std::uint32_t vertexCount;
+		std::string texturePath;
 	};
 
 	struct Pair3232Key {

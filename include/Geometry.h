@@ -48,7 +48,6 @@ namespace Mus {
 		bool GetGeometryInfo(RE::BSGeometry* a_geo, GeometryInfo& info);
 		bool CopyGeometryData(RE::BSGeometry* a_geo);
 		void GetGeometryData();
-		bool GetGeometryData(RE::BSGeometry* a_geo);
 		void UpdateMap();
 		void RecalculateNormals(float a_smooth);
 		void Subdivision(std::uint32_t a_subCount);
@@ -62,7 +61,11 @@ namespace Mus {
 		std::vector<DirectX::XMFLOAT3> bitangents;
 		std::vector<std::uint32_t> indices;
 
-		concurrency::concurrent_vector<std::pair<RE::BSGeometry*, ObjectInfo>> geometries; //geometry name, ObjectInfo
+		struct GeometriesInfo {
+			RE::BSGeometry* geometry; //for ptr compare only 
+			ObjectInfo objInfo;
+		};
+		concurrency::concurrent_vector<GeometriesInfo> geometries; //geometry name, ObjectInfo
 		std::uint32_t mainGeometryIndex = 0;
 
 		struct VertexKey {

@@ -30,9 +30,10 @@ namespace Mus {
 			std::size_t GetNewHash() { return XXH64_digest(state); }
 		};
 		typedef std::shared_ptr<Hash> HashPtr;
-		typedef concurrency::concurrent_unordered_map<RE::BIPED_OBJECT, HashPtr> GeometryHash;
+		typedef concurrency::concurrent_unordered_map<std::uint32_t, HashPtr> GeometryHash; //RE::BIPED_OBJECT, HashPtr
 
-		bool Register(RE::Actor* a_actor, RE::BIPED_OBJECT bipedSlot);
+		bool Register(RE::Actor* a_actor, std::uint32_t bipedSlot);
+		bool InitialHash(RE::Actor* a_actor, std::uint32_t bipedSlot);
 	protected:
 		void onEvent(const FrameEvent& e) override; 
 		void onEvent(const FacegenNiNodeEvent& e) override;
@@ -44,7 +45,6 @@ namespace Mus {
 		void CheckingActorHash();
 		bool GetHash(RE::Actor* a_actor, GeometryHash hash);
 
-		std::clock_t beforeDetectTickMS = 0;
 		std::atomic<bool> isDetecting = false;
 
 		concurrency::concurrent_unordered_map<RE::FormID, bool> BlockActors;

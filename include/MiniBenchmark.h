@@ -62,7 +62,7 @@ namespace Mus {
             return -1.0f;
         }
 
-        Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D;
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D_1, texture2D_2;
         D3D11_TEXTURE2D_DESC desc = {};
         desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
         desc.Usage = D3D11_USAGE_DEFAULT;
@@ -74,7 +74,13 @@ namespace Mus {
         desc.Width = 4096;
         desc.Height = 4096;
         desc.SampleDesc.Count = 1;
-        hr = device->CreateTexture2D(&desc, nullptr, &texture2D);
+        hr = device->CreateTexture2D(&desc, nullptr, &texture2D_1);
+        if (FAILED(hr))
+        {
+            logger::error("{} : Failed to create texture 2d ({})", __func__, hr);
+            return -1.0f;
+        }
+        hr = device->CreateTexture2D(&desc, nullptr, &texture2D_2);
         if (FAILED(hr))
         {
             logger::error("{} : Failed to create texture 2d ({})", __func__, hr);
@@ -86,7 +92,7 @@ namespace Mus {
         uavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
         uavDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
         uavDesc.Texture2D.MipSlice = 0;
-        hr = device->CreateUnorderedAccessView(texture2D.Get(), &uavDesc, &textureUAV);
+        hr = device->CreateUnorderedAccessView(texture2D_1.Get(), &uavDesc, &textureUAV);
         if (FAILED(hr))
         {
             logger::error("{} : Failed to create unordered access view ({})", __func__, hr);
@@ -164,16 +170,22 @@ namespace Mus {
         context->CSSetUnorderedAccessViews(0, 1, textureUAV.GetAddressOf(), nullptr);
         context->Dispatch(dispatch.x, dispatch.y, 1);
         sb.Revert(context);
+        context->CopyResource(texture2D_2.Get(), texture2D_1.Get());
+        context->CopyResource(texture2D_1.Get(), texture2D_2.Get());
+        context->CopyResource(texture2D_2.Get(), texture2D_1.Get());
+        context->CopyResource(texture2D_1.Get(), texture2D_2.Get());
         context->End(endQuery.Get());
         context->End(disjointQuery.Get());
         Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 
         while (true) {
             Shader::ShaderManager::GetSingleton().ShaderContextLock();
-            bool isDoing = context->GetData(disjointQuery.Get(), nullptr, 0, 0) == S_FALSE;
+            hr = context->GetData(disjointQuery.Get(), nullptr, 0, 0);
             Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-            if (!isDoing)
+            if (hr == S_OK)
 				break;
+            if (FAILED(hr))
+                break;
         }
 
         D3D11_QUERY_DATA_TIMESTAMP_DISJOINT disjointData = {};
@@ -190,7 +202,8 @@ namespace Mus {
             Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 
             double timeMS = (endTime - startTime) / double(disjointData.Frequency) * 1000000.0;
-            return 50000.0 / timeMS;
+            //logger::info("{} timeMS", timeMS);
+            return 1000000.0 / timeMS;
         }
         return -1.0f;
     }

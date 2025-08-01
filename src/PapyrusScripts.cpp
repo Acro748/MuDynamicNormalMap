@@ -40,11 +40,23 @@ namespace Mus {
 			detailStrengthMap[a_actor->formID] = strength;
 		}
 
+		concurrency::concurrent_unordered_map<RE::FormID, std::string> normalmaps[normalmapTypes::max];
+		int SetNormalMap(RE::StaticFunctionTag*, RE::Actor* a_actor, std::string filePath, int type)
+		{
+			if (!a_actor || filePath.empty() || type < 0 || type >= normalmapTypes::max)
+				return 0;
+			if (!IsExistFile(filePath))
+				return -1;
+			normalmaps[type][a_actor->formID] = filePath;
+			return 1;
+		}
+
         bool RegisterPapyrusFunctions(RE::BSScript::IVirtualMachine* vm) {
             vm->RegisterFunction("GetVersion", ScriptFileName, GetVersion);
             vm->RegisterFunction("GetArmorSlotBit", ScriptFileName, GetArmorSlotBit);
             vm->RegisterFunction("QUpdateNormalmap", ScriptFileName, QUpdateNormalmap);
             vm->RegisterFunction("SetDetailStrength", ScriptFileName, SetDetailStrength);
+            vm->RegisterFunction("SetNormalMap", ScriptFileName, SetNormalMap);
             
             return true;
         }

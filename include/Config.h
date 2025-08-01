@@ -29,111 +29,138 @@ namespace Mus {
         [[nodiscard]] inline spdlog::level::level_enum GetFlushLevel() const noexcept {
             return flushLevel;
         }
+        [[nodiscard]] inline auto GetDebugTexture() const noexcept {
+            return DebugTexture;
+        }
+        [[nodiscard]] inline auto GetPerformanceLog() const noexcept {
+            return PerformanceLog;
+        }
 
         //General
-        [[nodiscard]] inline bool GetPlayerEnable() const noexcept {
+        [[nodiscard]] inline auto GetPlayerEnable() const noexcept {
             return PlayerEnable;
         }
-        [[nodiscard]] inline bool GetNPCEnable() const noexcept {
+        [[nodiscard]] inline auto GetNPCEnable() const noexcept {
             return NPCEnable;
         }
-        [[nodiscard]] inline bool GetMaleEnable() const noexcept {
+        [[nodiscard]] inline auto GetMaleEnable() const noexcept {
             return MaleEnable;
         }
-        [[nodiscard]] inline bool GetFemaleEnable() const noexcept {
+        [[nodiscard]] inline auto GetFemaleEnable() const noexcept {
             return FemaleEnable;
         }
-        [[nodiscard]] inline bool GetHeadEnable() const noexcept {
+        [[nodiscard]] inline auto GetHeadEnable() const noexcept {
             return HeadEnable;
         }
 
-        [[nodiscard]] inline bool GetRealtimeDetect() const noexcept {
+        [[nodiscard]] inline auto GetRealtimeDetect() const noexcept {
             return RealtimeDetect;
         }
-        [[nodiscard]] inline std::uint8_t GetRealtimeDetectHead() const noexcept {
+        [[nodiscard]] inline auto GetRealtimeDetectHead() const noexcept {
             return RealtimeDetectHead;
         }
-        [[nodiscard]] inline bool GetRealtimeDetectOnBackGround() const noexcept {
+        [[nodiscard]] inline auto GetRealtimeDetectOnBackGround() const noexcept {
             return RealtimeDetectOnBackGround;
         }
-        [[nodiscard]] inline float GetDetectDistance() const noexcept {
+        [[nodiscard]] inline auto GetDetectDistance() const noexcept {
             return DetectDistance;
         }
-        [[nodiscard]] inline std::clock_t GetDetectTickMS() const noexcept {
+        [[nodiscard]] inline auto GetDetectTickMS() const noexcept {
             return DetectTickMS;
         }
 
-        [[nodiscard]] inline bool GetGPUEnable() const noexcept {
+        [[nodiscard]] inline auto GetUpdateDistance() const noexcept {
+            return UpdateDistance;
+        }
+
+        [[nodiscard]] inline auto GetGPUEnable() const noexcept {
             return GPUEnable;
         }
-        [[nodiscard]] inline unsigned long GetPriorityCores() const noexcept {
+        [[nodiscard]] inline auto GetWaitForRendererTickMS() const noexcept {
+            return WaitForRendererTickMS;
+        }
+
+        [[nodiscard]] inline auto GetPriorityCores() const noexcept {
             return PriorityCoreMask;
         }
-        [[nodiscard]] inline unsigned long GetPriorityCoreCount() const noexcept {
+        [[nodiscard]] inline auto GetPriorityCoreCount() const noexcept {
             return PriorityCoreCount;
         }
-        [[nodiscard]] inline std::uint8_t GetAutoTaskQ() const noexcept {
+        [[nodiscard]] inline auto GetAutoTaskQ() const noexcept {
             return AutoTaskQ;
         }
-        [[nodiscard]] inline std::uint8_t GetTaskQMax() const noexcept {
+        [[nodiscard]] inline auto GetTaskQMax() const noexcept {
             return TaskQMax;
         }
-        [[nodiscard]] inline std::clock_t GetTaskQmsTick() const noexcept {
+        [[nodiscard]] inline auto GetTaskQmsTick() const noexcept {
             return TaskQTickMS;
         }
-        [[nodiscard]] inline bool GetDirectTaskQ() const noexcept {
+        [[nodiscard]] inline auto GetDirectTaskQ() const noexcept {
             return DirectTaskQ;
         }
-        [[nodiscard]] inline std::uint8_t GetDivideTaskQ() const noexcept {
+        [[nodiscard]] inline auto GetDivideTaskQ() const noexcept {
             return DivideTaskQ;
         }
-        [[nodiscard]] inline std::uint8_t GetUpdateDelayTick() const noexcept {
+        [[nodiscard]] inline auto GetUpdateDelayTick() const noexcept {
             return UpdateDelayTick;
         }
-        [[nodiscard]] inline std::uint32_t GetHotKey1() const noexcept {
+        [[nodiscard]] inline auto GetHotKey1() const noexcept {
             return HotKey1;
         }
-        [[nodiscard]] inline std::uint32_t GetHotKey2() const noexcept {
+        [[nodiscard]] inline auto GetHotKey2() const noexcept {
             return HotKey2;
         }
-        [[nodiscard]] inline float GetWeldDistance() const noexcept {
+        [[nodiscard]] inline auto GetWeldDistance() const noexcept {
             return WeldDistance;
         }
-        [[nodiscard]] inline float GetNormalSmoothDegree() const noexcept {
+        [[nodiscard]] inline auto GetNormalSmoothDegree() const noexcept {
             return NormalSmoothDegree;
         }
-        [[nodiscard]] inline std::uint8_t GetSubdivision() const noexcept {
+        [[nodiscard]] inline auto GetSubdivision() const noexcept {
             return Subdivision;
         }
-        [[nodiscard]] inline std::uint8_t GetVertexSmooth() const noexcept {
+        [[nodiscard]] inline auto GetVertexSmooth() const noexcept {
             return VertexSmooth;
         }
-        [[nodiscard]] inline float GetVertexSmoothStrength() const noexcept {
+        [[nodiscard]] inline auto GetVertexSmoothStrength() const noexcept {
             return VertexSmoothStrength;
         }
-        [[nodiscard]] inline float GetDetailStrength() const noexcept {
+        [[nodiscard]] inline auto GetDetailStrength() const noexcept {
             return DetailStrength;
         }
 
-        [[nodiscard]] inline std::uint32_t GetTextureMargin() const noexcept {
+        [[nodiscard]] inline auto GetTextureMargin() const noexcept {
             return TextureMargin;
         }
-        [[nodiscard]] inline bool GetTextureMarginGPU() const noexcept {
+        [[nodiscard]] inline auto GetTextureMarginGPU() const noexcept {
             return TextureMarginGPU;
         }
+        [[nodiscard]] inline auto GetMergeTextureGPU() const noexcept {
+            return MergeTextureGPU;
+        }
+        [[nodiscard]] inline auto GetTextureCompress() const noexcept {
+            return TextureCompress;
+        }
 
-        [[nodiscard]] inline std::uint32_t GetBlueRadius() const noexcept {
+        [[nodiscard]] inline auto GetTextureWidth() const noexcept {
+            return TextureWidth;
+        }
+        [[nodiscard]] inline auto GetTextureHeight() const noexcept {
+            return TextureHeight;
+        }
+
+        [[nodiscard]] inline auto GetBlueRadius() const noexcept {
             return BlueRadius;
         }
 
-        [[nodiscard]] inline bool GetTangentZCorrection() const noexcept {
+        [[nodiscard]] inline auto GetTangentZCorrection() const noexcept {
             return TangentZCorrection;
         }
 
-        [[nodiscard]] inline bool GetRemoveSkinOverrides() const noexcept {
+        [[nodiscard]] inline auto GetRemoveSkinOverrides() const noexcept {
             return RemoveSkinOverrides;
         }
-        [[nodiscard]] inline bool GetRemoveNodeOverrides() const noexcept {
+        [[nodiscard]] inline auto GetRemoveNodeOverrides() const noexcept {
             return RemoveNodeOverrides;
 		}
 
@@ -143,7 +170,7 @@ namespace Mus {
             TaskQMax = newTaskQMax;
             logger::info("Set TaskQMax {}", newTaskQMax);
         }
-        inline void SetTaskQmsTick(std::uint8_t newTaskQTick) {
+        inline void SetTaskQTickMS(std::uint8_t newTaskQTick) {
             TaskQTickMS = newTaskQTick;
             logger::info("Set TaskQTickMS {}", newTaskQTick);
         }
@@ -159,6 +186,8 @@ namespace Mus {
         //Debug
         spdlog::level::level_enum logLevel{ spdlog::level::level_enum::info };
         spdlog::level::level_enum flushLevel{ spdlog::level::level_enum::trace };
+        bool DebugTexture = false;
+        bool PerformanceLog = false;
 
         //General
         bool PlayerEnable = true;
@@ -173,7 +202,11 @@ namespace Mus {
         float DetectDistance = 512.0f * 512.0f;
         std::clock_t DetectTickMS = 1000; //1sec
 
+        float UpdateDistance = 512.0f * 512.0f;
+
         bool GPUEnable = true;
+        std::clock_t WaitForRendererTickMS = 1000; //1sec
+
         std::unordered_set<std::int32_t> PriorityCoreList;
         unsigned long PriorityCoreMask = 0;
         std::int32_t DetectPriorityCores = 0;
@@ -197,8 +230,14 @@ namespace Mus {
         float VertexSmoothStrength = 0.5f;
         float DetailStrength = 0.5f;
 
-        std::uint32_t TextureMargin = 8;
+        std::int32_t TextureMargin = -1;
         bool TextureMarginGPU = true;
+        bool MergeTextureGPU = true;
+        std::int8_t TextureCompress = -1; //-1 no compress, 0 dxt5, 1 bc7
+
+        std::uint32_t TextureWidth = 2048;
+        std::uint32_t TextureHeight = 2048;
+
         bool TangentZCorrection = true;
 
         std::uint32_t BlueRadius = 8;
