@@ -106,10 +106,10 @@ namespace Mus {
 					}
 					for (auto& textureName : map.second)
 					{
-						if (textureName.second.empty())
+						if (textureName.first.empty())
 							continue;
-						Shader::TextureLoadManager::GetSingleton().ReleaseNiTexture(textureName.second);
-						logger::trace("{:x}::{}::{}::{} : Removed unused NiTexture", map.first, textureName.first.first, textureName.first.second, textureName.second);
+						Shader::TextureLoadManager::GetSingleton().ReleaseNiTexture(textureName.first);
+						logger::trace("{:x}::{} : Removed unused NiTexture", map.first, textureName.first);
 					}
 					lastNormalMapLock.lock();
 					lastNormalMap.unsafe_erase(map.first);
@@ -376,6 +376,7 @@ namespace Mus {
 				continue;
 
 			newGeometryData->CopyGeometryData(geo);
+
 			if (bipedSlot & 1 << slot)
 			{
 				newUpdateSet[geo].slot = slot;
@@ -397,9 +398,9 @@ namespace Mus {
 				logger::debug("{:x}::{} : {} - queue added on update object normalmap", id, actorName, geo->name.c_str());
 
 				lastNormalMapLock.lock_shared();
-				auto found = lastNormalMap[id].find(Pair3232Key{ slot, GeometryData::GetVertexCount(geo) });
+				auto found = lastNormalMap[id].find(newUpdateSet[geo].textureName);
 				if (found != lastNormalMap[id].end())
-					Shader::TextureLoadManager::CreateSourceTexture(found->second, material->normalTexture);
+					Shader::TextureLoadManager::CreateSourceTexture(found->first, material->normalTexture);
 				lastNormalMapLock.unlock_shared();
 
 				ActorVertexHasher::GetSingleton().Register(a_actor, slot);
@@ -483,7 +484,7 @@ namespace Mus {
 						material->diffuseTexture = found->normalmap;
 					material->normalTexture = found->normalmap;
 					lastNormalMapLock.lock_shared();
-					lastNormalMap[a_actorID][Pair3232Key{ found->slot, found->vertexCount }] = found->textureName;
+					lastNormalMap[a_actorID][found->textureName] = true;
 					lastNormalMapLock.unlock_shared();
 					logger::info("{:x}::{}::{} : update object normalmap done", a_actorID, a_actorName, geo->name.c_str());
 					return RE::BSVisit::BSVisitControl::kContinue;
@@ -733,7 +734,7 @@ namespace Mus {
 			return true;
 		for (auto& texture : found->second)
 		{
-			Shader::TextureLoadManager::GetSingleton().ReleaseNiTexture(texture.second);
+			Shader::TextureLoadManager::GetSingleton().ReleaseNiTexture(texture.first);
 			logger::debug("{:x} : Removed unused NiTexture", a_actor->formID);
 		}
 		lastNormalMap.unsafe_erase(a_actor->formID);
