@@ -5,10 +5,10 @@ cbuffer ConstBuffer : register(b0)
     uint widthStart;
     uint heightStart;
 
-    uint blurRadiusX;
-    uint blurRadiusY;
+    int searchRadius;
     uint padding1;
     uint padding2;
+    uint padding3;
 }
 
 Texture2D<float4> srcTexture : register(t0);
@@ -32,65 +32,59 @@ static const int2 offsets[8] = {
 [numthreads(8, 8, 1)]
 void CSMain(uint3 threadID : SV_DispatchThreadID)
 {
-    int2 coord = int2(threadID.xy) + int2(widthStart, heightStart);
+    uint2 coord = int2(threadID.xy) + int2(widthStart, heightStart);
     if (coord.x >= texWidth || coord.y >= texHeight)
         return; 
 
 	float2 uv = (float2(coord) + 0.5f) / float2(texWidth, texHeight);
-
-    float4 src = srcTexture.SampleLevel(samplerState, uv, 0);
-    float4 mask = maskTexture.SampleLevel(samplerState, uv, 0);
-    if (mask.r == 0.0f)
+    float4 srcColor = srcTexture.SampleLevel(samplerState, uv, 0);
+    float maskColor = maskTexture.SampleLevel(samplerState, uv, 0).r;
+    if (maskColor <= 0.0001f)
     {
-        dstTexture[coord] = src;
+        dstTexture[coord] = srcColor;
         return;
     }
 
-    if (src.a < 1.0f)
+    if (srcColor.a < 1.0f)
         return;
 
-    float sumR = 0.0f, sumG = 0.0f, sumB = 0.0f;
-    float weightSumR = 0.0f, weightSumG = 0.0f, weightSumB = 0.0f;
+    float4 nearestColor = float4(0, 0, 0, 0);
+    bool found = false;
+    bool end = false;
 
-    for (uint by = -blurRadiusY; by <= blurRadiusY; by++)
+    for (int offsetMult = 1; offsetMult < searchRadius; offsetMult++)
     {
-        if (by == 0)
-            continue;
-        for (uint bx = -blurRadiusX; bx <= blurRadiusX; bx++)
-        {
-            if (bx == 0)
-                continue;
-            int2 nearCoord = coord + int2(bx, by);
+        for (int i = 0; i < 8; i++) {
+            int2 nearCoord = (int)coord + offsets[i] * offsetMult;
             if (nearCoord.x < 0 || nearCoord.y < 0 ||
                 nearCoord.x >= (int)texWidth || nearCoord.y >= (int)texHeight)
-                continue;
-
-            float2 offsetUV = float2(nearCoord) / float2(texWidth, texHeight);
-            float4 sample = srcTexture.SampleLevel(samplerState, offsetUV, 0);
-
-            if (sample.a < 1.0f)
             {
-                if (bx == 1 || bx == -1 || by == 1 || by == -1)
-                {
-                    dstTexture[coord] = src;
-                    return;
-                }
-				continue;
+                end = true;
+                break;
             }
-            float weight = exp(-(bx * bx) / (2.0f * blurRadiusX * blurRadiusX)
-                               -(by * by) / (2.0f * blurRadiusY * blurRadiusY));
-
-            sumR += sample.r * weight;
-            sumG += sample.g * weight;
-            sumB += sample.b * weight;
-
-            weightSumR += weight;
-            weightSumG += weight;
-            weightSumB += weight;
+            float2 nearUV = float2(nearCoord) / float2(texWidth, texHeight);
+            float4 nearSrc = srcTexture.SampleLevel(samplerState, nearUV, 0);
+            if (nearSrc.a < 1.0f)
+            {
+                end = true;
+                break;
+            }
+            float nearMask = maskTexture.SampleLevel(samplerState, nearUV, 0).r;
+            if (nearMask <= 0.0001f)
+            {
+                nearestColor = nearSrc;
+                found = true;
+                break;
+            }
         }
+        if (end || found)
+            break;
+    }
+    if (!found)
+    {
+        dstTexture[coord] = srcColor;
+        return;
     }
 
-    float3 blurred = float3(sumR / weightSumR, sumG / weightSumG, sumB / weightSumB);
-    blurred = lerp(src.rgb, blurred, mask.r);
-    dstTexture[coord] = float4(blurred, 1.0f);
+    dstTexture[coord] = float4(lerp(srcColor.rgb, nearestColor.rgb, maskColor), 1.0f);
 }

@@ -29,7 +29,6 @@ Texture2D<float4> overlayTexture    : register(t8);
 Texture2D<float4> maskTexture       : register(t9);
 
 RWTexture2D<float4> dstTexture      : register(u0);
-RWByteAddressBuffer pixelLock       : register(u1);
 
 SamplerState samplerState           : register(s0);
 
@@ -108,15 +107,9 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
             if (!ComputeBarycentric(float2(xy) + float2(0.5f, 0.5f), p0, p1, p2, bary))
                 continue;
 
-            uint addr = (y * texWidth + x) * 4;
-            uint pixelLockFlag;
-            pixelLock.InterlockedCompareExchange(addr, 0, 1, pixelLockFlag);
-            if (pixelLockFlag != 0)
-                continue;
-
             float2 uv = float2(xy) / float2(texWidth, texHeight);
 
-            float4 dstColor;
+            float4 dstColor = float4(0.0f, 0.0f, 0.0f, 1.0f);
             float4 overlayColor = float4(1.0f, 1.0f, 1.0f, 0.0f);
             if (hasOverlayTexture > 0)
             {

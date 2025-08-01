@@ -70,14 +70,14 @@ namespace Mus {
 		void RegisterDelayTask(std::int16_t delayTick, std::function<void()> func);
 		std::string GetDelayTaskID(RE::FormID refrID, std::uint32_t bipedSlot);
 
-		std::unordered_set<RE::BSGeometry*> GetGeometries(RE::Actor* a_actor, std::uint32_t bipedSlot);
 		std::unordered_set<RE::BSGeometry*> GetAllGeometries(RE::Actor* a_actor);
 
 		bool QUpdateNormalMap(RE::Actor* a_actor, std::uint32_t bipedSlot);
-		bool QUpdateNormalMap(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_updateTargets);
 
-		bool QUpdateNormalMapImpl(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::unordered_set<RE::BSGeometry*> a_updateTargets);
+		bool QUpdateNormalMapImpl(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::uint32_t bipedSlot);
 		void QUpdateNormalMapImpl(RE::FormID a_actorID, std::string a_actorName, GeometryDataPtr a_geoData, UpdateSet a_updateSet);
+
+		bool RemoveNormalMap(RE::Actor* a_actor);
 
 		std::int64_t GenerateUniqueID();
 	protected:
@@ -97,8 +97,8 @@ namespace Mus {
 		bool isPressedHotKey1 = false;
 		bool isResetTasks = false;
 
-		std::string GetTextureName(RE::Actor* a_actor, std::uint32_t a_bipedSlot, RE::BSGeometry* a_geo); // ActorID + Armor/SkinID + BipedSlot + GeometryName + VertexCount
-		bool GetTextureInfo(std::string a_textureName, TextureInfo& a_textureInfo); // ActorID + GeometryName + VertexCount
+		std::string GetTextureName(RE::Actor* a_actor, std::uint32_t a_bipedSlot, std::string a_texturePath); // ActorID + BipedSlot + TexturePath
+		bool GetTextureInfo(std::string a_textureName, TextureInfo& a_textureInfo); // ActorID + BipedSlot + TexturePath
 		
 		std::string GetDetailNormalMapPath(std::string a_normalMapPath);
 		std::string GetDetailNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder);
@@ -108,9 +108,11 @@ namespace Mus {
 		std::string GetMaskNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder);
 
 		concurrency::concurrent_unordered_map<RE::FormID, std::uint32_t> updateSlotQueue;
-		concurrency::concurrent_unordered_map<RE::FormID, concurrency::concurrent_vector<RE::BSGeometry*>> updateGeometryQueue;
 		std::shared_mutex updateQueueLock;
 		concurrency::concurrent_unordered_map<RE::FormID, bool> isUpdating;
+
+		std::shared_mutex lastNormalMapLock;
 		concurrency::concurrent_unordered_map<RE::FormID, concurrency::concurrent_unordered_map<Pair3232Key, std::string, Pair3232Hash>> lastNormalMap; // ActorID, VertexCount, TextureName>
+		concurrency::concurrent_unordered_map<RE::FormID, bool> isActiveActors; // ActorID, isActive
 	};
 }

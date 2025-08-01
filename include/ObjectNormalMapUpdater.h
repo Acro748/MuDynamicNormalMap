@@ -18,7 +18,7 @@ namespace Mus {
 
 		struct NormalMapResult {
 			std::uint32_t slot;
-			RE::BSGeometry* geometry;
+			RE::BSGeometry* geometry; //for ptr compare only 
 			std::string geoName;
 			std::string textureName;
 			std::uint32_t vertexCount;
@@ -78,15 +78,29 @@ namespace Mus {
 			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> maskShaderResourceView = nullptr;
 			Microsoft::WRL::ComPtr<ID3D11Texture2D> dstWriteTexture2D = nullptr;
 			Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> dstWriteTextureUAV = nullptr;
-			Microsoft::WRL::ComPtr<ID3D11Buffer> pixelBuffer = nullptr;
-			Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> pixelBufferUAV = nullptr;
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTexture2D = nullptr;
+			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> dstShaderResourceView = nullptr;
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> dstCompressTexture2D = nullptr;
+			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> dstCompressShaderResourceView = nullptr;
 
 			struct BleedTextureData {
 				std::vector<Microsoft::WRL::ComPtr<ID3D11Buffer>> constBuffers;
-				Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D = nullptr;
-				Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav = nullptr;
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D_1 = nullptr;
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D_2 = nullptr;
+				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv1 = nullptr;
+				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv2 = nullptr;
+				Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav1 = nullptr;
+				Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav2 = nullptr;
 			};
 			BleedTextureData bleedTextureData;
+
+			struct MergeTextureData {
+				std::vector<Microsoft::WRL::ComPtr<ID3D11Buffer>> constBuffers;
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D = nullptr;
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2Dalt = nullptr;
+				Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav = nullptr;
+			};
+			MergeTextureData mergeTextureData;
 
 			struct TexturePostProcessingData {
 				std::vector<Microsoft::WRL::ComPtr<ID3D11Buffer>> constBuffer;
@@ -95,21 +109,29 @@ namespace Mus {
 			};
 			TexturePostProcessingData texturePostProcessingData;
 		};
+		typedef std::shared_ptr<TextureResourceData> TextureResourceDataPtr;
 
 		bool IsDetailNormalMap(std::string a_normalMapPath);
 
 		bool ComputeBarycentric(float px, float py, DirectX::XMINT2 a, DirectX::XMINT2 b, DirectX::XMINT2 c, DirectX::XMFLOAT3& out);
 		bool CreateStructuredBuffer(const void* data, UINT size, UINT stride, Microsoft::WRL::ComPtr<ID3D11Buffer>& bufferOut, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvOut);
 		bool IsValidPixel(const std::uint32_t a_pixel);
-		bool BleedTexture(std::uint8_t* pData, UINT width, UINT height, UINT RowPitch, std::uint32_t margin);
-		bool BleedTextureGPU(TextureResourceData& resourceData, std::uint32_t margin, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut);
-		bool TexturePostProcessingGPU(TextureResourceData& resourceData, std::uint32_t blurRadius, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> maskSrv, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut);
+		bool BleedTexture(TextureResourceDataPtr& resourceData, std::int32_t margin, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut);
+		bool BleedTextureGPU(TextureResourceDataPtr& resourceData, std::int32_t margin, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut);
+		bool TexturePostProcessingGPU(TextureResourceDataPtr& resourceData, std::uint32_t blurRadius, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> maskSrv, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut);
+		bool MergeTexture(TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTex, Microsoft::WRL::ComPtr<ID3D11Texture2D> srvTex);
+		bool MergeTextureGPU(TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& dstSrv, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTex, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcSrv, Microsoft::WRL::ComPtr<ID3D11Texture2D> srvTex);
 
+		bool CopySubresourceRegion(Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTexture, Microsoft::WRL::ComPtr<ID3D11Texture2D>& srcTexture, UINT dstMipMapLevel, UINT srcMipMapLevel);
+		bool CompressTexture(TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTexture, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& dstSrv, Microsoft::WRL::ComPtr<ID3D11Texture2D>& srcTexture, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srcSrv);
+		bool CompressTextureBC7(TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTexture, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& dstSrv, Microsoft::WRL::ComPtr<ID3D11Texture2D>& srcTexture, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srcSrv);
+		
 		void GPUPerformanceLog(std::string funcStr, bool isEnd, bool isAverage = true, std::uint32_t args = 0);
 		void WaitForGPU();
 
 		const std::string_view BleedTextureShaderName = "BleedTexture";
 		const std::string_view UpdateNormalMapShaderName = "UpdateNormalMap";
+		const std::string_view MergeTextureShaderName = "MergeTexture";
 		const std::string_view TexturePostProcessingShaderName = "TexturePostProcessing";
 
 		Microsoft::WRL::ComPtr<ID3D11SamplerState> samplerState = nullptr;
@@ -177,9 +199,10 @@ namespace Mus {
 			Microsoft::WRL::ComPtr<ID3D11Buffer> indicesBuffer = nullptr;
 			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> indicesSRV = nullptr;
 		};
-		concurrency::concurrent_unordered_map<RE::FormID, GeometryResourceData> GeometryResourceDataMap;
+		typedef std::shared_ptr<GeometryResourceData> GeometryResourceDataPtr;
+		concurrency::concurrent_unordered_map<RE::FormID, GeometryResourceDataPtr> GeometryResourceDataMap;
 
 		std::shared_mutex ResourceDataMapLock;
-		concurrency::concurrent_vector<TextureResourceData> ResourceDataMap;
+		concurrency::concurrent_vector<TextureResourceDataPtr> ResourceDataMap;
 	};
 }

@@ -12,18 +12,18 @@ namespace Mus {
 
 	void ActorVertexHasher::onEvent(const FrameEvent& e)
 	{
+		static std::clock_t lastTickTime = currentTime;
+
 		if (IsSaveLoading.load())
 			return;
 		if (IsGamePaused.load() && !IsRaceSexMenu.load())
 			return;
 		if (isDetecting.load())
 			return;
-		auto currentTime = std::clock();
-		if (Config::GetSingleton().GetDetectTickMS() <= currentTime - beforeDetectTickMS)
-		{
-			CheckingActorHash();
-			beforeDetectTickMS = currentTime;
-		}
+		if (currentTime - lastTickTime < Config::GetSingleton().GetDetectTickMS())
+			return;
+		CheckingActorHash();
+		lastTickTime = currentTime;
 	}
 
 	void ActorVertexHasher::onEvent(const FacegenNiNodeEvent& e)
@@ -60,7 +60,7 @@ namespace Mus {
 		return EventResult::kContinue;
 	}
 
-	bool ActorVertexHasher::Register(RE::Actor* a_actor, RE::BIPED_OBJECT bipedSlot)
+	bool ActorVertexHasher::Register(RE::Actor* a_actor, std::uint32_t bipedSlot)
 	{
 		if (!Config::GetSingleton().GetRealtimeDetect())
 			return true;
@@ -69,12 +69,31 @@ namespace Mus {
 		if (!a_actor || !a_actor->loadedData || !a_actor->loadedData->data3D)
 			return false;
 		ActorHashLock.lock_shared();
-		if (ActorHash[a_actor->formID].find(bipedSlot) == ActorHash[a_actor->formID].end())
+		auto found = ActorHash[a_actor->formID].find(bipedSlot);
+		if (found == ActorHash[a_actor->formID].end())
 		{
-			ActorHash[a_actor->formID][bipedSlot] = std::make_shared<Hash>();
+			ActorHash[a_actor->formID].insert(std::make_pair(bipedSlot, std::make_shared<Hash>()));
+			logger::debug("{:x} {} {}: registered for ActorVertexHasher", a_actor->formID, a_actor->GetName(), bipedSlot);
 		}
 		ActorHashLock.unlock_shared();
-		logger::debug("{:x} {} {}: registered for ActorVertexHasher", a_actor->formID, a_actor->GetName(), std::to_underlying(bipedSlot));
+		return true;
+	}
+	bool ActorVertexHasher::InitialHash(RE::Actor* a_actor, std::uint32_t bipedSlot)
+	{
+		if (!Config::GetSingleton().GetRealtimeDetect())
+			return true;
+		if (bipedSlot == RE::BIPED_OBJECT::kHead && Config::GetSingleton().GetRealtimeDetectHead() == 0)
+			return true;
+		if (!a_actor || !a_actor->loadedData || !a_actor->loadedData->data3D)
+			return false;
+		ActorHashLock.lock_shared();
+		auto found = ActorHash[a_actor->formID].find(bipedSlot);
+		if (found != ActorHash[a_actor->formID].end())
+		{
+			found->second->hashValue = 0;
+			logger::debug("{:x} {} {}: initialized hash for ActorVertexHasher", a_actor->formID, a_actor->GetName(), bipedSlot);
+		}
+		ActorHashLock.unlock_shared();
 		return true;
 	}
 
@@ -99,21 +118,16 @@ namespace Mus {
 #ifdef HASHER_TEST1
 				PerformanceLog(std::string(__func__), false, true);
 #endif // HASHER_TEST1
-				concurrency::concurrent_vector<RE::FormID> garbages;
 				std::vector<std::future<void>> processes;
 				auto ActorHash_ = ActorHash;
 				for(auto& map : ActorHash_) {
 					processes.push_back(processingThreads->submitAsync([&, map]() {
-						RE::TESForm* form = GetFormByID(map.first);
-						if (!form || !form->Is(RE::FormType::ActorCharacter))
-						{
-							garbages.push_back(map.first);
-							return;
-						}
-						RE::Actor* actor = skyrim_cast<RE::Actor*>(form);
+						RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
 						if (!actor || !actor->loadedData || !actor->loadedData->data3D)
 						{
-							garbages.push_back(map.first);
+							ActorHashLock.lock();
+							ActorHash.unsafe_erase(map.first);
+							ActorHashLock.unlock();
 							return;
 						}
 						if (BlockActors[actor->formID])
@@ -133,29 +147,27 @@ namespace Mus {
 								if (hashmap.second->hashValue != hash)
 								{
 									bipedSlot |= 1 << hashmap.first;
-									logger::trace("{:x} {} {} : found different hash {:x}", actor->formID, actor->GetName(), std::to_underlying(hashmap.first), hash);
+									logger::trace("{:x} {} {} : found different hash {:x}", actor->formID, actor->GetName(), hashmap.first, hash);
 								}
 							}
 							hashmap.second->hashValue = hash;
 						}
 						if (bipedSlot > 0)
+						{
+							logger::debug("{:x} {} : detected changed slot {:x}", actor->formID, actor->GetName(), bipedSlot);
 							TaskManager::GetSingleton().QUpdateNormalMap(actor, bipedSlot);
+						}
 					}));
 				}
 				for (auto& process : processes)
 				{
 					process.get();
 				}
-				ActorHashLock.lock();
-				for (auto& garbage : garbages)
-				{
-					ActorHash.unsafe_erase(garbage);
-				}
-				ActorHashLock.unlock();
 #ifdef HASHER_TEST1
 				PerformanceLog(std::string(__func__), true, true, ActorHash.size());
 #endif // HASHER_TEST1
 				isDetecting.store(false);
+				logger::trace("Check hashes done {}", ActorHash.size());
 			});
 		}
 		else
@@ -163,19 +175,14 @@ namespace Mus {
 #ifdef HASHER_TEST1
 			PerformanceLog(std::string(__func__), false, true);
 #endif // HASHER_TEST1
-			concurrency::concurrent_vector<RE::FormID> garbages;
 			auto ActorHash_ = ActorHash;
 			concurrency::parallel_for_each(ActorHash_.begin(), ActorHash_.end(), [&](auto& map) {
-				RE::TESForm* form = GetFormByID(map.first);
-				if (!form || !form->Is(RE::FormType::ActorCharacter))
-				{
-					garbages.push_back(map.first);
-					return;
-				}
-				RE::Actor* actor = skyrim_cast<RE::Actor*>(form);
+				RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
 				if (!actor || !actor->loadedData || !actor->loadedData->data3D)
 				{
-					garbages.push_back(map.first);
+					ActorHashLock.lock();
+					ActorHash.unsafe_erase(map.first);
+					ActorHashLock.unlock();
 					return;
 				}
 				if (!isPlayer(actor->formID) && playerPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) > Config::GetSingleton().GetDetectDistance())
@@ -193,19 +200,18 @@ namespace Mus {
 						if (hashmap.second->hashValue != hash)
 						{
 							bipedSlot |= 1 << hashmap.first;
-							logger::trace("{:x} {} {} : found different hash {:x}", actor->formID, actor->GetName(), std::to_underlying(hashmap.first), hash);
+							logger::trace("{:x} {} {} : found different hash {:x}", actor->formID, actor->GetName(), hashmap.first, hash);
 						}
 					}
 					hashmap.second->hashValue = hash;
 				}
-				TaskManager::GetSingleton().QUpdateNormalMap(actor, bipedSlot);
-			 });
-			ActorHashLock.lock();
-			for (auto& garbage : garbages)
-			{
-				ActorHash.unsafe_erase(garbage);
-			}
-			ActorHashLock.unlock();
+				if (bipedSlot > 0)
+				{
+					logger::debug("{:x} {} : detected changed slot {:x}", actor->formID, actor->GetName(), bipedSlot);
+					TaskManager::GetSingleton().QUpdateNormalMap(actor, bipedSlot);
+				}
+			});
+			logger::trace("Check hashes done {}", ActorHash.size());
 #ifdef HASHER_TEST1
 			PerformanceLog(std::string(__func__), true, true, ActorHash.size());
 #endif // HASHER_TEST1

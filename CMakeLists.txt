@@ -6,7 +6,7 @@ message("Using toolchain file ${CMAKE_TOOLCHAIN_FILE}.")
 ########################################################################################################################
 project(
         MuDynamicNormalMap
-        VERSION 1.2.2
+        VERSION 1.3.0
         DESCRIPTION "MuDynamicNormalMap by Acro."
         LANGUAGES CXX
 )
@@ -39,12 +39,14 @@ set(headers
         include/ThreadPool.h
         include/MiniBenchMark.h
         include/ActorVertexHasher.h
+        include/bc7enc_rdo/bc7enc.h
         include/Condition.h
         include/Interface/Interface.h
         include/Interface/InterfaceImpl.h
 )
 
 set(sources
+        include/bc7enc_rdo/bc7enc.cpp
         src/nifUtil.cpp
         src/Config.cpp
         src/PapyrusScripts.cpp
@@ -145,6 +147,7 @@ set(compute_shader_sources
    ${CMAKE_CURRENT_SOURCE_DIR}/shader/BleedTexture.hlsl
    ${CMAKE_CURRENT_SOURCE_DIR}/shader/TexturePostProcessing.hlsl
    ${CMAKE_CURRENT_SOURCE_DIR}/shader/MiniBenchmark.hlsl
+   ${CMAKE_CURRENT_SOURCE_DIR}/shader/MergeTexture.hlsl
 )
 set(vertex_shader_sources 
 

@@ -535,6 +535,11 @@ namespace Mus {
 			}
 			output = newTexture;
 			SetOrgTexturePath(name, texturePath);
+			/*D3D11_TEXTURE2D_DESC desc;
+			dstTex->GetDesc(&desc);
+			D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
+			dstSRV->GetDesc(&srvDesc);
+			logger::info("{} {} {} {}", magic_enum::enum_name(desc.Format).data(), desc.MipLevels, magic_enum::enum_name(srvDesc.Format).data(), srvDesc.Texture2D.MipLevels);*/
 			return;
 		}
 
@@ -553,6 +558,7 @@ namespace Mus {
 						oldTexture->Release();
 					if (oldResource)
 						oldResource->Release();
+					//logger::info("{} : {}", name, found->second->GetRefCount());
 				}
 			}
 		}
@@ -563,15 +569,6 @@ namespace Mus {
 			if (!stringStartsWith(filePath, "textures"))
 				filePath = "Textures\\" + filePath;
 			filePath = FixPath(filePath);
-
-			/*if (auto found = textures.find(filePath); found != textures.end() &&
-				(found->second.metaData.newFormat == newFormat && found->second.metaData.newWidth == newWidth && found->second.metaData.newHeight == newHeight))
-			{
-				textureDesc = found->second.texDesc;
-				srvDesc = found->second.srvDesc;
-				output = found->second.texture;
-				return true;
-			}*/
 
 			if (!IsExistFileInStream(filePath, ExistType::textures))
 			{
@@ -614,7 +611,6 @@ namespace Mus {
 				logger::error("Failed to convert texture : {}", filePath);
 				return false;
 			}
-			//textures[filePath] =  data;
 
 			textureDesc = data.texDesc;
 			srvDesc = data.srvDesc;
@@ -839,9 +835,11 @@ namespace Mus {
 			}
 
 			DirectX::ScratchImage compressedImage;
+			DirectX::TEX_COMPRESS_FLAGS flags;
 			if (formatType == 1) //CPU format
 			{
-				hr = DirectX::Compress(image.GetImages(), image.GetImageCount(), image.GetMetadata(), newFormat, DirectX::TEX_COMPRESS_PARALLEL, DirectX::TEX_THRESHOLD_DEFAULT, compressedImage);
+				flags = DirectX::TEX_COMPRESS_DITHER | DirectX::TEX_COMPRESS_PARALLEL;
+				hr = DirectX::Compress(image.GetImages(), image.GetImageCount(), image.GetMetadata(), newFormat, flags, 1.0f, compressedImage);
 				if (FAILED(hr))
 				{
 					logger::error("Failed to compress texture to {} ({})", magic_enum::enum_name(newFormat).data(), hr);
@@ -850,7 +848,14 @@ namespace Mus {
 			}
 			else if (formatType == 2) //GPU format
 			{
-				hr = DirectX::Compress(device, image.GetImages(), image.GetImageCount(), image.GetMetadata(), newFormat, DirectX::TEX_COMPRESS_DEFAULT, DirectX::TEX_THRESHOLD_DEFAULT, compressedImage);
+				if (newFormat == DXGI_FORMAT_BC7_UNORM)
+					flags = DirectX::TEX_COMPRESS_BC7_QUICK;
+				else
+					flags = DirectX::TEX_COMPRESS_DEFAULT;
+
+				ShaderManager::GetSingleton().ShaderContextLock();
+				hr = DirectX::Compress(device, image.GetImages(), image.GetImageCount(), image.GetMetadata(), newFormat, flags, DirectX::TEX_THRESHOLD_DEFAULT, compressedImage);
+				ShaderManager::GetSingleton().ShaderContextUnlock();
 				if (FAILED(hr))
 				{
 					logger::error("Failed to compress texture to {} ({})", magic_enum::enum_name(newFormat).data(), hr);

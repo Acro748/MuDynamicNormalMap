@@ -45,7 +45,7 @@ namespace Mus {
                 {
                     logLevel = spdlog::level::from_str(variableValue);
                 }
-                if (variableName == "flushLevel")
+                else if (variableName == "flushLevel")
                 {
                     flushLevel = spdlog::level::from_str(variableValue);
                 }
@@ -98,7 +98,23 @@ namespace Mus {
             std::string variableValue = GetConfigSetting(line, variableName);
             if (currentSetting == "[Debug]")
             {
-
+                if (variableName == "logLevel")
+                {
+                    logLevel = spdlog::level::from_str(variableValue);
+                }
+                else if (variableName == "flushLevel")
+                {
+                    flushLevel = spdlog::level::from_str(variableValue);
+                }
+                else if (variableName == "DebugTexture")
+                {
+                    DebugTexture = GetBoolValue(variableValue);
+                }
+                else if (variableName == "PerformanceLog")
+                {
+                    PerformanceLog = GetBoolValue(variableValue);
+                    PerformanceCheck = PerformanceLog;
+                }
             }
             else if (currentSetting == "[General]")
             {
@@ -141,11 +157,20 @@ namespace Mus {
 				}
                 else if (variableName == "DetectTickMS")
 				{
-                    DetectTickMS = GetUIntValue(variableValue);
+                    DetectTickMS = GetIntValue(variableValue);
 				}
+                else if (variableName == "UpdateDistance")
+                {
+                    float value = GetFloatValue(variableValue);
+                    UpdateDistance = value * value;
+                }
                 else if (variableName == "GPUEnable")
                 {
 					GPUEnable = GetBoolValue(variableValue);
+                }
+                else if (variableName == "WaitForRendererTickMS")
+                {
+                    WaitForRendererTickMS = GetUIntValue(variableValue);
                 }
                 else if (variableName == "PriorityCores")
 				{
@@ -212,11 +237,27 @@ namespace Mus {
 				}
 				else if (variableName == "TextureMargin")
 				{
-                    TextureMargin = GetUIntValue(variableValue);
+                    TextureMargin = GetIntValue(variableValue);
 				}
 				else if (variableName == "TextureMarginGPU")
 				{
                     TextureMarginGPU = GetBoolValue(variableValue);
+				}
+				else if (variableName == "MergeTextureGPU")
+				{
+                    MergeTextureGPU = GetBoolValue(variableValue);
+				}
+				else if (variableName == "TextureCompress")
+				{
+                    TextureCompress = GetIntValue(variableValue);
+				}
+				else if (variableName == "TextureWidth")
+				{
+                    TextureWidth = GetUIntValue(variableValue);
+				}
+				else if (variableName == "TextureHeight")
+				{
+                    TextureHeight = GetUIntValue(variableValue);
 				}
                 else if (variableName == "BlueRadius")
                 {
@@ -240,6 +281,7 @@ namespace Mus {
                 }
 			}
         }
+        UpdateDistance = std::max(DetectDistance, UpdateDistance);
         return true;
     }
 

@@ -11,6 +11,8 @@ namespace Mus {
 	bool PerformanceCheckConsolePrint = false;
 	bool PerformanceCheckTick = false;
 
+	std::clock_t currentTime = 0;
+
 	float weldDistance = 0.0001f;
 	std::uint32_t weldDistanceMult = 10000;
 }

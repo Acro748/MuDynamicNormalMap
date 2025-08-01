@@ -31,6 +31,7 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
 
     if (orgPixel.a > 0.5f)
     {
+        dst[coord] = orgPixel;
         return;
     }
 

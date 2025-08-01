@@ -790,13 +790,13 @@ namespace Mus {
                 auto unit = "ns";
                 if (duration_ns >= 1000000)
                 {
-                    duration_ns /= 1000000;
+                    duration_ns /= 1000;
 					tick /= 1000000;
                     unit = "ms";
                 }
                 else if (duration_ns >= 1000)
                 {
-                    duration_ns /= 1000;
+                    duration_ns /= 1;
 					tick /= 1000;
                     unit = "us";
                 }

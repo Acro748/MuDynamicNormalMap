@@ -24,6 +24,8 @@ namespace Mus {
             cv.notify_one();
             return res;
         }
+
+        inline std::size_t GetThreads() const { return workers.size(); };
     private:
         std::vector<std::thread> workers;
         std::queue<std::function<void()>> tasks;
@@ -40,15 +42,16 @@ namespace Mus {
         void workerLoop();
     };
     extern std::unique_ptr<ThreadPool_ParallelModule> actorThreads;
+    extern std::unique_ptr<ThreadPool_ParallelModule> memoryManageThreads;
     extern std::unique_ptr<ThreadPool_ParallelModule> processingThreads;
 
-    class ThreadPool_TaskModule
+    class ThreadPool_GPUTaskModule
         : public IEventListener<FrameEvent>
     {
     public:
-        ThreadPool_TaskModule() = delete;
-        ThreadPool_TaskModule(std::uint8_t a_taskQTick, bool a_directTaskQ, std::uint8_t a_taskQMax);
-        ~ThreadPool_TaskModule();
+        ThreadPool_GPUTaskModule() = delete;
+        ThreadPool_GPUTaskModule(std::uint8_t a_taskQTick, bool a_directTaskQ, std::uint8_t a_taskQMax);
+        ~ThreadPool_GPUTaskModule();
 
         template<typename F, typename... Args>
         auto submitAsync(F&& f, Args&&... args)
@@ -89,6 +92,7 @@ namespace Mus {
             return res;
         }
 
+        inline std::size_t GetThreads() const { return workers.size(); };
     protected:
         void onEvent(const FrameEvent& e) override;
 
@@ -108,7 +112,11 @@ namespace Mus {
         const std::uint8_t taskQMaxCount = 1;
         const bool directTaskQ = false;
 
+        Microsoft::WRL::ComPtr<ID3D11Query> query;
+        bool getQuery();
+        bool isQueryDone();
+
         void workerLoop();
     };
-    extern std::unique_ptr<ThreadPool_TaskModule> gpuTask;
+    extern std::unique_ptr<ThreadPool_GPUTaskModule> gpuTask;
 }
