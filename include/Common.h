@@ -25,17 +25,4 @@ namespace Mus {
 		std::uint32_t bipedSlot;
 		std::string texturePath;
 	};
-
-	struct Pair3232Key {
-		std::uint32_t first;
-		std::uint32_t second;
-		bool operator==(const Pair3232Key& p) const noexcept {
-			return first == p.first && second == p.second;
-		}
-	};
-	struct Pair3232Hash {
-		std::size_t operator()(const Pair3232Key& p) const noexcept {
-			return ((std::size_t)p.first << 32) | p.second;
-		}
-	};
 }

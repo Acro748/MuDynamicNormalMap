@@ -15,7 +15,7 @@ namespace Mus {
 			bool hasNormals = false;
 			bool hasTangents = false;
 			bool hasBitangents = false;
-			std::uint32_t vertexCount;
+			std::uint32_t vertexCount = 0;
 		};
 		struct ObjectInfo {
 			GeometryInfo info;

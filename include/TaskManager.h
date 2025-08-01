@@ -115,7 +115,7 @@ namespace Mus {
 		concurrency::concurrent_unordered_map<RE::FormID, bool> isUpdating;
 
 		std::shared_mutex lastNormalMapLock;
-		concurrency::concurrent_unordered_map<RE::FormID, concurrency::concurrent_unordered_map<Pair3232Key, std::string, Pair3232Hash>> lastNormalMap; // ActorID, VertexCount, TextureName>
+		concurrency::concurrent_unordered_map<RE::FormID, concurrency::concurrent_unordered_map<std::string, bool>> lastNormalMap; // ActorID, TextureName>
 		concurrency::concurrent_unordered_map<RE::FormID, bool> isActiveActors; // ActorID, isActive
 	};
 }

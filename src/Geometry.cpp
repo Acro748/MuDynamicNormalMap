@@ -86,20 +86,15 @@ namespace Mus {
 				}
 			}
 		}
-		newObjInfo.geometryBlockData.resize(newObjInfo.info.vertexCount * newObjInfo.info.desc.GetSize());
+		newObjInfo.geometryBlockData.resize((std::size_t)newObjInfo.info.vertexCount * newObjInfo.info.desc.GetSize());
 		std::memcpy(newObjInfo.geometryBlockData.data(), skinPartition->partitions[0].buffData->rawVertexData, sizeof(std::uint8_t) * newObjInfo.info.vertexCount * newObjInfo.info.desc.GetSize());
 
-		std::uint32_t indexOffset = 0;
 		for (auto& partition : skinPartition->partitions)
 		{
-			indexOffset += partition.triangles * 3;
-		}
-		newObjInfo.indicesBlockData.resize(indexOffset);
-		indexOffset = 0;
-		for (auto& partition : skinPartition->partitions)
-		{
-			std::memcpy(&newObjInfo.indicesBlockData[indexOffset], partition.triList, sizeof(std::uint16_t) * partition.triangles * 3);
-			indexOffset += partition.triangles * 3;
+			const std::size_t indicesCount = (std::size_t)partition.triangles * 3;
+			std::vector<std::uint16_t> indicesBlockData_(indicesCount);
+			std::memcpy(indicesBlockData_.data(), partition.triList, sizeof(std::uint16_t) * indicesCount);
+			newObjInfo.indicesBlockData.insert(newObjInfo.indicesBlockData.end(), indicesBlockData_.begin(), indicesBlockData_.end());
 		}
 		geometries.push_back(GeometriesInfo{ a_geo, newObjInfo });
 
@@ -393,7 +388,7 @@ namespace Mus {
 					VertexKey vkey = { pos, uv };
 					auto it = vertexMap.find(vkey);
 					if (it == vertexMap.end())
-						return;
+						continue;
 
 					const auto& exactFaceIndices = it->second;
 
@@ -408,12 +403,12 @@ namespace Mus {
 						}
 					}
 					if (!foundSelf)
-						return;
+						continue;
 
 					PositionKey pkey = { pos };
 					auto posIt = positionMap.find(pkey);
 					if (posIt == positionMap.end())
-						return;
+						continue;
 
 					DirectX::XMVECTOR nSum = DirectX::XMVectorZero();
 					DirectX::XMVECTOR tSum = DirectX::XMVectorZero();
@@ -436,7 +431,7 @@ namespace Mus {
 					}
 
 					if (DirectX::XMVector3Equal(nSum, DirectX::XMVectorZero()))
-						return;
+						continue;
 
 					DirectX::XMVECTOR t = DirectX::XMVectorGetX(DirectX::XMVector3Length(tSum)) > floatPrecision ? DirectX::XMVector3Normalize(tSum) : DirectX::XMVectorZero();
 					DirectX::XMVECTOR b = DirectX::XMVectorGetX(DirectX::XMVector3Length(bSum)) > floatPrecision ? DirectX::XMVector3Normalize(bSum) : DirectX::XMVectorZero();
