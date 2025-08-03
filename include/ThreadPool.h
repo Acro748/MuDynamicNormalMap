@@ -112,10 +112,6 @@ namespace Mus {
         const std::uint8_t taskQMaxCount = 1;
         const bool directTaskQ = false;
 
-        Microsoft::WRL::ComPtr<ID3D11Query> query;
-        bool getQuery();
-        bool isQueryDone();
-
         void workerLoop();
     };
     extern std::unique_ptr<ThreadPool_GPUTaskModule> gpuTask;

@@ -50,20 +50,6 @@ namespace Mus {
         , priorityCoreMask(Config::GetSingleton().GetPriorityCores())
         , taskQMaxCount(std::max(std::uint8_t(1), a_taskQMax))
     {
-        if (taskQMaxCount == 1)
-        {
-            if (auto device = Shader::ShaderManager::GetSingleton().GetDevice(); device)
-            {
-                D3D11_QUERY_DESC queryDesc = {};
-                queryDesc.Query = D3D11_QUERY_EVENT;
-                queryDesc.MiscFlags = 0;
-
-                HRESULT hr = device->CreateQuery(&queryDesc, &query);
-                if (FAILED(hr)) {
-                    query = nullptr;
-                }
-            }
-        }
         for (std::uint8_t i = 0; i < taskQMaxCount + 1; i++) {
             workers.emplace_back([this] { workerLoop(); });
         }
@@ -76,25 +62,6 @@ namespace Mus {
             if (t.joinable()) t.join();
     }
 
-    bool ThreadPool_GPUTaskModule::getQuery()
-    {
-        if (!query)
-            return false;
-        Shader::ShaderManager::GetSingleton().ShaderContextLock();
-        Shader::ShaderManager::GetSingleton().GetContext()->End(query.Get());
-        Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-        return true;
-    }
-    bool ThreadPool_GPUTaskModule::isQueryDone()
-    {
-        if (!query)
-            return true;
-        Shader::ShaderManager::GetSingleton().ShaderContextLock();
-        HRESULT hr = Shader::ShaderManager::GetSingleton().GetContext()->GetData(query.Get(), nullptr, 0, 0);
-        Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-        return FAILED(hr) || hr == S_OK;
-    }
-
     void ThreadPool_GPUTaskModule::workerLoop() {
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
         if (priorityCoreMask > 0)
@@ -105,7 +72,7 @@ namespace Mus {
             {
                 std::unique_lock lock(queueMutex);
                 cv.wait(lock, [this] { 
-                    return stop.load() || (!currentTasks.empty() && isQueryDone());
+                    return stop.load() || !currentTasks.empty();
                 });
                 if (stop.load() && currentTasks.empty())
                     return;
@@ -113,18 +80,11 @@ namespace Mus {
                 currentTasks.pop();
             }
             task();
-            getQuery();
         }
     }
 
     void ThreadPool_GPUTaskModule::onEvent(const FrameEvent& e)
     {
-        if (!isQueryDone())
-        {
-            lastTickTime = currentTime;
-            return;
-        }
-
         if (!currentTasks.empty())
             cv.notify_one();
         if (tasks.empty())

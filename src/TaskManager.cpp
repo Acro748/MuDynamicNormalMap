@@ -718,10 +718,6 @@ namespace Mus {
 			std::string texturePath = GetTexturePath(material->textureSet.get(), RE::BSTextureSet::Texture::kNormal);
 			if (texturePath.empty())
 				continue;
-			if (material->normalTexture->name.empty())
-				continue;
-			if (!IsSameString(material->normalTexture->name.c_str(), texturePath))
-				continue;
 			RE::NiPointer<RE::NiSourceTexture> texture;
 			Shader::TextureLoadManager::GetSingleton().LoadTexture(texturePath.c_str(), 1, texture, false);
 			if (!texture)
