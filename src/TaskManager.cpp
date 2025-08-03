@@ -397,11 +397,21 @@ namespace Mus {
 
 				logger::debug("{:x}::{} : {} - queue added on update object normalmap", id, actorName, geo->name.c_str());
 
-				lastNormalMapLock.lock_shared();
-				auto found = lastNormalMap[id].find(newUpdateSet[geo].textureName);
-				if (found != lastNormalMap[id].end())
-					Shader::TextureLoadManager::CreateSourceTexture(found->first, material->normalTexture);
-				lastNormalMapLock.unlock_shared();
+				if (Config::GetSingleton().GetRemoveBeforeNormalMap())
+				{
+					RE::NiPointer<RE::NiSourceTexture> texture;
+					Shader::TextureLoadManager::GetSingleton().LoadTexture(texturePath.c_str(), 1, texture, false);
+					if (texture)
+						material->normalTexture = texture;
+				}
+				else
+				{
+					lastNormalMapLock.lock_shared();
+					auto found = lastNormalMap[id].find(newUpdateSet[geo].textureName);
+					if (found != lastNormalMap[id].end())
+						Shader::TextureLoadManager::CreateSourceTexture(found->first, material->normalTexture);
+					lastNormalMapLock.unlock_shared();
+				}
 
 				ActorVertexHasher::GetSingleton().Register(a_actor, slot);
 
@@ -717,10 +727,6 @@ namespace Mus {
 				continue;
 			std::string texturePath = GetTexturePath(material->textureSet.get(), RE::BSTextureSet::Texture::kNormal);
 			if (texturePath.empty())
-				continue;
-			if (material->normalTexture->name.empty())
-				continue;
-			if (!IsSameString(material->normalTexture->name.c_str(), texturePath))
 				continue;
 			RE::NiPointer<RE::NiSourceTexture> texture;
 			Shader::TextureLoadManager::GetSingleton().LoadTexture(texturePath.c_str(), 1, texture, false);

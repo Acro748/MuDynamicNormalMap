@@ -163,6 +163,7 @@ namespace {
 
         std::uint32_t actorThreads = 2;
         std::uint32_t memoryManageThreads = 3;
+        std::uint32_t processingThreads = Mus::Config::GetSingleton().GetPriorityCoreCount();
         if (Mus::Config::GetSingleton().GetAutoTaskQ() > 0)
         {
             //float benchMarkResult = Mus::miniBenchMark();
@@ -188,6 +189,8 @@ namespace {
                 Mus::Config::GetSingleton().SetDivideTaskQ(0);
                 Mus::Config::GetSingleton().SetPriorityCores(0);
                 actorThreads = 2;
+                memoryManageThreads = 2; 
+                processingThreads = std::max(unsigned long(1), Mus::Config::GetSingleton().GetPriorityCoreCount());
                 break;
             case Mus::Config::AutoTaskQList::Faster:
                 Mus::Config::GetSingleton().SetTaskQMax(1);
@@ -196,6 +199,8 @@ namespace {
                 Mus::Config::GetSingleton().SetDivideTaskQ(0);
                 Mus::Config::GetSingleton().SetPriorityCores(0);
                 actorThreads = 1;
+                memoryManageThreads = 1;
+                processingThreads = std::max(unsigned long(1), Mus::Config::GetSingleton().GetPriorityCoreCount());
                 break;
             case Mus::Config::AutoTaskQList::Balanced:
                 Mus::Config::GetSingleton().SetTaskQMax(1);
@@ -204,6 +209,8 @@ namespace {
                 Mus::Config::GetSingleton().SetDivideTaskQ(0);
                 Mus::Config::GetSingleton().SetPriorityCores(0);
                 actorThreads = 1;
+                memoryManageThreads = 1;
+                processingThreads = std::max(unsigned long(1), Mus::Config::GetSingleton().GetPriorityCoreCount());
                 break;
             case Mus::Config::AutoTaskQList::BetterPerformance:
                 Mus::Config::GetSingleton().SetTaskQMax(1);
@@ -212,6 +219,8 @@ namespace {
                 Mus::Config::GetSingleton().SetDivideTaskQ(1);
                 Mus::Config::GetSingleton().SetPriorityCores(1);
                 actorThreads = 1;
+                memoryManageThreads = 1;
+                processingThreads = std::max(unsigned long(1), Mus::Config::GetSingleton().GetPriorityCoreCount() - actorThreads - memoryManageThreads);
                 break;
             case Mus::Config::AutoTaskQList::BestPerformance:
                 Mus::Config::GetSingleton().SetTaskQMax(1);
@@ -220,19 +229,30 @@ namespace {
                 Mus::Config::GetSingleton().SetDivideTaskQ(1);
                 Mus::Config::GetSingleton().SetPriorityCores(2);
                 actorThreads = 1;
+                memoryManageThreads = 1;
+                processingThreads = std::max(unsigned long(1), Mus::Config::GetSingleton().GetPriorityCoreCount() - actorThreads - memoryManageThreads);
                 break;
             default:
                 Mus::Config::GetSingleton().SetPriorityCores(-1);
-                actorThreads = 2;
+                actorThreads = 1;
+                memoryManageThreads = 1;
+                processingThreads = std::max(unsigned long(1), Mus::Config::GetSingleton().GetPriorityCoreCount());
                 break;
             }
         }
-        std::uint32_t processingThreads = std::max(unsigned long(4), Mus::Config::GetSingleton().GetPriorityCoreCount());
-        memoryManageThreads = std::max(unsigned long(1), std::min(Mus::Config::GetSingleton().GetPriorityCoreCount() / 4, unsigned long(3)));
 
         Mus::gpuTask = std::make_unique<Mus::ThreadPool_GPUTaskModule>(0, Mus::Config::GetSingleton().GetDirectTaskQ(), Mus::Config::GetSingleton().GetTaskQMax());
 
-        Mus::weldDistance = Mus::Config::GetSingleton().GetWeldDistance();
+        Mus::actorThreads = std::make_unique<Mus::ThreadPool_ParallelModule>(actorThreads);
+        logger::info("set actorThreads {}", actorThreads);
+
+        Mus::memoryManageThreads = std::make_unique<Mus::ThreadPool_ParallelModule>(memoryManageThreads);
+        logger::info("set memoryManageThreads {}", memoryManageThreads);
+
+        Mus::processingThreads = std::make_unique<Mus::ThreadPool_ParallelModule>(processingThreads);
+        logger::info("set processingThreads {}", processingThreads);
+
+        Mus::weldDistance = std::max(0.0001f, Mus::Config::GetSingleton().GetWeldDistance());
         Mus::weldDistanceMult = 1.0f / Mus::weldDistance;
 		Mus::g_frameEventDispatcher.addListener(&Mus::ObjectNormalMapUpdater::GetSingleton());
 		Mus::g_frameEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
@@ -255,15 +275,6 @@ namespace {
 		Mus::g_actorChangeHeadPartEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
         Mus::TaskManager::GetSingleton().Init(true);
         Mus::ObjectNormalMapUpdater::GetSingleton().Init();
-
-        Mus::actorThreads = std::make_unique<Mus::ThreadPool_ParallelModule>(actorThreads);
-        logger::info("set actorThreads {}", actorThreads);
-
-        Mus::memoryManageThreads = std::make_unique<Mus::ThreadPool_ParallelModule>(memoryManageThreads);
-        logger::info("set memoryManageThreads {}", memoryManageThreads);
-
-        Mus::processingThreads = std::make_unique<Mus::ThreadPool_ParallelModule>(processingThreads);
-        logger::info("set processingThreads {}", processingThreads);
     }
 
     void kNewGameFunction()

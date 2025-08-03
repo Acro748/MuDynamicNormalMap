@@ -69,6 +69,10 @@ namespace Mus {
             return DetectTickMS;
         }
 
+        [[nodiscard]] inline auto GetRemoveBeforeNormalMap() const noexcept {
+            return RemoveBeforeNormalMap;
+        }
+
         [[nodiscard]] inline auto GetUpdateDistance() const noexcept {
             return UpdateDistance;
         }
@@ -202,6 +206,7 @@ namespace Mus {
         float DetectDistance = 512.0f * 512.0f;
         std::clock_t DetectTickMS = 1000; //1sec
 
+        bool RemoveBeforeNormalMap = false;
         float UpdateDistance = 512.0f * 512.0f;
 
         bool GPUEnable = true;

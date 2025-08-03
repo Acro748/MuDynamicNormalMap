@@ -526,7 +526,7 @@ namespace Mus {
 						DirectX::XMFLOAT3 result;
 						DirectX::XMStoreFloat3(&result, vec);
 						return result;
-						};
+					};
 
 					std::size_t index = data.vertices.size();
 
