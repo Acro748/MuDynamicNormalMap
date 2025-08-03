@@ -159,14 +159,14 @@ namespace Mus {
 				{
                     DetectTickMS = GetIntValue(variableValue);
 				}
-                else if (variableName == "RemoveBeforeNormalMap")
-                {
-                    RemoveBeforeNormalMap = GetBoolValue(variableValue);
-                }
                 else if (variableName == "UpdateDistance")
                 {
                     float value = GetFloatValue(variableValue);
                     UpdateDistance = value * value;
+                }
+                else if (variableName == "RevertNormalMap")
+                {
+                    RevertNormalMap = GetBoolValue(variableValue);
                 }
                 else if (variableName == "GPUEnable")
                 {
