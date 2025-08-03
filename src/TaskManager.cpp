@@ -397,7 +397,7 @@ namespace Mus {
 
 				logger::debug("{:x}::{} : {} - queue added on update object normalmap", id, actorName, geo->name.c_str());
 
-				if (Config::GetSingleton().GetRemoveBeforeNormalMap())
+				if (Config::GetSingleton().GetRevertNormalMap())
 				{
 					RE::NiPointer<RE::NiSourceTexture> texture;
 					Shader::TextureLoadManager::GetSingleton().LoadTexture(texturePath.c_str(), 1, texture, false);
