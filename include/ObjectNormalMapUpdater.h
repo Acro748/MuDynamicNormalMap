@@ -17,12 +17,14 @@ namespace Mus {
 		bool CreateGeometryResourceData(RE::FormID a_actorID, GeometryDataPtr a_data);
 
 		struct NormalMapResult {
-			std::uint32_t slot;
-			RE::BSGeometry* geometry; //for ptr compare only 
-			std::string geoName;
-			std::string textureName;
-			std::uint32_t vertexCount;
-			RE::NiPointer<RE::NiSourceTexture> normalmap;
+			bSlot slot;
+			RE::BSGeometry* geometry = nullptr; //for ptr compare only 
+			std::string geoName = "";
+			std::string texturePath = "";
+			std::string textureName = "";
+			std::uint32_t vertexCount = 0;
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> normalmapTexture2D = nullptr;
+			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> normalmapShaderResourceView = nullptr;
 		};
 		typedef concurrency::concurrent_vector<NormalMapResult> UpdateResult;
 		UpdateResult UpdateObjectNormalMap(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet a_updateSet);

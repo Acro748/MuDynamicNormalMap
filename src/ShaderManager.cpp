@@ -464,7 +464,6 @@ namespace Mus {
 				newRendererTexture->resourceView->AddRef();
 				output->rendererTexture = newRendererTexture;
 			}
-			SetOrgTexturePath(name, filePath);
 			return output;
 		}
 
@@ -500,14 +499,14 @@ namespace Mus {
 			}
 		}
 
-		void TextureLoadManager::CreateNiTexture(std::string name, std::string texturePath, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTex, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& dstSRV, RE::NiPointer<RE::NiSourceTexture>& output, bool& texCreated)
+		std::int8_t TextureLoadManager::CreateNiTexture(std::string name, Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTex, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> dstSRV, RE::NiPointer<RE::NiSourceTexture>& output)
 		{
 			RE::NiPointer<RE::NiSourceTexture> newTexture;
 			auto result = TextureLoadManager::CreateSourceTexture(name, newTexture);
 			if (result == -1 || !newTexture)
 			{
 				logger::critical("Failed to create NiTexture");
-				return;
+				return result;
 			}
 			else if (result == 0)
 			{
@@ -521,7 +520,6 @@ namespace Mus {
 					oldTexture->Release();
 				if (oldResource)
 					oldResource->Release();
-				texCreated = false;
 			}
 			else if (result == 1)
 			{
@@ -531,16 +529,14 @@ namespace Mus {
 				newRendererTexture->resourceView = dstSRV.Get();
 				newRendererTexture->resourceView->AddRef();
 				newTexture->rendererTexture = newRendererTexture;
-				texCreated = true;
 			}
 			output = newTexture;
-			SetOrgTexturePath(name, texturePath);
 			/*D3D11_TEXTURE2D_DESC desc;
 			dstTex->GetDesc(&desc);
 			D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
 			dstSRV->GetDesc(&srvDesc);
 			logger::info("{} {} {} {}", magic_enum::enum_name(desc.Format).data(), desc.MipLevels, magic_enum::enum_name(srvDesc.Format).data(), srvDesc.Texture2D.MipLevels);*/
-			return;
+			return result;
 		}
 
 		void TextureLoadManager::ReleaseNiTexture(std::string name)
@@ -648,20 +644,6 @@ namespace Mus {
 				return false;
 			logger::info("Update NiTexture Done : {}", filePath);
 			return true;
-		}
-		std::string TextureLoadManager::GetOrgTexturePath(std::string name)
-		{
-			auto found = textureOrgPath.find(name);
-			if (found == textureOrgPath.end())
-				return "";
-			return found->second;
-			return "";
-		}
-		void TextureLoadManager::SetOrgTexturePath(std::string name, std::string texturePath)
-		{
-			if (texturePath.empty())
-				texturePath = "None";
-			textureOrgPath[name] = texturePath;
 		}
 		bool TextureLoadManager::UpdateNiTexture(std::string filePath)
 		{

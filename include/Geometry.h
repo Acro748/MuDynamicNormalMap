@@ -49,9 +49,10 @@ namespace Mus {
 		bool CopyGeometryData(RE::BSGeometry* a_geo);
 		void GetGeometryData();
 		void UpdateMap();
-		void RecalculateNormals(float a_smooth);
+		void RecalculateNormals(float a_smoothDegree);
 		void Subdivision(std::uint32_t a_subCount);
 		void VertexSmooth(float a_strength, std::uint32_t a_smoothCount);
+
 
 		GeometryInfo mainInfo;
 		std::vector<DirectX::XMFLOAT3> vertices;
@@ -65,50 +66,113 @@ namespace Mus {
 			RE::BSGeometry* geometry; //for ptr compare only 
 			ObjectInfo objInfo;
 		};
-		concurrency::concurrent_vector<GeometriesInfo> geometries; //geometry name, ObjectInfo
+		concurrency::concurrent_vector<GeometriesInfo> geometries;
 		std::uint32_t mainGeometryIndex = 0;
 
+		struct BoundaryEdgeKey {
+			std::uint32_t v0, v1;
+			bool operator==(const BoundaryEdgeKey& other) const {
+				return std::min(v0, v1) == std::min(other.v0, other.v1) && std::max(v0, v1) == std::max(other.v0, other.v1);
+			}
+		};
+		struct BoundaryEdgeKeyHash {
+			std::size_t operator()(const BoundaryEdgeKey& k) const {
+				return (static_cast<std::size_t>(std::min(k.v0, k.v1)) << 32) | std::max(k.v0, k.v1);
+			}
+		};
+		concurrency::concurrent_unordered_map<BoundaryEdgeKey, concurrency::concurrent_vector<std::uint32_t>, BoundaryEdgeKeyHash> boundaryEdgeMap; //edge, face
+		std::vector<concurrency::concurrent_vector<BoundaryEdgeKey>> boundaryEdgeVertexMap; //vertex index, edgekey
+		inline bool IsBoundaryEdge(const std::uint32_t& v0, const std::uint32_t& v1) {
+			const auto it = boundaryEdgeMap.find({ v0, v1 });
+			if (it != boundaryEdgeMap.end())
+				return it->second.size() == 1;
+			return false;
+		}
+		inline bool IsBoundaryEdge(const BoundaryEdgeKey& k) {
+			const auto it = boundaryEdgeMap.find(k);
+			if (it != boundaryEdgeMap.end())
+				return it->second.size() == 1;
+			return false;
+		}
+		inline bool IsBoundaryVertex(const std::uint32_t& vi) {
+			if (boundaryEdgeVertexMap.size() <= vi)
+				return false;
+			for (const auto& edgeKey : boundaryEdgeVertexMap[vi])
+			{
+				if (IsBoundaryEdge(edgeKey))
+					return true;
+			}
+			return false;
+		}
+
 		struct VertexKey {
-			DirectX::XMFLOAT3 pos;
-			DirectX::XMFLOAT2 uv;
+			std::int32_t x, y, z;
+			std::int32_t u, v;
 			bool operator==(const VertexKey& other) const {
-				return fabs(pos.x - other.pos.x) < weldDistance &&
-					fabs(pos.y - other.pos.y) < weldDistance &&
-					fabs(pos.z - other.pos.z) < weldDistance &&
-					fabs(uv.x - other.uv.x) < weldDistance &&
-					fabs(uv.y - other.uv.y) < weldDistance;
+				return x == other.x && y == other.y && z == other.z && 
+					u == other.u && v == other.v;
 			}
 		};
 		struct VertexKeyHash {
 			std::size_t operator()(const VertexKey& k) const {
-				std::size_t hx = std::hash<std::int32_t>()(std::int32_t(k.pos.x * weldDistanceMult));
-				std::size_t hy = std::hash<std::int32_t>()(std::int32_t(k.pos.y * weldDistanceMult));
-				std::size_t hz = std::hash<std::int32_t>()(std::int32_t(k.pos.z * weldDistanceMult));
-				std::size_t hu = std::hash<std::int32_t>()(std::int32_t(k.uv.x * weldDistanceMult));
-				std::size_t hv = std::hash<std::int32_t>()(std::int32_t(k.uv.y * weldDistanceMult));
+				std::size_t hx = std::hash<std::int32_t>()(k.x);
+				std::size_t hy = std::hash<std::int32_t>()(k.y);
+				std::size_t hz = std::hash<std::int32_t>()(k.z);
+				std::size_t hu = std::hash<std::int32_t>()(k.x);
+				std::size_t hv = std::hash<std::int32_t>()(k.y);
 				return (((((hx ^ (hy << 1)) >> 1) ^ (hz << 1)) ^ (hu << 2)) >> 2) ^ (hv << 3);
 			}
 		};
+		inline VertexKey MakeVertexKey(const DirectX::XMFLOAT3& pos, const DirectX::XMFLOAT2& uv) {
+			return {
+				std::int32_t(std::floor(pos.x * weldDistanceMult)),
+				std::int32_t(std::floor(pos.y * weldDistanceMult)),
+				std::int32_t(std::floor(pos.z * weldDistanceMult)),
+				std::int32_t(std::floor(uv.x * weldDistanceMult)),
+				std::int32_t(std::floor(uv.y * weldDistanceMult))
+			};
+		}
+		inline VertexKey MakeBoundaryVertexKey(const DirectX::XMFLOAT3& pos, const DirectX::XMFLOAT2& uv) {
+			return {
+				std::int32_t(std::floor(pos.x * boundaryWeldDistanceMult)),
+				std::int32_t(std::floor(pos.y * boundaryWeldDistanceMult)),
+				std::int32_t(std::floor(pos.z * boundaryWeldDistanceMult)),
+				std::int32_t(std::floor(uv.x * boundaryWeldDistanceMult)),
+				std::int32_t(std::floor(uv.y * boundaryWeldDistanceMult))
+			};
+		}
 		//including uv seam
-		concurrency::concurrent_unordered_map<VertexKey, concurrency::concurrent_vector<std::uint32_t>, VertexKeyHash> vertexMap;
+		concurrency::concurrent_unordered_map<VertexKey, concurrency::concurrent_unordered_map<std::uint32_t, bool>, VertexKeyHash> vertexMap; //vertex + uv, face
 
 		struct PositionKey {
-			DirectX::XMFLOAT3 pos;
+			std::int32_t x, y, z;
 			bool operator==(const PositionKey& other) const {
-				return fabs(pos.x - other.pos.x) < weldDistance &&
-					fabs(pos.y - other.pos.y) < weldDistance &&
-					fabs(pos.z - other.pos.z) < weldDistance;
+				return x == other.x && y == other.y && z == other.z;
 			}
 		};
 		struct PositionKeyHash {
 			std::size_t operator()(const PositionKey& k) const {
-				return std::hash<std::int32_t>()(std::int32_t(k.pos.x * weldDistanceMult)) ^
-					(std::hash<std::int32_t>()(std::int32_t(k.pos.y * weldDistanceMult)) << 1) ^
-					(std::hash<std::int32_t>()(std::int32_t(k.pos.z * weldDistanceMult)) << 2);
+				return std::hash<std::int32_t>()(k.x) ^
+					(std::hash<std::int32_t>()(k.y) << 1) ^
+					(std::hash<std::int32_t>()(k.z) << 2);
 			}
 		};
+		inline PositionKey MakePositionKey(const DirectX::XMFLOAT3& pos) {
+			return {
+				std::int32_t(std::floor(pos.x * weldDistanceMult)),
+				std::int32_t(std::floor(pos.y * weldDistanceMult)),
+				std::int32_t(std::floor(pos.z * weldDistanceMult))
+			};
+		}
+		inline PositionKey MakeBoundaryPositionKey(const DirectX::XMFLOAT3& pos) {
+			return {
+				std::int32_t(std::floor(pos.x * boundaryWeldDistanceMult)),
+				std::int32_t(std::floor(pos.y * boundaryWeldDistanceMult)),
+				std::int32_t(std::floor(pos.z * boundaryWeldDistanceMult))
+			};
+		}
 		//without uv seam
-		concurrency::concurrent_unordered_map<PositionKey, concurrency::concurrent_vector<std::uint32_t>, PositionKeyHash> positionMap;
+		concurrency::concurrent_unordered_map<PositionKey, concurrency::concurrent_unordered_map<std::uint32_t, bool>, PositionKeyHash> positionMap; //vertex, indices
 
 		struct FaceNormal {
 			std::uint32_t v0, v1, v2;

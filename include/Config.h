@@ -32,8 +32,47 @@ namespace Mus {
         [[nodiscard]] inline auto GetDebugTexture() const noexcept {
             return DebugTexture;
         }
-        [[nodiscard]] inline auto GetPerformanceLog() const noexcept {
-            return PerformanceLog;
+        [[nodiscard]] inline auto GetTickTimeToRealFPS() const noexcept {
+            return TickTimeToRealFPS;
+        }
+        [[nodiscard]] inline auto GetQueueTime() const noexcept {
+            return QueueTime;
+        }
+        [[nodiscard]] inline auto GetFullUpdateTime() const noexcept {
+            return FullUpdateTime;
+        }
+        [[nodiscard]] inline auto GetActorVertexHasherTime1() const noexcept {
+            return ActorVertexHasherTime1;
+        }
+        [[nodiscard]] inline auto GetActorVertexHasherTime2() const noexcept {
+            return ActorVertexHasherTime2;
+        }
+        [[nodiscard]] inline auto GetGeometryDataTime() const noexcept {
+            return GeometryDataTime;
+        }
+        [[nodiscard]] inline auto GetUpdateNormalMapTime1() const noexcept {
+            return UpdateNormalMapTime1;
+        }
+        [[nodiscard]] inline auto GetUpdateNormalMapTime2() const noexcept {
+            return UpdateNormalMapTime2;
+        }
+        [[nodiscard]] inline auto GetBleedTextureTime1() const noexcept {
+            return BleedTextureTime1;
+        }
+        [[nodiscard]] inline auto GetBleedTextureTime2() const noexcept {
+            return BleedTextureTime2;
+        }
+        [[nodiscard]] inline auto GetTextureCopyTime() const noexcept {
+            return TextureCopyTime;
+        }
+        [[nodiscard]] inline auto GetMergeTime1() const noexcept {
+            return MergeTime1;
+        }
+        [[nodiscard]] inline auto GetMergeTime2() const noexcept {
+            return MergeTime2;
+        }
+        [[nodiscard]] inline auto GetCompressTime() const noexcept {
+            return CompressTime;
         }
 
         //General
@@ -53,6 +92,113 @@ namespace Mus {
             return HeadEnable;
         }
 
+        [[nodiscard]] inline auto GetHotKey1() const noexcept {
+            return HotKey1;
+        }
+        [[nodiscard]] inline auto GetHotKey2() const noexcept {
+            return HotKey2;
+        }
+
+        [[nodiscard]] inline auto GetRevertNormalMap() const noexcept {
+            return RevertNormalMap;
+        }
+        [[nodiscard]] inline auto GetUpdateDelayTick() const noexcept {
+            return UpdateDelayTick;
+        }
+
+        [[nodiscard]] inline auto GetRemoveSkinOverrides() const noexcept {
+            return RemoveSkinOverrides;
+        }
+        [[nodiscard]] inline auto GetRemoveNodeOverrides() const noexcept {
+            return RemoveNodeOverrides;
+        }
+
+        //Geometry
+        [[nodiscard]] inline auto GetWeldDistance() const noexcept {
+            return WeldDistance;
+        }
+        [[nodiscard]] inline auto GetBoundaryWeldDistance() const noexcept {
+            return BoundaryWeldDistance;
+        }
+        [[nodiscard]] inline auto GetNormalSmoothDegree() const noexcept {
+            return NormalSmoothDegree;
+        }
+        [[nodiscard]] inline auto GetAllowInvertNormalSmooth() const noexcept {
+            return AllowInvertNormalSmooth;
+        }
+        [[nodiscard]] inline auto GetSubdivision() const noexcept {
+            return Subdivision;
+        }
+        [[nodiscard]] inline auto GetVertexSmooth() const noexcept {
+            return VertexSmooth;
+        }
+        [[nodiscard]] inline auto GetVertexSmoothStrength() const noexcept {
+            return VertexSmoothStrength;
+        }
+
+        //Texture
+        [[nodiscard]] inline auto GetTextureWidth() const noexcept {
+            return TextureWidth;
+        }
+        [[nodiscard]] inline auto GetTextureHeight() const noexcept {
+            return TextureHeight;
+        }
+        [[nodiscard]] inline auto GetTextureMargin() const noexcept {
+            return TextureMargin;
+        }
+        [[nodiscard]] inline auto GetTangentZCorrection() const noexcept {
+            return TangentZCorrection;
+        }
+        [[nodiscard]] inline auto GetDetailStrength() const noexcept {
+            return DetailStrength;
+        }
+        [[nodiscard]] inline auto GetBlueRadius() const noexcept {
+            return BlueRadius;
+        }
+
+        //Performance
+        [[nodiscard]] inline auto GetGPUEnable() const noexcept {
+            return GPUEnable;
+        }
+        [[nodiscard]] inline auto GetTextureMarginGPU() const noexcept {
+            return TextureMarginGPU;
+        }
+        [[nodiscard]] inline auto GetMergeTextureGPU() const noexcept {
+            return MergeTextureGPU;
+        }
+        [[nodiscard]] inline auto GetWaitForRendererTickMS() const noexcept {
+            return WaitForRendererTickMS;
+        }
+        [[nodiscard]] inline auto GetUpdateDistance() const noexcept {
+            return UpdateDistance;
+        }
+
+        [[nodiscard]] inline auto GetAutoTaskQ() const noexcept {
+            return AutoTaskQ;
+        }
+        [[nodiscard]] inline auto GetPriorityCores() const noexcept {
+            return PriorityCoreMask;
+        }
+        [[nodiscard]] inline auto GetPriorityCoreCount() const noexcept {
+            return PriorityCoreCount;
+        }
+        [[nodiscard]] inline auto GetTaskQMax() const noexcept {
+            return TaskQMax;
+        }
+        [[nodiscard]] inline auto GetTaskQmsTick() const noexcept {
+            return TaskQTickMS;
+        }
+        [[nodiscard]] inline auto GetDirectTaskQ() const noexcept {
+            return DirectTaskQ;
+        }
+        [[nodiscard]] inline auto GetDivideTaskQ() const noexcept {
+            return DivideTaskQ;
+        }
+        [[nodiscard]] inline auto GetTextureCompress() const noexcept {
+            return TextureCompress;
+        }
+
+        //RealtimeDetect
         [[nodiscard]] inline auto GetRealtimeDetect() const noexcept {
             return RealtimeDetect;
         }
@@ -68,105 +214,6 @@ namespace Mus {
         [[nodiscard]] inline auto GetDetectTickMS() const noexcept {
             return DetectTickMS;
         }
-
-        [[nodiscard]] inline auto GetUpdateDistance() const noexcept {
-            return UpdateDistance;
-        }
-        [[nodiscard]] inline auto GetRevertNormalMap() const noexcept {
-            return RevertNormalMap;
-        }
-
-        [[nodiscard]] inline auto GetGPUEnable() const noexcept {
-            return GPUEnable;
-        }
-        [[nodiscard]] inline auto GetWaitForRendererTickMS() const noexcept {
-            return WaitForRendererTickMS;
-        }
-
-        [[nodiscard]] inline auto GetPriorityCores() const noexcept {
-            return PriorityCoreMask;
-        }
-        [[nodiscard]] inline auto GetPriorityCoreCount() const noexcept {
-            return PriorityCoreCount;
-        }
-        [[nodiscard]] inline auto GetAutoTaskQ() const noexcept {
-            return AutoTaskQ;
-        }
-        [[nodiscard]] inline auto GetTaskQMax() const noexcept {
-            return TaskQMax;
-        }
-        [[nodiscard]] inline auto GetTaskQmsTick() const noexcept {
-            return TaskQTickMS;
-        }
-        [[nodiscard]] inline auto GetDirectTaskQ() const noexcept {
-            return DirectTaskQ;
-        }
-        [[nodiscard]] inline auto GetDivideTaskQ() const noexcept {
-            return DivideTaskQ;
-        }
-        [[nodiscard]] inline auto GetUpdateDelayTick() const noexcept {
-            return UpdateDelayTick;
-        }
-        [[nodiscard]] inline auto GetHotKey1() const noexcept {
-            return HotKey1;
-        }
-        [[nodiscard]] inline auto GetHotKey2() const noexcept {
-            return HotKey2;
-        }
-        [[nodiscard]] inline auto GetWeldDistance() const noexcept {
-            return WeldDistance;
-        }
-        [[nodiscard]] inline auto GetNormalSmoothDegree() const noexcept {
-            return NormalSmoothDegree;
-        }
-        [[nodiscard]] inline auto GetSubdivision() const noexcept {
-            return Subdivision;
-        }
-        [[nodiscard]] inline auto GetVertexSmooth() const noexcept {
-            return VertexSmooth;
-        }
-        [[nodiscard]] inline auto GetVertexSmoothStrength() const noexcept {
-            return VertexSmoothStrength;
-        }
-        [[nodiscard]] inline auto GetDetailStrength() const noexcept {
-            return DetailStrength;
-        }
-
-        [[nodiscard]] inline auto GetTextureMargin() const noexcept {
-            return TextureMargin;
-        }
-        [[nodiscard]] inline auto GetTextureMarginGPU() const noexcept {
-            return TextureMarginGPU;
-        }
-        [[nodiscard]] inline auto GetMergeTextureGPU() const noexcept {
-            return MergeTextureGPU;
-        }
-        [[nodiscard]] inline auto GetTextureCompress() const noexcept {
-            return TextureCompress;
-        }
-
-        [[nodiscard]] inline auto GetTextureWidth() const noexcept {
-            return TextureWidth;
-        }
-        [[nodiscard]] inline auto GetTextureHeight() const noexcept {
-            return TextureHeight;
-        }
-
-        [[nodiscard]] inline auto GetBlueRadius() const noexcept {
-            return BlueRadius;
-        }
-
-        [[nodiscard]] inline auto GetTangentZCorrection() const noexcept {
-            return TangentZCorrection;
-        }
-
-        [[nodiscard]] inline auto GetRemoveSkinOverrides() const noexcept {
-            return RemoveSkinOverrides;
-        }
-        [[nodiscard]] inline auto GetRemoveNodeOverrides() const noexcept {
-            return RemoveNodeOverrides;
-		}
-
 
 
         inline void SetTaskQMax(std::uint8_t newTaskQMax) {
@@ -190,7 +237,20 @@ namespace Mus {
         spdlog::level::level_enum logLevel{ spdlog::level::level_enum::info };
         spdlog::level::level_enum flushLevel{ spdlog::level::level_enum::trace };
         bool DebugTexture = false;
-        bool PerformanceLog = false;
+        bool TickTimeToRealFPS = false;
+        bool QueueTime = false;
+        bool FullUpdateTime = false;
+        bool ActorVertexHasherTime1 = false;
+        bool ActorVertexHasherTime2 = false;
+        bool GeometryDataTime = false;
+        bool UpdateNormalMapTime1 = false;
+        bool UpdateNormalMapTime2 = false;
+        bool BleedTextureTime1 = false;
+        bool BleedTextureTime2 = false;
+        bool TextureCopyTime = false;
+        bool MergeTime1 = false;
+        bool MergeTime2 = false;
+        bool CompressTime = false;
 
         //General
         bool PlayerEnable = true;
@@ -199,22 +259,39 @@ namespace Mus {
         bool FemaleEnable = true;
         bool HeadEnable = false;
 
-        bool RealtimeDetect = true;
-        std::uint8_t RealtimeDetectHead = 1; //0 disable, 1 morph data only, all data
-        bool RealtimeDetectOnBackGround = false;
-        float DetectDistance = 512.0f * 512.0f;
-        std::clock_t DetectTickMS = 1000; //1sec
+        std::uint32_t HotKey1 = 0;
+        std::uint32_t HotKey2 = 43;
 
         bool RevertNormalMap = false;
-        float UpdateDistance = 512.0f * 512.0f;
 
+        std::uint8_t UpdateDelayTick = 1;
+
+        bool RemoveSkinOverrides = true;
+        bool RemoveNodeOverrides = true;
+
+        //Geometry
+        float WeldDistance = 0.02f;
+        float BoundaryWeldDistance = 0.02f;
+        float NormalSmoothDegree = 60.0f;
+        bool AllowInvertNormalSmooth = false;
+        std::uint8_t Subdivision = 0;
+        std::uint8_t VertexSmooth = 0;
+        float VertexSmoothStrength = 0.5f;
+
+        //Texture
+        std::uint32_t TextureWidth = 2048;
+        std::uint32_t TextureHeight = 2048;
+        std::int32_t TextureMargin = -1;
+        bool TangentZCorrection = true;
+        float DetailStrength = 0.5f;
+        std::uint32_t BlueRadius = 8;
+
+        //Performance
         bool GPUEnable = true;
+        bool TextureMarginGPU = true;
+        bool MergeTextureGPU = true;
         std::clock_t WaitForRendererTickMS = 1000; //1sec
-
-        std::unordered_set<std::int32_t> PriorityCoreList;
-        unsigned long PriorityCoreMask = 0;
-        std::int32_t DetectPriorityCores = 0;
-        unsigned long PriorityCoreCount = 0;
+        float UpdateDistance = 4096.0f * 4096.0f;
 
         std::uint8_t AutoTaskQ = AutoTaskQList::Disable;
         std::uint8_t TaskQMax = 1;
@@ -222,32 +299,20 @@ namespace Mus {
         bool DirectTaskQ = false;
         std::uint8_t DivideTaskQ = 1;
 
-        std::uint8_t UpdateDelayTick = 1;
+        std::unordered_set<std::int32_t> PriorityCoreList;
+        unsigned long PriorityCoreMask = 0;
+        std::int32_t DetectPriorityCores = 0;
+        unsigned long PriorityCoreCount = 0;
 
-        std::uint32_t HotKey1 = 0;
-        std::uint32_t HotKey2 = 43;
+        std::uint8_t TextureCompress = 0; //0 no compress, 1 dxt5, 2 bc7
 
-        float WeldDistance = 0.02f;
-        float NormalSmoothDegree = 60.0f;
-        std::uint8_t Subdivision = 0;
-        std::uint8_t VertexSmooth = 0;
-        float VertexSmoothStrength = 0.5f;
-        float DetailStrength = 0.5f;
+        //RealtimeDetect
+        bool RealtimeDetect = true;
+        std::uint8_t RealtimeDetectHead = 1; //0 disable, 1 morph data only, all data
+        bool RealtimeDetectOnBackGround = false;
+        float DetectDistance = 512.0f * 512.0f;
+        std::clock_t DetectTickMS = 1000; //1sec
 
-        std::int32_t TextureMargin = -1;
-        bool TextureMarginGPU = true;
-        bool MergeTextureGPU = true;
-        std::int8_t TextureCompress = -1; //-1 no compress, 0 dxt5, 1 bc7
-
-        std::uint32_t TextureWidth = 2048;
-        std::uint32_t TextureHeight = 2048;
-
-        bool TangentZCorrection = true;
-
-        std::uint32_t BlueRadius = 8;
-
-        bool RemoveSkinOverrides = true;
-        bool RemoveNodeOverrides = true;
 
     public:
         inline std::string getCurrentSettingValue(std::string s)
@@ -402,4 +467,6 @@ namespace Mus {
         static inline bool isSubSurface(std::string filename) { return IsContainString(filename, "_sk.dds"); };
         static inline bool isEnvironment(std::string filename) { return IsContainString(filename, "_e.dds"); };
     };
+
+    void InitialSetting();
 }

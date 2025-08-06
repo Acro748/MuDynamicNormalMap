@@ -16,6 +16,7 @@ namespace Mus {
 		}
 
 		void InitialConditionMap();
+		void InitialConditionList() { ConditionList.clear(); };
 
 		enum ConditionType : std::uint32_t {
 			HasKeyword,

@@ -755,30 +755,29 @@ namespace Mus {
                 {
 					auto average = funcAverageTime[funcStr] / funcAverageCount[funcStr];
                     auto unit = "ns";
+                    double duration = 0;
                     if (average >= 1000000)
                     {
-                        average /= 1000000;
+                        duration = (double)average / 1000000;
 						tick /= 1000000;
                         unit = "ms";
                     }
                     else if (average >= 1000)
                     {
-                        average /= 1000;
+                        duration = (double)average / 1000;
 						tick /= 1000;
                         unit = "us";
 					}
 					logger::info("{} average time: {}{}{}=> {:.6f}%", funcStr, average, unit,
                                  funcAverageArgs[funcStr] > 0 ? (std::string(" with average count ") + std::to_string(funcAverageArgs[funcStr] / funcAverageCount[funcStr]) + " ") : " ",
-                                 (double)average / tick * 100
-                    );
+                                 (double)average / tick * 100);
                     if (PerformanceCheckConsolePrint)
                     {
                         auto Console = RE::ConsoleLog::GetSingleton();
                         if (Console)
                             Console->Print("%s average time: %lld%s%s=> %.6f%%", funcStr.c_str(), average, unit,
                                            funcAverageArgs[funcStr] > 0 ? (std::string(" with average count ") + std::to_string(funcAverageArgs[funcStr] / funcAverageCount[funcStr]) + " ").c_str() : " ",
-                                           (double)average / tick * 100
-                            );
+                                           (double)average / tick * 100);
                     }
                     funcAverageTime[funcStr] = 0;
                     funcAverageCount[funcStr] = 0;
@@ -788,30 +787,29 @@ namespace Mus {
             else
             {
                 auto unit = "ns";
+                double duration = 0;
                 if (duration_ns >= 1000000)
                 {
-                    duration_ns /= 1000;
+                    duration = (double)duration_ns / 1000000;
 					tick /= 1000000;
                     unit = "ms";
                 }
                 else if (duration_ns >= 1000)
                 {
-                    duration_ns /= 1;
+                    duration = (double)duration_ns / 1000;
 					tick /= 1000;
                     unit = "us";
                 }
-                logger::info("{} time: {}{}{}=> {:.6f}%", funcStr, duration_ns, unit,
+                logger::info("{} time: {:.2f}{}{}=> {:.6f}%", funcStr, duration, unit,
                              args > 0 ? (std::string(" with count ") + std::to_string(args) + " ") : " ",
-                             (double)duration_ns / tick * 100
-                ); 
+                             duration / tick * 100); 
                 if (PerformanceCheckConsolePrint)
                 {
                     auto Console = RE::ConsoleLog::GetSingleton();
                     if (Console)
-                        Console->Print("%s time: %lld%s%s=> %.6f%%", funcStr.c_str(), duration_ns, unit,
+                        Console->Print("%s time: %.6f%s%s=> %.6f%%", funcStr.c_str(), duration, unit,
                                        args > 0 ? (std::string(" with count ") + std::to_string(args) + " ").c_str() : " ",
-                                       (double)duration_ns / tick * 100
-                        );
+                                       duration / tick * 100);
                 }
             }
         }

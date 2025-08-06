@@ -100,9 +100,6 @@ namespace Mus {
 			bool GetTexture2D(std::string filePath, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
 			bool UpdateTexture(std::string filePath);
 
-			std::string GetOrgTexturePath(std::string name);
-			void SetOrgTexturePath(std::string name, std::string texturePath);
-
 			static RE::NiTexture* CreateTexture(const RE::BSFixedString& name)
 			{
 				using func_t = decltype(&TextureLoadManager::CreateTexture);
@@ -157,7 +154,7 @@ namespace Mus {
 
 			std::int8_t IsCompressFormat(DXGI_FORMAT format); // -1 non compress, 1 cpu compress, 2 gpu compress
 
-			void CreateNiTexture(std::string name, std::string texturePath, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTex, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& dstSRV, RE::NiPointer<RE::NiSourceTexture>& output, bool& texCreated);
+			std::int8_t CreateNiTexture(std::string name, Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTex, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> dstSRV, RE::NiPointer<RE::NiSourceTexture>& output);
 			void ReleaseNiTexture(std::string name);
 		private:
 			bool ConvertD3D11(DirectX::ScratchImage& image, Microsoft::WRL::ComPtr<ID3D11Resource>& output);
@@ -175,7 +172,6 @@ namespace Mus {
 				MetaData metaData;
 			};
 			concurrency::concurrent_unordered_map<std::string, RE::NiPointer<RE::NiSourceTexture>> niTextures;
-			concurrency::concurrent_unordered_map<std::string, std::string> textureOrgPath;
 		};
 	}
 	struct HSVA {

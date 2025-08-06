@@ -2,15 +2,6 @@
 #include "bc7enc_rdo/bc7enc.h"
 
 namespace Mus {
-//#define UPDATE_TEST1
-//#define UPDATE_TEST2
-//#define COMPRESS_TEST
-//#define BLEED_TEST1
-//#define BLEED_TEST2
-//#define COPY_TEST
-//#define MERGE_TEST1
-//#define MERGE_TEST2
-
 	void ObjectNormalMapUpdater::onEvent(const FrameEvent& e)
 	{
 		static std::clock_t lastTickTime = currentTime;
@@ -118,9 +109,9 @@ namespace Mus {
 			logger::error("{} : Invalid parameters", __func__);
 			return false;
 		}
+		a_data->Subdivision(Config::GetSingleton().GetSubdivision());
 		a_data->UpdateMap();
-		//a_data->Subdivision(Config::GetSingleton().GetSubdivision());
-		//a_data->VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
+		a_data->VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
 		a_data->RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree());
 
 		if (a_data->vertices.size() != a_data->uvs.size() ||
@@ -181,9 +172,9 @@ namespace Mus {
 
 		for (auto& update : a_updateSet)
 		{
-#ifdef UPDATE_TEST1
-			PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, false, false);
-#endif // UPDATE_TEST1
+			if (Config::GetSingleton().GetUpdateNormalMapTime1())
+				PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, false, false);
+
 			auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
 				return geosInfo.geometry == update.first;
 			});
@@ -219,6 +210,7 @@ namespace Mus {
 						srcStagingDesc.Usage = D3D11_USAGE_STAGING;
 						srcStagingDesc.BindFlags = 0;
 						srcStagingDesc.MiscFlags = 0;
+						srcStagingDesc.MipLevels = 1;
 						srcStagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 
 						dstShaderResourceViewDesc = srcShaderResourceViewDesc;
@@ -230,12 +222,7 @@ namespace Mus {
 						}
 						else
 						{
-
-							gpuTask->submitAsync([&]() {
-								Shader::ShaderManager::GetSingleton().ShaderContextLock();
-								context->CopyResource(newResourceData->srcTexture2D.Get(), srcTexture2D.Get());
-								Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-							}).get();
+							CopySubresourceRegion(newResourceData->srcTexture2D, srcTexture2D, 0, 0);
 						}
 					}
 				}
@@ -257,6 +244,7 @@ namespace Mus {
 					detailStagingDesc.Usage = D3D11_USAGE_STAGING;
 					detailStagingDesc.BindFlags = 0;
 					detailStagingDesc.MiscFlags = 0;
+					detailStagingDesc.MipLevels = 1;
 					detailStagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 
 					dstShaderResourceViewDesc = detailShaderResourceViewDesc;
@@ -268,11 +256,7 @@ namespace Mus {
 					}
 					else
 					{
-						gpuTask->submitAsync([&]() {
-							Shader::ShaderManager::GetSingleton().ShaderContextLock();
-							context->CopyResource(newResourceData->detailTexture2D.Get(), detailTexture2D.Get());
-							Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-						}).get();
+						CopySubresourceRegion(newResourceData->detailTexture2D, detailTexture2D, 0, 0);
 					}
 				}
 
@@ -295,6 +279,7 @@ namespace Mus {
 					overlayStagingDesc.Usage = D3D11_USAGE_STAGING;
 					overlayStagingDesc.BindFlags = 0;
 					overlayStagingDesc.MiscFlags = 0;
+					overlayStagingDesc.MipLevels = 1;
 					overlayStagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 					hr = device->CreateTexture2D(&overlayStagingDesc, nullptr, &newResourceData->overlayTexture2D);
 					if (FAILED(hr))
@@ -304,11 +289,7 @@ namespace Mus {
 					}
 					else
 					{
-						gpuTask->submitAsync([&]() {
-							Shader::ShaderManager::GetSingleton().ShaderContextLock();
-							context->CopyResource(newResourceData->overlayTexture2D.Get(), overlayTexture2D.Get());
-							Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-						}).get();
+						CopySubresourceRegion(newResourceData->overlayTexture2D, overlayTexture2D, 0, 0);
 					}
 				}
 			}
@@ -325,6 +306,7 @@ namespace Mus {
 					maskStagingDesc.Usage = D3D11_USAGE_STAGING;
 					maskStagingDesc.BindFlags = 0;
 					maskStagingDesc.MiscFlags = 0;
+					maskStagingDesc.MipLevels = 1;
 					maskStagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 					hr = device->CreateTexture2D(&maskStagingDesc, nullptr, &newResourceData->maskTexture2D);
 					if (FAILED(hr))
@@ -334,11 +316,7 @@ namespace Mus {
 					}
 					else
 					{
-						gpuTask->submitAsync([&]() {
-							Shader::ShaderManager::GetSingleton().ShaderContextLock();
-							context->CopyResource(newResourceData->maskTexture2D.Get(), maskTexture2D.Get());
-							Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-						}).get();
+						CopySubresourceRegion(newResourceData->maskTexture2D, maskTexture2D, 0, 0);
 					}
 				}
 			}
@@ -419,9 +397,8 @@ namespace Mus {
 				continue;
 			}
 
-#ifdef UPDATE_TEST1
-			PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, true, false);
-#endif // UPDATE_TEST1
+			if (Config::GetSingleton().GetUpdateNormalMapTime1())
+				PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, true, false);
 
 			std::uint32_t totalTris = objInfo.indicesCount() / 3;
 
@@ -449,9 +426,10 @@ namespace Mus {
 			std::vector<std::future<void>> processes;
 			std::size_t sub = std::min((std::size_t)totalTris, processingThreads->GetThreads() * 16);
 			std::size_t unit = (totalTris + sub - 1) / sub;
-#ifdef UPDATE_TEST2
-			PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, false, false);
-#endif // UPDATE_TEST2
+
+			if (Config::GetSingleton().GetUpdateNormalMapTime2())
+				PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, false, false);
+
 			for (std::size_t p = 0; p < sub; p++) {
 				std::size_t begin = p * unit;
 				std::size_t end = std::min(begin + unit, (std::size_t)totalTris);
@@ -636,9 +614,8 @@ namespace Mus {
 			{
 				process.get();
 			}
-#ifdef UPDATE_TEST2
-			PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, true, false);
-#endif // UPDATE_TEST2
+			if (Config::GetSingleton().GetUpdateNormalMapTime2())
+				PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, true, false);
 
 			Shader::ShaderManager::GetSingleton().ShaderContextLock();
 			context->Unmap(newResourceData->dstWriteTexture2D.Get(), 0);
@@ -702,26 +679,24 @@ namespace Mus {
 
 			auto resultFound = std::find_if(result.begin(), result.end(), [&](NormalMapResult& a_result) {
 				return update.second.textureName == a_result.textureName;
-											});
+			});
 			if (resultFound != result.end()) {
 				logger::info("{}::{:x} : Merge texture into {}...", _func_, a_actorID, resultFound->geoName);
 				if (Config::GetSingleton().GetMergeTextureGPU())
-					MergeTextureGPU(newResourceData, newResourceData->dstShaderResourceView, newResourceData->dstTexture2D, resultFound->normalmap->rendererTexture->resourceView, resultFound->normalmap->rendererTexture->texture);
+					MergeTextureGPU(newResourceData, newResourceData->dstShaderResourceView, newResourceData->dstTexture2D, resultFound->normalmapShaderResourceView, resultFound->normalmapTexture2D);
 				else
-					MergeTexture(newResourceData, newResourceData->dstTexture2D, resultFound->normalmap->rendererTexture->texture);
+					MergeTexture(newResourceData, newResourceData->dstTexture2D, resultFound->normalmapTexture2D);
+				resultFound->normalmapTexture2D = newResourceData->dstTexture2D;
+				resultFound->normalmapShaderResourceView = newResourceData->dstShaderResourceView;
 			}
 
 			Shader::ShaderManager::GetSingleton().ShaderContextLock();
 			context->GenerateMips(newResourceData->dstShaderResourceView.Get());
 			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 
-			newResourceData->GetQuery(device, context);
+			bool isCompress = CompressTexture(newResourceData, newResourceData->dstCompressTexture2D, newResourceData->dstCompressShaderResourceView, newResourceData->dstTexture2D, newResourceData->dstShaderResourceView);
 
-			RE::NiPointer<RE::NiSourceTexture> output = nullptr;
-			bool texCreated = false;
-			Shader::TextureLoadManager::GetSingleton().CreateNiTexture(update.second.textureName, update.second.detailTexturePath.empty() ? "None" : update.second.detailTexturePath, newResourceData->dstTexture2D, newResourceData->dstShaderResourceView, output, texCreated);
-			if (!output)
-				continue;
+			newResourceData->GetQuery(device, context);
 
 			NormalMapResult newNormalMapResult;
 			newNormalMapResult.slot = update.second.slot;
@@ -729,7 +704,8 @@ namespace Mus {
 			newNormalMapResult.vertexCount = objInfo.vertexCount();
 			newNormalMapResult.geoName = update.second.geometryName;
 			newNormalMapResult.textureName = update.second.textureName;
-			newNormalMapResult.normalmap = output;
+			newNormalMapResult.normalmapTexture2D = isCompress ? newResourceData->dstCompressTexture2D : newResourceData->dstTexture2D;
+			newNormalMapResult.normalmapShaderResourceView = isCompress ? newResourceData->dstCompressShaderResourceView : newResourceData->dstShaderResourceView;
 			result.push_back(newNormalMapResult);
 
 			ResourceDataMapLock.lock_shared();
@@ -773,9 +749,9 @@ namespace Mus {
 
 		for (auto& update : a_updateSet)
 		{
-#ifdef UPDATE_TEST1
-			PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, false, false);
-#endif // UPDATE_TEST1
+			if (Config::GetSingleton().GetUpdateNormalMapTime1())
+				PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, false, false);
+
 			auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
 				return geosInfo.geometry == update.first;
 			});
@@ -939,9 +915,8 @@ namespace Mus {
 			cbDesc.Usage = D3D11_USAGE_DEFAULT;
 			cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
 
-#ifdef UPDATE_TEST1
-			PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, true, false);
-#endif // UPDATE_TEST1
+			if (Config::GetSingleton().GetUpdateNormalMapTime1())
+				PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, true, false);
 
 			auto shader = Shader::ShaderManager::GetSingleton().GetComputeShader(UpdateNormalMapShaderName.data());
 			if (!shader)
@@ -1002,12 +977,8 @@ namespace Mus {
 			} sb;
 
 			std::mutex constBuffersLock;
-			std::uint32_t totalTris = objInfo.indicesCount() / 3;
-			std::uint32_t subSize = 1;
-			if (Config::GetSingleton().GetDivideTaskQ() == 1)
-				subSize = std::max(std::uint32_t(1), totalTris / 15000);
-			else if (Config::GetSingleton().GetDivideTaskQ() > 1)
-				subSize = std::max(std::uint32_t(1), totalTris / 10000);
+			const std::uint32_t totalTris = objInfo.indicesCount() / 3;
+			std::uint32_t subSize = std::max(std::uint32_t(1), totalTris / 10000);
 
 			const std::uint32_t numSubTris = (totalTris + subSize - 1) / subSize;
 			const std::uint32_t dispatch = (numSubTris + 64 - 1) / 64;
@@ -1026,9 +997,9 @@ namespace Mus {
 					return result;
 				}
 				gpuTasks.push_back(gpuTask->submitAsync([&, constBuffer, subIndex]() {
-#ifdef UPDATE_TEST2
-					GPUPerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName + "::" + std::to_string(subIndex), false, false);
-#endif // UPDATE_TEST2
+					if (Config::GetSingleton().GetUpdateNormalMapTime2())
+						GPUPerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName + "::" + std::to_string(subIndex), false, false);
+
 					Shader::ShaderManager::GetSingleton().ShaderContextLock();
 					sb.Backup(context);
 					context->CSSetShader(shader.Get(), nullptr, 0);
@@ -1051,9 +1022,9 @@ namespace Mus {
 					constBuffersLock.lock();
 					newResourceData->constBuffers.push_back(constBuffer);
 					constBuffersLock.unlock();
-#ifdef UPDATE_TEST2
-					GPUPerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName + "::" + std::to_string(subIndex), true, false);
-#endif // UPDATE_TEST2
+
+					if (Config::GetSingleton().GetUpdateNormalMapTime2())
+						GPUPerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName + "::" + std::to_string(subIndex), true, false);
 				}));
 			}
 			for (auto& task : gpuTasks) {
@@ -1092,41 +1063,36 @@ namespace Mus {
 			else
 				BleedTexture(newResourceData, Config::GetSingleton().GetTextureMargin(), newResourceData->dstTexture2D);
 
-			auto resultFound = std::find_if(result.begin(), result.end(), [&](NormalMapResult& a_result) {
+			const auto resultFound = std::find_if(result.begin(), result.end(), [&](NormalMapResult& a_result) {
 				return update.second.textureName == a_result.textureName;
 			});
 			if (resultFound != result.end()) {
 				logger::info("{}::{:x} : Merge texture into {}...", _func_, a_actorID, resultFound->geoName);
 				if (Config::GetSingleton().GetMergeTextureGPU())
-					MergeTextureGPU(newResourceData, newResourceData->dstShaderResourceView, newResourceData->dstTexture2D, resultFound->normalmap->rendererTexture->resourceView, resultFound->normalmap->rendererTexture->texture);
+					MergeTextureGPU(newResourceData, newResourceData->dstShaderResourceView, newResourceData->dstTexture2D, resultFound->normalmapShaderResourceView, resultFound->normalmapTexture2D);
 				else
-					MergeTexture(newResourceData, newResourceData->dstTexture2D, resultFound->normalmap->rendererTexture->texture);
+					MergeTexture(newResourceData, newResourceData->dstTexture2D, resultFound->normalmapTexture2D);
+				resultFound->normalmapTexture2D = newResourceData->dstTexture2D;
+				resultFound->normalmapShaderResourceView = newResourceData->dstShaderResourceView;
 			}
 
 			Shader::ShaderManager::GetSingleton().ShaderContextLock();
 			context->GenerateMips(newResourceData->dstShaderResourceView.Get());
 			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 
-			bool isCompress = CompressTexture(newResourceData, newResourceData->dstCompressTexture2D, newResourceData->dstCompressShaderResourceView, newResourceData->dstTexture2D, newResourceData->dstShaderResourceView);
+			const bool isCompress = CompressTexture(newResourceData, newResourceData->dstCompressTexture2D, newResourceData->dstCompressShaderResourceView, newResourceData->dstTexture2D, newResourceData->dstShaderResourceView);
 
 			newResourceData->GetQuery(device, context);
-
-			RE::NiPointer<RE::NiSourceTexture> output = nullptr;
-			bool texCreated = false;
-			Shader::TextureLoadManager::GetSingleton().CreateNiTexture(update.second.textureName, update.second.detailTexturePath.empty() ? "None" : update.second.detailTexturePath, 
-																	   isCompress ? newResourceData->dstCompressTexture2D : newResourceData->dstTexture2D,
-																	   isCompress ? newResourceData->dstCompressShaderResourceView : newResourceData->dstShaderResourceView,
-																	   output, texCreated);
-			if (!output)
-				continue;
 
 			NormalMapResult newNormalMapResult;
 			newNormalMapResult.slot = update.second.slot;
 			newNormalMapResult.geometry = update.first;
 			newNormalMapResult.vertexCount = objInfo.vertexCount();
 			newNormalMapResult.geoName = update.second.geometryName;
+			newNormalMapResult.texturePath = update.second.srcTexturePath.empty() ? update.second.detailTexturePath : update.second.srcTexturePath;
 			newNormalMapResult.textureName = update.second.textureName;
-			newNormalMapResult.normalmap = output;
+			newNormalMapResult.normalmapTexture2D = isCompress ? newResourceData->dstCompressTexture2D : newResourceData->dstTexture2D;
+			newNormalMapResult.normalmapShaderResourceView = isCompress ? newResourceData->dstCompressShaderResourceView : newResourceData->dstShaderResourceView;
 			result.push_back(newNormalMapResult);
 
 			ResourceDataMapLock.lock_shared();
@@ -1241,9 +1207,8 @@ namespace Mus {
 		if (!device || !context)
 			return false;
 
-#ifdef BLEED_TEST1
-		PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, false, false);
-#endif // BLEED_TEST1
+		if (Config::GetSingleton().GetBleedTextureTime1())
+			PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, false, false);
 
 		HRESULT hr;
 
@@ -1289,8 +1254,8 @@ namespace Mus {
 		for (std::uint32_t mi = 0; mi < margin; mi++)
 		{
 			std::vector<std::future<void>> processes;
-			std::size_t subX = std::max((std::size_t)1, std::min(std::size_t(stagingDesc.Width), processingThreads->GetThreads() * 8));
-			std::size_t subY = std::max((std::size_t)1, std::min(std::size_t(stagingDesc.Height), processingThreads->GetThreads() * 8));
+			std::size_t subX = std::max((std::size_t)1, std::min(std::size_t(stagingDesc.Width), processingThreads->GetThreads() * 16));
+			std::size_t subY = std::max((std::size_t)1, std::min(std::size_t(stagingDesc.Height), processingThreads->GetThreads() * 16));
 			std::size_t unitX = (std::size_t(stagingDesc.Width) + subX - 1) / subX;
 			std::size_t unitY = (std::size_t(stagingDesc.Height) + subY - 1) / subY;
 			struct ColorMap {
@@ -1370,9 +1335,8 @@ namespace Mus {
 		context->Unmap(resourceData->bleedTextureData.texture2D_1.Get(), 0);
 		Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 
-#ifdef BLEED_TEST1
-		PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, true, false);
-#endif // BLEED_TEST1
+		if (Config::GetSingleton().GetBleedTextureTime1())
+			PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, true, false);
 
 		CopySubresourceRegion(texInOut, resourceData->bleedTextureData.texture2D_1, 0, 0);
 
@@ -1381,9 +1345,8 @@ namespace Mus {
 	bool ObjectNormalMapUpdater::BleedTextureGPU(TextureResourceDataPtr& resourceData, std::int32_t margin, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut)
 	{
 		std::string_view _func_ = __func__;
-#ifdef BLEED_TEST1
-		PerformanceLog(std::string(_func_) + "::" + resourceData->textureName, false, false);
-#endif // BLEED_TEST1
+		if (Config::GetSingleton().GetBleedTextureTime1())
+			PerformanceLog(std::string(_func_) + "::" + resourceData->textureName, false, false);
 
 		if (margin == 0)
 			return true;
@@ -1496,9 +1459,8 @@ namespace Mus {
 			return false;
 		}
 
-#ifdef BLEED_TEST1
-		PerformanceLog(std::string(_func_) + "::" + resourceData->textureName, true, false);
-#endif // BLEED_TEST1
+		if (Config::GetSingleton().GetBleedTextureTime1())
+			PerformanceLog(std::string(_func_) + "::" + resourceData->textureName, true, false);
 
 		std::mutex constBuffersLock;
 		const std::uint32_t subResolution = 4096 / (1u << Config::GetSingleton().GetDivideTaskQ());
@@ -1532,10 +1494,11 @@ namespace Mus {
 						return false;
 					}
 					gpuTasks.push_back(gpuTask->submitAsync([&, constBuffer, subX, subY]() {
-#ifdef BLEED_TEST2
+
+						if (Config::GetSingleton().GetBleedTextureTime2())
 						GPUPerformanceLog(std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
 										  + "::" + std::to_string(subX) + "|" + std::to_string(subY) + "::" + std::to_string(mi), false, false);
-#endif // BLEED_TEST2
+
 						Shader::ShaderManager::GetSingleton().ShaderContextLock();
 						sb.Backup(context);
 						context->CSSetShader(shader.Get(), nullptr, 0);
@@ -1583,10 +1546,10 @@ namespace Mus {
 						constBuffersLock.lock();
 						resourceData->bleedTextureData.constBuffers.push_back(constBuffer);
 						constBuffersLock.unlock();
-#ifdef BLEED_TEST2
-						GPUPerformanceLog(std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
+
+						if (Config::GetSingleton().GetBleedTextureTime2())
+							GPUPerformanceLog(std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
 										  + "::" + std::to_string(subX) + "|" + std::to_string(subY) + "::" + std::to_string(mi), true, false);
-#endif // BLEED_TEST2
 					}));
 				}
 			}
@@ -1615,9 +1578,9 @@ namespace Mus {
 			return true;
 
 		std::string_view _func_ = __func__;
-#ifdef BLEED_TEST1
+#ifdef POSTPROCESSING_TEST1
 		PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, false, false);
-#endif // BLEED_TEST1
+#endif // POSTPROCESSING_TEST1
 
 		logger::debug("{}::{} : TexturePostProcessing...", _func_, resourceData->textureName);
 
@@ -1710,9 +1673,9 @@ namespace Mus {
 			logger::error("{} : Failed to create unordered access view ({})", _func_, hr);
 			return false;
 		}
-#ifdef BLEED_TEST1
+#ifdef POSTPROCESSING_TEST1
 		PerformanceLog(std::string(_func_) + "::" + resourceData->textureName, true, false);
-#endif // BLEED_TEST1
+#endif // POSTPROCESSING_TEST1
 
 		std::mutex constBuffersLock;
 		std::vector<std::future<void>> gpuTasks;
@@ -1736,9 +1699,9 @@ namespace Mus {
 					return false;
 				}
 				gpuTasks.push_back(gpuTask->submitAsync([&, constBuffer]() {
-#ifdef BLEED_TEST2
+#ifdef POSTPROCESSING_TEST2
 					GPUPerformanceLog(std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height), false, false);
-#endif // BLEED_TEST2
+#endif // POSTPROCESSING_TEST2
 					Shader::ShaderManager::GetSingleton().ShaderContextLock();
 					sb.Backup(context);
 					context->CSSetShader(shader.Get(), nullptr, 0);
@@ -1751,9 +1714,9 @@ namespace Mus {
 					sb.Revert(context);
 					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 					resourceData->texturePostProcessingData.constBuffer.push_back(constBuffer);
-#ifdef BLEED_TEST2
+#ifdef POSTPROCESSING_TEST2
 					GPUPerformanceLog(std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height), true, false);
-#endif // BLEED_TEST2
+#endif // POSTPROCESSING_TEST2
 				}));
 			}
 		}
@@ -1768,9 +1731,8 @@ namespace Mus {
 
 	bool ObjectNormalMapUpdater::MergeTexture(TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTex, Microsoft::WRL::ComPtr<ID3D11Texture2D> srvTex)
 	{
-#ifdef MERGE_TEST1
-		PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, false, false);
-#endif // MERGE_TEST1
+		if (Config::GetSingleton().GetMergeTime1())
+			PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, false, false);
 
 		auto device = Shader::ShaderManager::GetSingleton().GetDevice();
 		auto context = Shader::ShaderManager::GetSingleton().GetContext();
@@ -1865,9 +1827,8 @@ namespace Mus {
 		context->Unmap(resourceData->mergeTextureData.texture2D.Get(), 0);
 		context->Unmap(resourceData->mergeTextureData.texture2Dalt.Get(), 0);
 		Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-#ifdef MERGE_TEST1
-		PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, true, false);
-#endif // MERGE_TEST1
+		if (Config::GetSingleton().GetMergeTime1())
+			PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, true, false);
 
 		CopySubresourceRegion(dstTex, resourceData->mergeTextureData.texture2D, 0, 0);
 		return true;
@@ -1875,9 +1836,8 @@ namespace Mus {
 	bool ObjectNormalMapUpdater::MergeTextureGPU(TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& dstSrv, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTex, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcSrv, Microsoft::WRL::ComPtr<ID3D11Texture2D> srvTex)
 	{
 		std::string_view _func_ = __func__;
-#ifdef MERGE_TEST1
-		PerformanceLog(std::string(_func_) + "::" + resourceData->textureName, false, false);
-#endif // MERGE_TEST1
+		if (Config::GetSingleton().GetMergeTime1())
+			PerformanceLog(std::string(_func_) + "::" + resourceData->textureName, false, false);
 
 		logger::debug("{}::{} : Merge texture...", _func_, resourceData->textureName);
 
@@ -1964,9 +1924,8 @@ namespace Mus {
 			return false;
 		}
 
-#ifdef MERGE_TEST1
-		PerformanceLog(std::string(_func_) + "::" + resourceData->textureName, true, false);
-#endif // MERGE_TEST1
+		if (Config::GetSingleton().GetMergeTime1())
+			PerformanceLog(std::string(_func_) + "::" + resourceData->textureName, true, false);
 
 		std::mutex constBuffersLock;
 		const std::uint32_t subResolution = 4096 / (1u << Config::GetSingleton().GetDivideTaskQ());
@@ -1992,10 +1951,10 @@ namespace Mus {
 					return false;
 				}
 				gpuTasks.push_back(gpuTask->submitAsync([&, constBuffer, subX, subY]() {
-#ifdef MERGE_TEST2
-					GPUPerformanceLog(std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
+					if (Config::GetSingleton().GetMergeTime2())
+						GPUPerformanceLog(std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
 									  + "::" + std::to_string(subX) + "|" + std::to_string(subY), false, false);
-#endif // MERGE_TEST2
+
 					Shader::ShaderManager::GetSingleton().ShaderContextLock();
 					sb.Backup(context);
 					context->CSSetShader(shader.Get(), nullptr, 0);
@@ -2009,10 +1968,10 @@ namespace Mus {
 					constBuffersLock.lock();
 					resourceData->mergeTextureData.constBuffers.push_back(constBuffer);
 					constBuffersLock.unlock();
-#ifdef MERGE_TEST2
-					GPUPerformanceLog(std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
+
+					if (Config::GetSingleton().GetMergeTime2())
+						GPUPerformanceLog(std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
 									  + "::" + std::to_string(subX) + "|" + std::to_string(subY), true, false);
-#endif // MERGE_TEST2
 				}));
 			}
 		}
@@ -2057,21 +2016,21 @@ namespace Mus {
 				box.back = 1;
 
 				gpuTasks.push_back(gpuTask->submitAsync([&, box, subX, subY]() {
-#ifdef COPY_TEST
-					GPUPerformanceLog(std::string("CopySubresourceRegion") + "::" + std::to_string(dstDesc.Width) + "::" + std::to_string(dstDesc.Width)
+					if (Config::GetSingleton().GetTextureCopyTime())
+						GPUPerformanceLog(std::string("CopySubresourceRegion") + "::" + std::to_string(dstDesc.Width) + "::" + std::to_string(dstDesc.Width)
 									  + "::" + std::to_string(subX) + "|" + std::to_string(subY), false, false);
-#endif // COPY_TEST
+
 					Shader::ShaderManager::GetSingleton().ShaderContextLock();
 					context->CopySubresourceRegion(
 						dstTexture.Get(), dstMipMapLevel,
 						box.left, box.top, 0,
 						srcTexture.Get(), srcMipMapLevel,
 						&box);
-					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-#ifdef COPY_TEST
-					GPUPerformanceLog(std::string("CopySubresourceRegion") + "::" + std::to_string(dstDesc.Width) + "::" + std::to_string(dstDesc.Width)
+					Shader::ShaderManager::GetSingleton().ShaderContextUnlock(); 
+
+					if (Config::GetSingleton().GetTextureCopyTime())
+						GPUPerformanceLog(std::string("CopySubresourceRegion") + "::" + std::to_string(dstDesc.Width) + "::" + std::to_string(dstDesc.Width)
 									  + "::" + std::to_string(subX) + "|" + std::to_string(subY), true, false);
-#endif // COPY_TEST
 				}));
 			}
 		}
@@ -2083,7 +2042,7 @@ namespace Mus {
 
 	bool ObjectNormalMapUpdater::CompressTexture(TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTexture, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& dstSrv, Microsoft::WRL::ComPtr<ID3D11Texture2D>& srcTexture, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srcSrv)
 	{
-		if (!srcTexture || !srcSrv || Config::GetSingleton().GetTextureCompress() < 0)
+		if (!srcTexture || !srcSrv || Config::GetSingleton().GetTextureCompress() == 0)
 			return false;
 
 		auto device = Shader::ShaderManager::GetSingleton().GetDevice();
@@ -2092,20 +2051,26 @@ namespace Mus {
 
 		bool isCompressed = false;
 		DXGI_FORMAT format = DXGI_FORMAT_BC7_UNORM;
-		if (Config::GetSingleton().GetTextureCompress() == 0)
+		if (Config::GetSingleton().GetTextureCompress() == 1)
 			format = DXGI_FORMAT_BC3_UNORM;
-		else if (Config::GetSingleton().GetTextureCompress() == 1)
+		else if (Config::GetSingleton().GetTextureCompress() == 2)
 			format = DXGI_FORMAT_BC7_UNORM;
-#ifdef COMPRESS_TEST
-		PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, false, false);
-#endif // COMPRESS_TEST
+		else
+			return false;
+
+
 		gpuTask->submitAsync([&]() {
+			if (Config::GetSingleton().GetCompressTime())
+				PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, false, false);
+
 			isCompressed = Shader::TextureLoadManager::GetSingleton().CompressTexture(srcTexture, format, dstTexture);
+
+			if (Config::GetSingleton().GetCompressTime())
+				PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, true, false);
 		}).get();
 		//isCompressed = CompressTextureBC7(resourceData, dstTexture, dstSrv, srcTexture, srcSrv);
-#ifdef COMPRESS_TEST
-		PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, true, false);
-#endif // COMPRESS_TEST
+
+
 		if (isCompressed)
 		{
 			D3D11_TEXTURE2D_DESC desc;
@@ -2347,15 +2312,13 @@ namespace Mus {
 					double average = funcAverageArgs[funcStr] / funcAverageCount[funcStr];
 					logger::info("{} average time: {:.6f}ms{}=> {:.6f}%", funcStr, average,
 								 funcAverageArgs[funcStr] > 0 ? (std::string(" with average count ") + std::to_string(funcAverageArgs[funcStr] / funcAverageCount[funcStr]) + " ") : " ",
-								 (double)average / tick * 100
-					);
+								 (double)average / tick * 100);
 					if (PerformanceCheckConsolePrint) {
 						auto Console = RE::ConsoleLog::GetSingleton();
 						if (Console)
 							Console->Print("%s average time: %lldms%s=> %.6f%%", funcStr.c_str(), average,
 										   funcAverageArgs[funcStr] > 0 ? (std::string(" with average count ") + std::to_string(funcAverageArgs[funcStr] / funcAverageCount[funcStr]) + " ").c_str() : " ",
-										   (double)average / tick * 100
-							);
+										   (double)average / tick * 100);
 					}
 					funcAverageArgs[funcStr] = 0;
 					funcAverageCount[funcStr] = 0;
@@ -2371,8 +2334,7 @@ namespace Mus {
 					if (Console)
 						Console->Print("%s time: %lld ms%s=> %.6f%%", funcStr.c_str(), duration_ms,
 									   args > 0 ? (std::string(" with count ") + std::to_string(args) + " ").c_str() : " ",
-									   (double)duration_ms / tick * 100
-						);
+									   (double)duration_ms / tick * 100);
 				}
 			}
 		}

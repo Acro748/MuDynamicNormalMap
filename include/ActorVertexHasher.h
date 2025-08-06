@@ -30,10 +30,10 @@ namespace Mus {
 			std::size_t GetNewHash() { return XXH64_digest(state); }
 		};
 		typedef std::shared_ptr<Hash> HashPtr;
-		typedef concurrency::concurrent_unordered_map<std::uint32_t, HashPtr> GeometryHash; //RE::BIPED_OBJECT, HashPtr
+		typedef concurrency::concurrent_unordered_map<bSlot, HashPtr> GeometryHash; //RE::BIPED_OBJECT, HashPtr
 
-		bool Register(RE::Actor* a_actor, std::uint32_t bipedSlot);
-		bool InitialHash(RE::Actor* a_actor, std::uint32_t bipedSlot);
+		bool Register(RE::Actor* a_actor, bSlot bipedSlot);
+		bool InitialHash(RE::Actor* a_actor, bSlot bipedSlot);
 	protected:
 		void onEvent(const FrameEvent& e) override; 
 		void onEvent(const FacegenNiNodeEvent& e) override;

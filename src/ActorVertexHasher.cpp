@@ -1,9 +1,6 @@
 #include "ActorVertexHasher.h"
 
 namespace Mus {
-//#define HASHER_TEST1
-//#define HASHER_TEST2
-
 	void ActorVertexHasher::Init()
 	{
 		if (const auto NiNodeEvent = SKSE::GetNiNodeUpdateEventSource(); NiNodeEvent)
@@ -60,7 +57,7 @@ namespace Mus {
 		return EventResult::kContinue;
 	}
 
-	bool ActorVertexHasher::Register(RE::Actor* a_actor, std::uint32_t bipedSlot)
+	bool ActorVertexHasher::Register(RE::Actor* a_actor, bSlot bipedSlot)
 	{
 		if (!Config::GetSingleton().GetRealtimeDetect())
 			return true;
@@ -78,7 +75,7 @@ namespace Mus {
 		ActorHashLock.unlock_shared();
 		return true;
 	}
-	bool ActorVertexHasher::InitialHash(RE::Actor* a_actor, std::uint32_t bipedSlot)
+	bool ActorVertexHasher::InitialHash(RE::Actor* a_actor, bSlot bipedSlot)
 	{
 		if (!Config::GetSingleton().GetRealtimeDetect())
 			return true;
@@ -115,9 +112,10 @@ namespace Mus {
 
 			BackGroundHasher->submitAsync([&]() {
 				isDetecting.store(true);
-#ifdef HASHER_TEST1
-				PerformanceLog(std::string(__func__), false, true);
-#endif // HASHER_TEST1
+
+				if (Config::GetSingleton().GetActorVertexHasherTime1())
+					PerformanceLog(std::string(__func__), false, true);
+
 				std::vector<std::future<void>> processes;
 				auto ActorHash_ = ActorHash;
 				for(auto& map : ActorHash_) {
@@ -130,9 +128,19 @@ namespace Mus {
 							ActorHashLock.unlock();
 							return;
 						}
+
+						class ActorGuard {
+							RE::Actor* actor = nullptr;
+						public:
+							ActorGuard() = delete;
+							ActorGuard(RE::Actor* a_actor) : actor(a_actor) { actor->IncRefCount(); };
+							~ActorGuard() { actor->DecRefCount(); };
+						};
+						ActorGuard ag(actor);
+
 						if (BlockActors[actor->formID])
 							return;
-						if (!isPlayer(actor->formID) && playerPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) > Config::GetSingleton().GetDetectDistance())
+						if (!isPlayer(actor->formID) && (Config::GetSingleton().GetDetectDistance() > floatPrecision && playerPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) > Config::GetSingleton().GetDetectDistance()))
 							return;
 						if (!GetHash(actor, map.second))
 							return;
@@ -163,18 +171,19 @@ namespace Mus {
 				{
 					process.get();
 				}
-#ifdef HASHER_TEST1
-				PerformanceLog(std::string(__func__), true, true, ActorHash.size());
-#endif // HASHER_TEST1
+				
+				if (Config::GetSingleton().GetActorVertexHasherTime1())
+					PerformanceLog(std::string(__func__), true, true, ActorHash.size());
+
 				isDetecting.store(false);
 				logger::trace("Check hashes done {}", ActorHash.size());
 			});
 		}
 		else
 		{
-#ifdef HASHER_TEST1
-			PerformanceLog(std::string(__func__), false, true);
-#endif // HASHER_TEST1
+			if (Config::GetSingleton().GetActorVertexHasherTime1())
+				PerformanceLog(std::string(__func__), false, true);
+
 			auto ActorHash_ = ActorHash;
 			concurrency::parallel_for_each(ActorHash_.begin(), ActorHash_.end(), [&](auto& map) {
 				RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
@@ -185,7 +194,7 @@ namespace Mus {
 					ActorHashLock.unlock();
 					return;
 				}
-				if (!isPlayer(actor->formID) && playerPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) > Config::GetSingleton().GetDetectDistance())
+				if (!isPlayer(actor->formID) && (Config::GetSingleton().GetDetectDistance() > floatPrecision && playerPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) > Config::GetSingleton().GetDetectDistance()))
 					return;
 				if (!GetHash(actor, map.second))
 					return;
@@ -212,9 +221,9 @@ namespace Mus {
 				}
 			});
 			logger::trace("Check hashes done {}", ActorHash.size());
-#ifdef HASHER_TEST1
-			PerformanceLog(std::string(__func__), true, true, ActorHash.size());
-#endif // HASHER_TEST1
+
+			if (Config::GetSingleton().GetActorVertexHasherTime1())
+				PerformanceLog(std::string(__func__), true, true, ActorHash.size());
 		}
 	}
 
@@ -224,10 +233,12 @@ namespace Mus {
 			return false;
 		if (BlockActors[a_actor->formID])
 			return false;
-#ifdef HASHER_TEST2
-		PerformanceLog(std::string(__func__), false, false);
-#endif // HASHER_TEST2
+
+		if (Config::GetSingleton().GetActorVertexHasherTime2())
+			PerformanceLog(std::string(__func__), false, false);
+
 		auto root = a_actor->loadedData->data3D.get();
+		root->IncRefCount();
 		RE::BSVisit::TraverseScenegraphGeometries(root, [&](RE::BSGeometry* geometry) -> RE::BSVisit::BSVisitControl {
 			using State = RE::BSGeometry::States;
 			using Feature = RE::BSShaderMaterial::Feature;
@@ -304,9 +315,11 @@ namespace Mus {
 			}
 			return RE::BSVisit::BSVisitControl::kContinue;
 		});
-#ifdef HASHER_TEST2
-		PerformanceLog(std::string(__func__), true, false);
-#endif // HASHER_TEST2
+		root->DecRefCount();
+
+		if (Config::GetSingleton().GetActorVertexHasherTime2())
+			PerformanceLog(std::string(__func__), true, false);
+
 		if (BlockActors[a_actor->formID])
 			return false;
 		return true;
