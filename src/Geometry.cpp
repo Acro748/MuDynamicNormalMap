@@ -1,4 +1,4 @@
-#include "Geometry.h"
+﻿#include "Geometry.h"
 
 namespace Mus {
 	GeometryData::GeometryData(RE::BSGeometry* a_geo)
@@ -240,6 +240,8 @@ namespace Mus {
 		faceNormals.clear();
 		faceTangents.clear();
 		boundaryEdgeMap.clear();
+		vertexToFaceMap.clear();
+		boundaryEdgeVertexMap.clear();
 
 		faceNormals.resize(triCount);
 		faceTangents.resize(triCount);
@@ -379,6 +381,7 @@ namespace Mus {
 		logger::debug("{} : normals {} re-calculate...", __func__, normals.size());
 		if (Config::GetSingleton().GetGeometryDataTime())
 			PerformanceLog(std::string(__func__) + "::" + std::to_string(normals.size()), false, false);
+
 		const float smoothCos = std::cosf(DirectX::XMConvertToRadians(a_smoothDegree));
 
 		std::vector<std::future<void>> processes;
@@ -393,74 +396,104 @@ namespace Mus {
 					const DirectX::XMFLOAT3& pos = vertices[i];
 					const DirectX::XMFLOAT2& uv = uvs[i];
 
-					const bool isBoundary = IsBoundaryVertex(i);
-					const VertexKey vkey = isBoundary ? MakeBoundaryVertexKey(pos, uv) : MakeVertexKey(pos, uv);
+					const VertexKey vkey = MakeVertexKey(pos, uv);
 					const auto it = vertexMap.find(vkey);
 					if (it == vertexMap.end())
 						continue;
 
-					DirectX::XMVECTOR nSelf = DirectX::XMVectorZero();
+					DirectX::XMVECTOR nSelf = emptyVector;
 					std::uint32_t selfCount = 0;
 					for (const auto& fi : it->second) {
 						const auto& fn = faceNormals[fi.first];
-						if (fn.v0 == i || fn.v1 == i || fn.v2 == i) {
-							nSelf = DirectX::XMVectorAdd(nSelf, DirectX::XMLoadFloat3(&fn.normal));
-							selfCount++;
-						}
+						nSelf = DirectX::XMVectorAdd(nSelf, DirectX::XMLoadFloat3(&fn.normal));
+						selfCount++;
+
 					}
 					if (selfCount == 0)
 						continue;
 
-					nSelf = DirectX::XMVector3Normalize(DirectX::XMVectorScale(nSelf, 1.0f / selfCount));
+					nSelf = DirectX::XMVector3Normalize(nSelf);
 
-					const PositionKey pkey = isBoundary ? MakeBoundaryPositionKey(pos) : MakePositionKey(pos);
+					const PositionKey pkey = MakePositionKey(pos);
 					const auto posIt = positionMap.find(pkey);
 					if (posIt == positionMap.end())
 						continue;
 
-					DirectX::XMVECTOR nSum = DirectX::XMVectorZero();
-					DirectX::XMVECTOR tSum = DirectX::XMVectorZero();
-					DirectX::XMVECTOR bSum = DirectX::XMVectorZero();
+					DirectX::XMVECTOR nSum = emptyVector;
+					DirectX::XMVECTOR tSum = emptyVector;
+					DirectX::XMVECTOR bSum = emptyVector;
 
+					std::unordered_set<std::uint32_t> pastVertices;
 					for (const auto& vi : posIt->second) {
+						pastVertices.insert(vi.first);
 						for (const auto& fi : vertexToFaceMap[vi.first]) {
 							const auto& fn = faceNormals[fi];
-							if (fn.v0 == vi.first || fn.v1 == vi.first || fn.v2 == vi.first) {
-								DirectX::XMVECTOR fnVec = DirectX::XMLoadFloat3(&fn.normal);
-								float dot = DirectX::XMVectorGetX(DirectX::XMVector3Dot(fnVec, nSelf));
-								if (Config::GetSingleton().GetAllowInvertNormalSmooth())
+							DirectX::XMVECTOR fnVec = DirectX::XMLoadFloat3(&fn.normal);
+							float dot = DirectX::XMVectorGetX(DirectX::XMVector3Dot(fnVec, nSelf));
+							if (Config::GetSingleton().GetAllowInvertNormalSmooth())
+							{
+								if (dot < 0)
 								{
-									if (dot < 0)
-									{
-										dot = -dot;
-										fnVec = DirectX::XMVectorNegate(fnVec);
-									}
+									dot = -dot;
+									fnVec = DirectX::XMVectorNegate(fnVec);
 								}
-								if (dot < smoothCos)
+							}
+							if (dot < smoothCos)
+								continue;
+							const auto& ft = faceTangents[fi];
+							nSum = DirectX::XMVectorAdd(nSum, fnVec);
+							tSum = DirectX::XMVectorAdd(tSum, DirectX::XMLoadFloat3(&ft.tangent));
+							bSum = DirectX::XMVectorAdd(bSum, DirectX::XMLoadFloat3(&ft.bitangent));
+						}
+					}
+
+					if (IsBoundaryVertex(i))
+					{
+						const PositionKey altPkey = MakeBoundaryPositionKey(pos);
+						const auto altPosIt = positionMap.find(altPkey);
+						if (altPosIt != positionMap.end())
+						{
+							for (const auto& vi : altPosIt->second) {
+								if (IsSameGeometry(i, vi.first) || pastVertices.find(vi.first) != pastVertices.end())
 									continue;
-								const auto& ft = faceTangents[fi];
-								nSum = DirectX::XMVectorAdd(nSum, fnVec);
-								tSum = DirectX::XMVectorAdd(tSum, DirectX::XMLoadFloat3(&ft.tangent));
-								bSum = DirectX::XMVectorAdd(bSum, DirectX::XMLoadFloat3(&ft.bitangent));
+								for (const auto& fi : vertexToFaceMap[vi.first]) {
+									const auto& fn = faceNormals[fi];
+									DirectX::XMVECTOR fnVec = DirectX::XMLoadFloat3(&fn.normal);
+									float dot = DirectX::XMVectorGetX(DirectX::XMVector3Dot(fnVec, nSelf));
+									if (Config::GetSingleton().GetAllowInvertNormalSmooth())
+									{
+										if (dot < 0)
+										{
+											dot = -dot;
+											fnVec = DirectX::XMVectorNegate(fnVec);
+										}
+									}
+									if (dot < smoothCos)
+										continue;
+									const auto& ft = faceTangents[fi];
+									nSum = DirectX::XMVectorAdd(nSum, fnVec);
+									tSum = DirectX::XMVectorAdd(tSum, DirectX::XMLoadFloat3(&ft.tangent));
+									bSum = DirectX::XMVectorAdd(bSum, DirectX::XMLoadFloat3(&ft.bitangent));
+								}
 							}
 						}
 					}
 
-					if (DirectX::XMVector3Equal(nSum, DirectX::XMVectorZero()))
+					if (DirectX::XMVector3Equal(nSum, emptyVector))
 						continue;
 
-					DirectX::XMVECTOR t = DirectX::XMVectorGetX(DirectX::XMVector3Length(tSum)) > floatPrecision ? DirectX::XMVector3Normalize(tSum) : DirectX::XMVectorZero();
-					DirectX::XMVECTOR b = DirectX::XMVectorGetX(DirectX::XMVector3Length(bSum)) > floatPrecision ? DirectX::XMVector3Normalize(bSum) : DirectX::XMVectorZero();
+					DirectX::XMVECTOR t = DirectX::XMVectorGetX(DirectX::XMVector3Length(tSum)) > floatPrecision ? DirectX::XMVector3Normalize(tSum) : emptyVector;
+					DirectX::XMVECTOR b = DirectX::XMVectorGetX(DirectX::XMVector3Length(bSum)) > floatPrecision ? DirectX::XMVector3Normalize(bSum) : emptyVector;
 					const DirectX::XMVECTOR n = DirectX::XMVector3Normalize(nSum);
 
-					if (!DirectX::XMVector3Equal(t, DirectX::XMVectorZero())) {
+					if (!DirectX::XMVector3Equal(t, emptyVector)) {
 						t = DirectX::XMVector3Normalize(DirectX::XMVectorSubtract(t, DirectX::XMVectorScale(n, DirectX::XMVectorGetX(DirectX::XMVector3Dot(n, t)))));
 						b = DirectX::XMVector3Normalize(DirectX::XMVector3Cross(n, t));
 					}
 
-					if (!DirectX::XMVector3Equal(t, DirectX::XMVectorZero()))
+					if (!DirectX::XMVector3Equal(t, emptyVector))
 						DirectX::XMStoreFloat3(&tangents[i], t);
-					if (!DirectX::XMVector3Equal(b, DirectX::XMVectorZero()))
+					if (!DirectX::XMVector3Equal(b, emptyVector))
 						DirectX::XMStoreFloat3(&bitangents[i], b);
 					DirectX::XMStoreFloat3(&normals[i], n);
 				}
@@ -476,7 +509,7 @@ namespace Mus {
 		return;
 	}
 
-	void GeometryData::Subdivision(std::uint32_t a_subCount)
+	void GeometryData::Subdivision(std::uint32_t a_subCount, std::uint32_t a_triThreshold)
 	{
 		if (a_subCount == 0)
 			return;
@@ -521,73 +554,99 @@ namespace Mus {
 
 		for (auto& data : subdividedDatas)
 		{
+			const std::size_t triCount = data.indices.size() / 3;
 			const std::size_t vertexStart = vertices.size();
-			for (std::uint32_t doSubdivision = 0; doSubdivision < a_subCount; doSubdivision++)
+			if (triCount < a_triThreshold)
 			{
-				std::unordered_map<std::size_t, std::uint32_t> midpointMap;
-				auto getMidpointIndex = [&](std::uint32_t i0, std::uint32_t i1) -> std::uint32_t {
-					auto createKey = [](std::uint32_t i0, std::uint32_t i1) -> std::size_t {
-						std::uint32_t a = (std::min)(i0, i1);
-						std::uint32_t b = std::max(i0, i1);
-						return (static_cast<std::size_t>(a) << 32) | b;
-					};
-
-					auto key = createKey(i0, i1);
-					if (auto it = midpointMap.find(key); it != midpointMap.end())
-						return it->second;
-
-					std::size_t index = data.vertices.size();
-
-					const auto& v0 = data.vertices[i0];
-					const auto& v1 = data.vertices[i1];
-					DirectX::XMFLOAT3 midVertex = {
-						(v0.x + v1.x) * 0.5f,
-						(v0.y + v1.y) * 0.5f,
-						(v0.z + v1.z) * 0.5f
-					};
-					data.vertices.push_back(midVertex);
-
-					const auto& u0 = data.uvs[i0];
-					const auto& u1 = data.uvs[i1];
-					DirectX::XMFLOAT2 midUV = {
-						(u0.x + u1.x) * 0.5f,
-						(u0.y + u1.y) * 0.5f
-					};
-					data.uvs.push_back(midUV);
-
-					midpointMap[key] = index;
-					return index;
-				};
-
-				auto oldIndices = data.indices;
-				data.indices.resize(data.indices.size() * 4);
-				for (std::size_t i = 0; i < oldIndices.size() / 3; i++)
+				for (std::uint32_t doSubdivision = 0; doSubdivision < a_subCount; doSubdivision++)
 				{
-					std::size_t offset = i * 3;
-					std::uint32_t v0 = oldIndices[offset + 0] - data.objInfo.vertexStart;
-					std::uint32_t v1 = oldIndices[offset + 1] - data.objInfo.vertexStart;
-					std::uint32_t v2 = oldIndices[offset + 2] - data.objInfo.vertexStart;
+					std::unordered_map<std::size_t, std::uint32_t> midpointMap;
+					auto getMidpointIndex = [&](std::uint32_t i0, std::uint32_t i1) -> std::uint32_t {
+						auto createKey = [](std::uint32_t i0, std::uint32_t i1) -> std::size_t {
+							std::uint32_t a = (std::min)(i0, i1);
+							std::uint32_t b = std::max(i0, i1);
+							return (static_cast<std::size_t>(a) << 32) | b;
+							};
 
-					std::uint32_t m01 = getMidpointIndex(v0, v1);
-					std::uint32_t m12 = getMidpointIndex(v1, v2);
-					std::uint32_t m20 = getMidpointIndex(v2, v0);
+						auto key = createKey(i0, i1);
+						if (auto it = midpointMap.find(key); it != midpointMap.end())
+							return it->second;
 
-					std::size_t triOffset = offset * 4;
-					data.indices[triOffset + 0] = v0 + vertexStart;
-					data.indices[triOffset + 1] = m01 + vertexStart;
-					data.indices[triOffset + 2] = m20 + vertexStart;
+						std::size_t index = data.vertices.size();
 
-					data.indices[triOffset + 3] = v1 + vertexStart;
-					data.indices[triOffset + 4] = m12 + vertexStart;
-					data.indices[triOffset + 5] = m01 + vertexStart;
+						const auto& v0 = data.vertices[i0];
+						const auto& v1 = data.vertices[i1];
+						DirectX::XMFLOAT3 midVertex = {
+							(v0.x + v1.x) * 0.5f,
+							(v0.y + v1.y) * 0.5f,
+							(v0.z + v1.z) * 0.5f
+						};
+						data.vertices.push_back(midVertex);
 
-					data.indices[triOffset + 6] = v2 + vertexStart;
-					data.indices[triOffset + 7] = m20 + vertexStart;
-					data.indices[triOffset + 8] = m12 + vertexStart;
+						const auto& u0 = data.uvs[i0];
+						const auto& u1 = data.uvs[i1];
+						DirectX::XMFLOAT2 midUV = {
+							(u0.x + u1.x) * 0.5f,
+							(u0.y + u1.y) * 0.5f
+						};
+						data.uvs.push_back(midUV);
 
-					data.indices[triOffset + 9] = m01 + vertexStart;
-					data.indices[triOffset + 10] = m12 + vertexStart;
-					data.indices[triOffset + 11] = m20 + vertexStart;
+						midpointMap[key] = index;
+						return index;
+						};
+
+					auto oldIndices = data.indices;
+					data.indices.resize(data.indices.size() * 4);
+					for (std::size_t i = 0; i < oldIndices.size() / 3; i++)
+					{
+						std::size_t offset = i * 3;
+						std::uint32_t v0 = oldIndices[offset + 0] - data.objInfo.vertexStart;
+						std::uint32_t v1 = oldIndices[offset + 1] - data.objInfo.vertexStart;
+						std::uint32_t v2 = oldIndices[offset + 2] - data.objInfo.vertexStart;
+
+						std::uint32_t m01 = getMidpointIndex(v0, v1);
+						std::uint32_t m12 = getMidpointIndex(v1, v2);
+						std::uint32_t m20 = getMidpointIndex(v2, v0);
+
+						std::size_t triOffset = offset * 4;
+						data.indices[triOffset + 0] = v0 + vertexStart;
+						data.indices[triOffset + 1] = m01 + vertexStart;
+						data.indices[triOffset + 2] = m20 + vertexStart;
+
+						data.indices[triOffset + 3] = v1 + vertexStart;
+						data.indices[triOffset + 4] = m12 + vertexStart;
+						data.indices[triOffset + 5] = m01 + vertexStart;
+
+						data.indices[triOffset + 6] = v2 + vertexStart;
+						data.indices[triOffset + 7] = m20 + vertexStart;
+						data.indices[triOffset + 8] = m12 + vertexStart;
+
+						data.indices[triOffset + 9] = m01 + vertexStart;
+						data.indices[triOffset + 10] = m12 + vertexStart;
+						data.indices[triOffset + 11] = m20 + vertexStart;
+					}
+				}
+			}
+			else
+			{
+				std::vector<std::future<void>> processes;
+				const std::size_t sub = std::max((std::size_t)1, std::min(triCount, processingThreads->GetThreads()));
+				const std::size_t unit = (triCount + sub - 1) / sub;
+				for (std::size_t p = 0; p < sub; p++) {
+					const std::size_t begin = p * unit;
+					const std::size_t end = std::min(begin + unit, triCount);
+					processes.push_back(processingThreads->submitAsync([&, begin, end]() {
+						for (std::size_t i = begin; i < end; i++)
+						{
+							std::size_t offset = i * 3;
+							data.indices[offset + 0] = data.indices[offset + 0] - data.objInfo.vertexStart + vertexStart;
+							data.indices[offset + 1] = data.indices[offset + 1] - data.objInfo.vertexStart + vertexStart;
+							data.indices[offset + 2] = data.indices[offset + 2] - data.objInfo.vertexStart + vertexStart;
+						}
+					}));
+				}
+				for (auto& process : processes) {
+					process.get();
 				}
 			}
 
@@ -629,7 +688,7 @@ namespace Mus {
 
 			auto tempVertices = vertices;
 			std::vector<std::future<void>> processes;
-			const std::size_t sub = std::max((std::size_t)1, std::min(vertices.size(), processingThreads->GetThreads() * 4));
+			const std::size_t sub = std::max((std::size_t)1, std::min(vertices.size(), processingThreads->GetThreads() * 8));
 			const std::size_t unit = (vertices.size() + sub - 1) / sub;
 			for (std::size_t p = 0; p < sub; p++) {
 				const std::size_t begin = p * unit;
@@ -637,52 +696,226 @@ namespace Mus {
 				processes.push_back(processingThreads->submitAsync([&, begin, end]() {
 					for (std::size_t i = begin; i < end; i++)
 					{
-						const DirectX::XMFLOAT3& pos = vertices[i];
-						const bool isBoundary = IsBoundaryVertex(i);
-						const PositionKey pkey = isBoundary ? MakeBoundaryPositionKey(pos) : MakePositionKey(pos);
+						const DirectX::XMFLOAT3& pos = tempVertices[i];
+						const PositionKey pkey = MakePositionKey(pos);
 						const auto posIt = positionMap.find(pkey);
 						if (posIt == positionMap.end())
 							continue;
 
-						DirectX::XMVECTOR avgPos = DirectX::XMVectorZero();
-						std::uint32_t totalCount = 0;
 						std::unordered_set<std::uint32_t> connectedVertices;
+						std::unordered_set<std::uint32_t> pastVertices;
 						for (const auto& vi : posIt->second) {
+							pastVertices.insert(vi.first);
 							for (const auto& fi : vertexToFaceMap[vi.first]) {
 								const auto& fn = faceNormals[fi];
-								if (fn.v0 == vi.first || fn.v1 == vi.first || fn.v2 == vi.first) {
+								if (fn.v0 != vi.first)
 									connectedVertices.insert(fn.v0);
+								if (fn.v1 != vi.first)
 									connectedVertices.insert(fn.v1);
+								if (fn.v2 != vi.first)
 									connectedVertices.insert(fn.v2);
+							}
+						}
+
+						if (IsBoundaryVertex(i))
+						{
+							const PositionKey altPkey = MakeBoundaryPositionKey(pos);
+							const auto altPosIt = positionMap.find(altPkey);
+							if (altPosIt != positionMap.end())
+							{
+								for (const auto& vi : altPosIt->second) {
+									if (IsSameGeometry(i, vi.first) || pastVertices.find(vi.first) != pastVertices.end())
+										continue;
+									for (const auto& fi : vertexToFaceMap[vi.first]) {
+										const auto& fn = faceNormals[fi];
+										if (fn.v0 != vi.first)
+											connectedVertices.insert(fn.v0);
+										if (fn.v1 != vi.first)
+											connectedVertices.insert(fn.v1);
+										if (fn.v2 != vi.first)
+											connectedVertices.insert(fn.v2);
+									}
 								}
 							}
 						}
-						for (const auto vi : connectedVertices) {
-							avgPos = DirectX::XMVectorAdd(avgPos, DirectX::XMLoadFloat3(&vertices[vi]));
-							totalCount++;
-						}
-						if (totalCount == 0)
+
+						if (connectedVertices.size() == 0)
 							continue;
-						avgPos = DirectX::XMVectorScale(avgPos, 1.0f / totalCount);
+
+						DirectX::XMVECTOR avgPos = emptyVector;
+						for (const auto& cvi : connectedVertices)
+						{
+							avgPos = DirectX::XMVectorAdd(avgPos, DirectX::XMLoadFloat3(&tempVertices[cvi]));
+						}
+						avgPos = DirectX::XMVectorScale(avgPos, 1.0f / connectedVertices.size());
 						const DirectX::XMVECTOR original = DirectX::XMLoadFloat3(&pos);
 						const DirectX::XMVECTOR smoothed = DirectX::XMVectorLerp(original, avgPos, a_strength);
-						DirectX::XMStoreFloat3(&tempVertices[i], smoothed);
+						DirectX::XMStoreFloat3(&vertices[i], smoothed);
 					}
 				}));
 			}
 			for (auto& process : processes) {
 				process.get();
 			}
-			vertices = tempVertices;
 
 			if (Config::GetSingleton().GetGeometryDataTime())
 				PerformanceLog(std::string(__func__) + "::" + std::to_string(vertices.size()), true, false);
 
 			UpdateMap();
-
 		}
 
 		logger::debug("{} : {} vertex smooth done", __func__, vertices.size());
 		return;
+	}
+
+	void GeometryData::VertexSmoothByAngle(float a_smoothThreshold1, float a_smoothThreshold2, std::uint32_t a_smoothCount)
+	{
+		if (vertices.empty() || a_smoothCount == 0)
+			return;
+		if (a_smoothThreshold1 > a_smoothThreshold2)
+			a_smoothThreshold1 = a_smoothThreshold2;
+
+		logger::debug("{} : {} vertex smooth by angle({})...", __func__, vertices.size(), a_smoothCount);
+		const float smoothCos1 = std::cosf(DirectX::XMConvertToRadians(a_smoothThreshold1));
+		const float smoothCos2 = std::cosf(DirectX::XMConvertToRadians(a_smoothThreshold2));
+
+		for (std::uint32_t doSmooth = 0; doSmooth < a_smoothCount; doSmooth++)
+		{
+			if (Config::GetSingleton().GetGeometryDataTime())
+				PerformanceLog(std::string(__func__) + "::" + std::to_string(vertices.size()), false, false);
+
+			concurrency::concurrent_unordered_map<std::uint32_t, bool> smoothedVertices;
+			auto tempVertices = vertices;
+			std::vector<std::future<void>> processes;
+			const std::size_t sub = std::max((std::size_t)1, std::min(vertices.size(), processingThreads->GetThreads() * 8));
+			const std::size_t unit = (vertices.size() + sub - 1) / sub;
+			for (std::size_t p = 0; p < sub; p++) {
+				const std::size_t begin = p * unit;
+				const std::size_t end = std::min(begin + unit, vertices.size());
+				processes.push_back(processingThreads->submitAsync([&, begin, end]() {
+					for (std::size_t i = begin; i < end; i++)
+					{
+						const DirectX::XMFLOAT3& pos = tempVertices[i];
+						const PositionKey pkey = MakePositionKey(pos);
+						const auto posIt = positionMap.find(pkey);
+						if (posIt == positionMap.end())
+							continue;
+
+						DirectX::XMVECTOR nSelf = emptyVector;
+						std::uint32_t selfCount = 0;
+						std::unordered_set<std::uint32_t> pastVertices;
+						for (const auto& vi : posIt->second) {
+							pastVertices.insert(vi.first);
+							for (const auto& fi : vertexToFaceMap[vi.first]) {
+								const auto& fn = faceNormals[fi];
+								nSelf = DirectX::XMVectorAdd(nSelf, DirectX::XMLoadFloat3(&fn.normal));
+								selfCount++;
+							}
+						}
+
+						if (IsBoundaryVertex(i))
+						{
+							const PositionKey altPkey = MakeBoundaryPositionKey(pos);
+							const auto altPosIt = positionMap.find(altPkey);
+							if (altPosIt != positionMap.end())
+							{
+								for (const auto& vi : altPosIt->second) {
+									if (IsSameGeometry(i, vi.first) || pastVertices.find(vi.first) != pastVertices.end())
+										continue;
+									for (const auto& fi : vertexToFaceMap[vi.first]) {
+										const auto& fn = faceNormals[fi];
+										nSelf = DirectX::XMVectorAdd(nSelf, DirectX::XMLoadFloat3(&fn.normal));
+										selfCount++;
+									}
+								}
+							}
+						}
+						if (selfCount == 0)
+							continue;
+						nSelf = DirectX::XMVector3Normalize(nSelf);
+
+						std::unordered_set<std::uint32_t> connectedVertices;
+						pastVertices.clear();
+						float dotTotal = 0.0f;
+						std::uint32_t dotCount = 0;
+						for (const auto& vi : posIt->second) {
+							pastVertices.insert(vi.first);
+							for (const auto& fi : vertexToFaceMap[vi.first]) {
+								const auto& fn = faceNormals[fi];
+								const float dot = DirectX::XMVectorGetX(DirectX::XMVector3Dot(nSelf, DirectX::XMLoadFloat3(&fn.normal)));
+								if (dot > smoothCos1)
+									continue;
+								if (fn.v0 != vi.first)
+									connectedVertices.insert(fn.v0);
+								if (fn.v1 != vi.first)
+									connectedVertices.insert(fn.v1);
+								if (fn.v2 != vi.first)
+									connectedVertices.insert(fn.v2);
+								dotTotal += dot;
+								dotCount++;
+							}
+						}
+						if (IsBoundaryVertex(i))
+						{
+							const PositionKey altPkey = MakeBoundaryPositionKey(pos);
+							const auto altPosIt = positionMap.find(altPkey);
+							if (altPosIt != positionMap.end())
+							{
+								for (const auto& vi : altPosIt->second) {
+									if (IsSameGeometry(i, vi.first) || pastVertices.find(vi.first) != pastVertices.end())
+										continue;
+									for (const auto& fi : vertexToFaceMap[vi.first]) {
+										const auto& fn = faceNormals[fi];
+										const float dot = DirectX::XMVectorGetX(DirectX::XMVector3Dot(nSelf, DirectX::XMLoadFloat3(&fn.normal)));
+										if (dot > smoothCos1)
+											continue;
+										if (fn.v0 != vi.first)
+											connectedVertices.insert(fn.v0);
+										if (fn.v1 != vi.first)
+											connectedVertices.insert(fn.v1);
+										if (fn.v2 != vi.first)
+											connectedVertices.insert(fn.v2);
+										dotTotal += dot;
+										dotCount++;
+									}
+								}
+							}
+						}
+						if (connectedVertices.size() == 0)
+							continue;
+
+						DirectX::XMVECTOR avgPos = emptyVector;
+						const float avgDot = dotTotal / dotCount;
+						const float strength = SmoothStepRange(avgDot, smoothCos1, smoothCos2);
+						for (const auto& cvi : connectedVertices)
+						{
+							avgPos = DirectX::XMVectorAdd(avgPos, DirectX::XMLoadFloat3(&tempVertices[cvi]));
+						}
+						avgPos = DirectX::XMVectorScale(avgPos, 1.0f / connectedVertices.size());
+						const DirectX::XMVECTOR original = DirectX::XMLoadFloat3(&pos);
+						const DirectX::XMVECTOR smoothed = DirectX::XMVectorLerp(original, avgPos, strength);
+						DirectX::XMStoreFloat3(&vertices[i], smoothed);
+					}
+				}));
+			}
+			for (auto& process : processes) {
+				process.get();
+			}
+
+			if (Config::GetSingleton().GetGeometryDataTime())
+				PerformanceLog(std::string(__func__) + "::" + std::to_string(vertices.size()), true, false);
+
+			UpdateMap();
+		}
+	}
+
+	float GeometryData::SmoothStepRange(float x, float A, float B)
+	{
+		if (x > A)
+			return 0.0f;
+		else if (x <= B)
+			return 1.0f;
+		const float t = (A - x) / (A - B);
+		return t * t * (3.0f - 2.0f * t);
 	}
 }

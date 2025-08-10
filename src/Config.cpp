@@ -232,6 +232,10 @@ namespace Mus {
                 {
                     Subdivision = GetUIntValue(variableValue);
                 }
+                else if (variableName == "SubdivisionTriThreshold")
+                {
+                    SubdivisionTriThreshold = GetUIntValue(variableValue);
+                }
                 else if (variableName == "VertexSmooth")
                 {
                     VertexSmooth = GetUIntValue(variableValue);
@@ -239,6 +243,18 @@ namespace Mus {
                 else if (variableName == "VertexSmoothStrength")
                 {
                     VertexSmoothStrength = std::clamp(GetFloatValue(variableValue), 0.0f, 1.0f);
+                }
+                else if (variableName == "VertexSmoothByAngle")
+                {
+                    VertexSmoothByAngle = GetUIntValue(variableValue);
+                }
+                else if (variableName == "VertexSmoothByAngleThreshold1")
+                {
+                    VertexSmoothByAngleThreshold1 = std::clamp(GetFloatValue(variableValue), 0.0f, 180.0f);
+                }
+                else if (variableName == "VertexSmoothByAngleThreshold2")
+                {
+                    VertexSmoothByAngleThreshold2 = std::clamp(GetFloatValue(variableValue), 0.0f, 180.0f);
                 }
             }
             else if (currentSetting == "[Texture]")
@@ -501,6 +517,10 @@ namespace Mus {
                             }
                         }
                         isNormalConditionFile = true;
+                    }
+                    else if (variableName == "ProxyFirstScan")
+                    {
+                        condition.ProxyFirstScan = GetBoolValue(variableValue);
                     }
                     else if (variableName == "Priority")
                     {

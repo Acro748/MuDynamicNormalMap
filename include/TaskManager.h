@@ -102,13 +102,13 @@ namespace Mus {
 		bool IsCreatedByMDNM(std::string a_textureName);
 		
 		std::string GetDetailNormalMapPath(std::string a_normalMapPath);
-		std::string GetDetailNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder);
+		std::string GetDetailNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder, bool a_proxyFirstScan);
 		std::string GetDetailNormalMapPath(RE::Actor* a_actor);
 		std::string GetOverlayNormalMapPath(std::string a_normalMapPath);
-		std::string GetOverlayNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder);
+		std::string GetOverlayNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder, bool a_proxyFirstScan);
 		std::string GetOverlayNormalMapPath(RE::Actor* a_actor);
 		std::string GetMaskNormalMapPath(std::string a_normalMapPath);
-		std::string GetMaskNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder);
+		std::string GetMaskNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder, bool a_proxyFirstScan);
 		std::string GetMaskNormalMapPath(RE::Actor* a_actor);
 
 		concurrency::concurrent_unordered_map<RE::FormID, bSlotbit> updateSlotQueue;

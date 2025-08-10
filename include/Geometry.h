@@ -50,9 +50,9 @@ namespace Mus {
 		void GetGeometryData();
 		void UpdateMap();
 		void RecalculateNormals(float a_smoothDegree);
-		void Subdivision(std::uint32_t a_subCount);
+		void Subdivision(std::uint32_t a_subCount, std::uint32_t a_triThreshold);
 		void VertexSmooth(float a_strength, std::uint32_t a_smoothCount);
-
+		void VertexSmoothByAngle(float a_smoothThreshold1, float a_smoothThreshold2, std::uint32_t a_smoothCount);
 
 		GeometryInfo mainInfo;
 		std::vector<DirectX::XMFLOAT3> vertices;
@@ -66,8 +66,11 @@ namespace Mus {
 			RE::BSGeometry* geometry; //for ptr compare only 
 			ObjectInfo objInfo;
 		};
-		concurrency::concurrent_vector<GeometriesInfo> geometries;
+		std::vector<GeometriesInfo> geometries;
 		std::uint32_t mainGeometryIndex = 0;
+
+	private:
+		float SmoothStepRange(float x, float A, float B);
 
 		struct BoundaryEdgeKey {
 			std::uint32_t v0, v1;
@@ -97,12 +100,9 @@ namespace Mus {
 		inline bool IsBoundaryVertex(const std::uint32_t& vi) {
 			if (boundaryEdgeVertexMap.size() <= vi)
 				return false;
-			for (const auto& edgeKey : boundaryEdgeVertexMap[vi])
-			{
-				if (IsBoundaryEdge(edgeKey))
-					return true;
-			}
-			return false;
+			return std::find_if(boundaryEdgeVertexMap[vi].begin(), boundaryEdgeVertexMap[vi].end(), 
+								[&](const BoundaryEdgeKey& edgeKey) { return IsBoundaryEdge(edgeKey); }) 
+				!= boundaryEdgeVertexMap[vi].end();
 		}
 
 		struct VertexKey {
@@ -187,6 +187,15 @@ namespace Mus {
 			DirectX::XMFLOAT3 bitangent;
 		};
 		concurrency::concurrent_vector<FaceTangent> faceTangents;
+
+		inline bool IsSameGeometry(const std::uint32_t& v0, const std::uint32_t& v1) {
+			const auto it = std::find_if(geometries.begin(), geometries.end(), [&](GeometriesInfo& geoInfo) {
+				return geoInfo.objInfo.vertexStart <= v0 && geoInfo.objInfo.vertexEnd > v0;
+			});
+			if (it == geometries.end())
+				return false;
+			return it->objInfo.vertexStart <= v1 && it->objInfo.vertexEnd > v1;
+		};
 	};
 	typedef std::shared_ptr<GeometryData> GeometryDataPtr;
 }

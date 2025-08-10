@@ -378,13 +378,13 @@ namespace Mus {
 				newUpdateSet[geo].srcTexturePath = texturePath;
 
 				std::string saveDetailTexturePath = GetDetailNormalMapPath(a_actor);
-				newUpdateSet[geo].detailTexturePath = saveDetailTexturePath.empty() ? GetDetailNormalMapPath(texturePath, condition.ProxyDetailTextureFolder) : saveDetailTexturePath;
+				newUpdateSet[geo].detailTexturePath = saveDetailTexturePath.empty() ? GetDetailNormalMapPath(texturePath, condition.ProxyDetailTextureFolder, condition.ProxyFirstScan) : saveDetailTexturePath;
 
 				std::string saveOverlayTexturePath = GetOverlayNormalMapPath(a_actor);
-				newUpdateSet[geo].overlayTexturePath = saveOverlayTexturePath.empty() ? GetOverlayNormalMapPath(texturePath, condition.ProxyOverlayTextureFolder) : saveOverlayTexturePath;
+				newUpdateSet[geo].overlayTexturePath = saveOverlayTexturePath.empty() ? GetOverlayNormalMapPath(texturePath, condition.ProxyOverlayTextureFolder, condition.ProxyFirstScan) : saveOverlayTexturePath;
 
 				std::string saveMaskTexturePath = GetMaskNormalMapPath(a_actor);
-				newUpdateSet[geo].maskTexturePath = saveMaskTexturePath.empty() ? GetMaskNormalMapPath(texturePath, condition.ProxyMaskTextureFolder) : saveMaskTexturePath;
+				newUpdateSet[geo].maskTexturePath = saveMaskTexturePath.empty() ? GetMaskNormalMapPath(texturePath, condition.ProxyMaskTextureFolder, condition.ProxyFirstScan) : saveMaskTexturePath;
 
 				newUpdateSet[geo].detailStrength = detailStrength;
 
@@ -459,9 +459,32 @@ namespace Mus {
 					using Feature = RE::BSShaderMaterial::Feature;
 					if (!geo || geo->name.empty())
 						return RE::BSVisit::BSVisitControl::kContinue;
-					auto found = std::find_if(textures.begin(), textures.end(), [&geo](ObjectNormalMapUpdater::NormalMapResult normalmap) {
-						return normalmap.geometry == geo;
-					});
+
+					auto found = textures.end();
+					if (IsContainString(geo->name.c_str(), "[Ovl") || IsContainString(geo->name.c_str(), "[SOvl") || IsContainString(geo->name.c_str(), "overlay"))
+					{
+						bSlot slot = 0;
+						if (IsContainString(geo->name.c_str(), "Body"))
+							slot = RE::BIPED_OBJECT::kBody;
+						else if (IsContainString(geo->name.c_str(), "Hands"))
+							slot = RE::BIPED_OBJECT::kHands;
+						else if (IsContainString(geo->name.c_str(), "Feet"))
+							slot = RE::BIPED_OBJECT::kFeet;
+						else if (IsContainString(geo->name.c_str(), "overlay") || IsContainString(geo->name.c_str(), "Face"))
+							slot = RE::BIPED_OBJECT::kHead;
+						else
+							return RE::BSVisit::BSVisitControl::kContinue;
+
+						found = std::find_if(textures.begin(), textures.end(), [&](ObjectNormalMapUpdater::NormalMapResult normalmap) {
+							return normalmap.slot == slot;
+						});
+					}
+					else
+					{
+						found = std::find_if(textures.begin(), textures.end(), [&](ObjectNormalMapUpdater::NormalMapResult normalmap) {
+							return normalmap.geometry == geo;
+						});
+					}
 					if (found == textures.end())
 						return RE::BSVisit::BSVisitControl::kContinue;
 					if (!found->normalmapTexture2D || !found->normalmapShaderResourceView)
@@ -532,16 +555,26 @@ namespace Mus {
 		}
 		return "";
 	}
-	std::string TaskManager::GetDetailNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder)
+	std::string TaskManager::GetDetailNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder, bool a_proxyFirstScan)
 	{
-		std::string result = GetDetailNormalMapPath(a_normalMapPath);
-		if (!result.empty() || a_proxyFolder.empty())
-			return result;
+		std::string result;
+		if (!a_proxyFirstScan)
+		{
+			result = GetDetailNormalMapPath(a_normalMapPath);
+			if (!result.empty() || a_proxyFolder.empty())
+				return result;
+		}
 		std::filesystem::path file(a_normalMapPath);
 		std::string filename = file.stem().string();
 		for (auto& folder : a_proxyFolder)
 		{
 			result = GetDetailNormalMapPath(folder + "\\" + filename + ".dds");
+			if (!result.empty())
+				return result;
+		}
+		if (a_proxyFirstScan)
+		{
+			result = GetDetailNormalMapPath(a_normalMapPath);
 			if (!result.empty())
 				return result;
 		}
@@ -588,16 +621,26 @@ namespace Mus {
 		}
 		return "";
 	}
-	std::string TaskManager::GetOverlayNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder)
+	std::string TaskManager::GetOverlayNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder, bool a_proxyFirstScan)
 	{
-		std::string result = GetOverlayNormalMapPath(a_normalMapPath);
-		if (!result.empty() || a_proxyFolder.empty())
-			return result;
+		std::string result;
+		if (!a_proxyFirstScan)
+		{
+			result = GetOverlayNormalMapPath(a_normalMapPath);
+			if (!result.empty() || a_proxyFolder.empty())
+				return result;
+		}
 		std::filesystem::path file(a_normalMapPath);
 		std::string filename = file.stem().string();
 		for (auto& folder : a_proxyFolder)
 		{
 			a_normalMapPath = folder + "\\" + filename + ".dds";
+			result = GetOverlayNormalMapPath(a_normalMapPath);
+			if (!result.empty())
+				return result;
+		}
+		if (a_proxyFirstScan)
+		{
 			result = GetOverlayNormalMapPath(a_normalMapPath);
 			if (!result.empty())
 				return result;
@@ -645,16 +688,26 @@ namespace Mus {
 		}
 		return "";
 	}
-	std::string TaskManager::GetMaskNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder)
+	std::string TaskManager::GetMaskNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder, bool a_proxyFirstScan)
 	{
-		std::string result = GetMaskNormalMapPath(a_normalMapPath);
-		if (!result.empty() || a_proxyFolder.empty())
-			return result;
+		std::string result;
+		if (!a_proxyFirstScan)
+		{
+			result = GetMaskNormalMapPath(a_normalMapPath);
+			if (!result.empty() || a_proxyFolder.empty())
+				return result;
+		}
 		std::filesystem::path file(a_normalMapPath);
 		std::string filename = file.stem().string();
 		for (auto& folder : a_proxyFolder)
 		{
 			a_normalMapPath = folder + "\\" + filename + ".dds";
+			result = GetMaskNormalMapPath(a_normalMapPath);
+			if (!result.empty())
+				return result;
+		}
+		if (a_proxyFirstScan)
+		{
 			result = GetMaskNormalMapPath(a_normalMapPath);
 			if (!result.empty())
 				return result;
@@ -860,6 +913,8 @@ namespace Mus {
 						ConditionManager::GetSingleton().InitialConditionList();
 						static_cast<MultipleConfig*>(&Config::GetSingleton())->LoadConditionFile();
 						ConditionManager::GetSingleton().SortConditions();
+						Shader::ShaderManager::GetSingleton().ResetShader();
+						ObjectNormalMapUpdater::GetSingleton().Init();
 						RE::DebugNotification("MDNM : Reload done");
 						logger::info("Reload done");
 						isResetTasks = true;

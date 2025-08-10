@@ -30,7 +30,10 @@ namespace Mus {
 			std::size_t GetNewHash() { return XXH64_digest(state); }
 		};
 		typedef std::shared_ptr<Hash> HashPtr;
-		typedef concurrency::concurrent_unordered_map<bSlot, HashPtr> GeometryHash; //RE::BIPED_OBJECT, HashPtr
+		struct GeometryHash {
+			concurrency::concurrent_unordered_map<bSlot, HashPtr> hash; //RE::BIPED_OBJECT, HashPtr
+			bool IsDynamicTriShapeAsHead = false;
+		};
 
 		bool Register(RE::Actor* a_actor, bSlot bipedSlot);
 		bool InitialHash(RE::Actor* a_actor, bSlot bipedSlot);
@@ -43,7 +46,7 @@ namespace Mus {
 
 	private:
 		void CheckingActorHash();
-		bool GetHash(RE::Actor* a_actor, GeometryHash hash);
+		bool GetHash(RE::Actor* a_actor, GeometryHash hashMap);
 
 		std::atomic<bool> isDetecting = false;
 

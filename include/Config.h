@@ -129,11 +129,23 @@ namespace Mus {
         [[nodiscard]] inline auto GetSubdivision() const noexcept {
             return Subdivision;
         }
+        [[nodiscard]] inline auto GetSubdivisionTriThreshold() const noexcept {
+            return SubdivisionTriThreshold;
+        }
         [[nodiscard]] inline auto GetVertexSmooth() const noexcept {
             return VertexSmooth;
         }
         [[nodiscard]] inline auto GetVertexSmoothStrength() const noexcept {
             return VertexSmoothStrength;
+        }
+        [[nodiscard]] inline auto GetVertexSmoothByAngle() const noexcept {
+            return VertexSmoothByAngle;
+        }
+        [[nodiscard]] inline auto GetVertexSmoothByAngleThreshold1() const noexcept {
+            return VertexSmoothByAngleThreshold1;
+        }
+        [[nodiscard]] inline auto GetVertexSmoothByAngleThreshold2() const noexcept {
+            return VertexSmoothByAngleThreshold2;
         }
 
         //Texture
@@ -275,8 +287,12 @@ namespace Mus {
         float NormalSmoothDegree = 60.0f;
         bool AllowInvertNormalSmooth = false;
         std::uint8_t Subdivision = 0;
+        std::uint32_t SubdivisionTriThreshold = 65535;
         std::uint8_t VertexSmooth = 0;
         float VertexSmoothStrength = 0.5f;
+        std::uint8_t VertexSmoothByAngle = 0;
+        float VertexSmoothByAngleThreshold1 = 45.0f;
+        float VertexSmoothByAngleThreshold2 = 60.0f;
 
         //Texture
         std::uint32_t TextureWidth = 2048;

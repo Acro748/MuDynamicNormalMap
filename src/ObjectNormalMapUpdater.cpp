@@ -109,8 +109,9 @@ namespace Mus {
 			logger::error("{} : Invalid parameters", __func__);
 			return false;
 		}
-		a_data->Subdivision(Config::GetSingleton().GetSubdivision());
+		a_data->Subdivision(Config::GetSingleton().GetSubdivision(), Config::GetSingleton().GetSubdivisionTriThreshold());
 		a_data->UpdateMap();
+		a_data->VertexSmoothByAngle(Config::GetSingleton().GetVertexSmoothByAngleThreshold1(), Config::GetSingleton().GetVertexSmoothByAngleThreshold2(), Config::GetSingleton().GetVertexSmoothByAngle());
 		a_data->VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
 		a_data->RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree());
 
@@ -536,33 +537,23 @@ namespace Mus {
 											detailColor = RGBA::lerp(RGBA(0.5f, 0.5f, 1.0f, detailColor.a), detailColor, detailStrength);
 										}
 
-										const DirectX::XMVECTOR n = DirectX::XMVector3Normalize(
-											DirectX::XMVectorAdd(DirectX::XMVectorAdd(
-												DirectX::XMVectorScale(n0v, bary.x),
-												DirectX::XMVectorScale(n1v, bary.y)),
-												DirectX::XMVectorScale(n2v, bary.z)));
+										const float denomal = (bary.x + bary.y + floatPrecision);
+										const DirectX::XMVECTOR n01 = SlerpVector(n0v, n1v, bary.y / denomal);
+										const DirectX::XMVECTOR n = SlerpVector(n01, n2v, bary.z);
 
-										DirectX::XMVECTOR normalResult = DirectX::XMVectorZero();
+										DirectX::XMVECTOR normalResult = emptyVector;
 										if (detailColor.a > 0.0f)
 										{
-											const DirectX::XMVECTOR t = DirectX::XMVector3Normalize(
-												DirectX::XMVectorAdd(DirectX::XMVectorAdd(
-													DirectX::XMVectorScale(t0v, bary.x),
-													DirectX::XMVectorScale(t1v, bary.y)),
-													DirectX::XMVectorScale(t2v, bary.z)));
+											const DirectX::XMVECTOR t01 = SlerpVector(t0v, t1v, bary.y / denomal);
+											const DirectX::XMVECTOR b01 = SlerpVector(b0v, b1v, bary.y / denomal);
 
-											const DirectX::XMVECTOR b = DirectX::XMVector3Normalize(
-												DirectX::XMVectorAdd(DirectX::XMVectorAdd(
-													DirectX::XMVectorScale(b0v, bary.x),
-													DirectX::XMVectorScale(b1v, bary.y)),
-													DirectX::XMVectorScale(b2v, bary.z)));
+											const DirectX::XMVECTOR t = SlerpVector(t01, t2v, bary.z);
+											const DirectX::XMVECTOR b = SlerpVector(b01, b2v, bary.z);
 
 											const DirectX::XMVECTOR ft = DirectX::XMVector3Normalize(
 												DirectX::XMVectorSubtract(t, DirectX::XMVectorScale(n, DirectX::XMVectorGetX(DirectX::XMVector3Dot(n, t)))));
+											const DirectX::XMVECTOR fb = DirectX::XMVector3Normalize(DirectX::XMVector3Cross(n, ft));
 
-											const DirectX::XMVECTOR cross = DirectX::XMVector3Cross(n, ft);
-											const float handedness = (DirectX::XMVectorGetX(DirectX::XMVector3Dot(cross, b)) < 0.0f) ? -1.0f : 1.0f;
-											const DirectX::XMVECTOR fb = DirectX::XMVector3Normalize(DirectX::XMVectorScale(cross, handedness));
 											const DirectX::XMMATRIX tbn = DirectX::XMMATRIX(ft, fb, n, DirectX::XMVectorSet(0, 0, 0, 1));
 
 											const DirectX::XMFLOAT4 detailColorF(
@@ -1104,38 +1095,50 @@ namespace Mus {
 		return result;
 	}
 
-	bool ObjectNormalMapUpdater::IsDetailNormalMap(std::string a_normalMapPath)
+	bool ObjectNormalMapUpdater::IsDetailNormalMap(const std::string& a_normalMapPath)
 	{
-		constexpr std::string_view prefix = "Textures\\";
 		constexpr std::string_view n_suffix = "_n";
 		if (a_normalMapPath.empty())
 			return false;
-		if (!stringStartsWith(a_normalMapPath, prefix.data()))
-			a_normalMapPath = prefix.data() + a_normalMapPath;
 		std::filesystem::path file(a_normalMapPath);
 		std::string filename = file.stem().string();
 		return stringEndsWith(filename, n_suffix.data());
 	}
 
-	bool ObjectNormalMapUpdater::ComputeBarycentric(float px, float py, DirectX::XMINT2 a, DirectX::XMINT2 b, DirectX::XMINT2 c, DirectX::XMFLOAT3& out)
+	DirectX::XMVECTOR ObjectNormalMapUpdater::SlerpVector(const DirectX::XMVECTOR& a, const DirectX::XMVECTOR& b, const float& t)
 	{
-		DirectX::SimpleMath::Vector2 v0 = { (float)(b.x - a.x), (float)(b.y - a.y) };
-		DirectX::SimpleMath::Vector2 v1 = { (float)(c.x - a.x), (float)(c.y - a.y) };
-		DirectX::SimpleMath::Vector2 v2 = { px - a.x, py - a.y };
+		const float dotAB = std::clamp(DirectX::XMVectorGetX(DirectX::XMVector3Dot(a, b)), -1.0f, 1.0f);
+		const float theta = acosf(dotAB) * t;
+		const DirectX::XMVECTOR relVec = DirectX::XMVector3Normalize(
+			DirectX::XMVectorSubtract(b, DirectX::XMVectorScale(a, dotAB))
+		);
+		return DirectX::XMVector3Normalize(
+			DirectX::XMVectorAdd(
+				DirectX::XMVectorScale(a, cosf(theta)),
+				DirectX::XMVectorScale(relVec, sinf(theta))
+			)
+		);
+	}
 
-		float d00 = v0.Dot(v0);
-		float d01 = v0.Dot(v1);
-		float d11 = v1.Dot(v1);
-		float d20 = v2.Dot(v0);
-		float d21 = v2.Dot(v1);
-		float denom = d00 * d11 - d01 * d01;
+	bool ObjectNormalMapUpdater::ComputeBarycentric(const float& px, const float& py, const DirectX::XMINT2& a, const DirectX::XMINT2& b, const DirectX::XMINT2& c, DirectX::XMFLOAT3& out)
+	{
+		const DirectX::SimpleMath::Vector2 v0 = { (float)(b.x - a.x), (float)(b.y - a.y) };
+		const DirectX::SimpleMath::Vector2 v1 = { (float)(c.x - a.x), (float)(c.y - a.y) };
+		const DirectX::SimpleMath::Vector2 v2 = { px - a.x, py - a.y };
+
+		const float d00 = v0.Dot(v0);
+		const float d01 = v0.Dot(v1);
+		const float d11 = v1.Dot(v1);
+		const float d20 = v2.Dot(v0);
+		const float d21 = v2.Dot(v1);
+		const float denom = d00 * d11 - d01 * d01;
 
 		if (denom == 0.0f)
 			return false;
 
-		float v = (d11 * d20 - d01 * d21) / denom;
-		float w = (d00 * d21 - d01 * d20) / denom;
-		float u = 1.0f - v - w;
+		const float v = (d11 * d20 - d01 * d21) / denom;
+		const float w = (d00 * d21 - d01 * d20) / denom;
+		const float u = 1.0f - v - w;
 
 		if (u < 0 || v < 0 || w < 0)
 			return false;
