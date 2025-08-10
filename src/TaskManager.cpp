@@ -134,7 +134,10 @@ namespace Mus {
 		concurrency::parallel_for_each(isActiveActors.begin(), isActiveActors.end(), [&](auto& map) {
 			RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
 			if (!actor || !actor->loadedData || !actor->loadedData->data3D)
+			{
+				garbages.push_back(map.first);
 				return;
+			}
 			bool isInRange = false;
 			if (isPlayer(actor->formID) || Config::GetSingleton().GetUpdateDistance() <= floatPrecision)
 			{

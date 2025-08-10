@@ -89,13 +89,14 @@ namespace Mus {
 		if (!a_actor || !a_actor->loadedData || !a_actor->loadedData->data3D)
 			return false;
 		ActorHashLock.lock_shared();
-		if (ActorHash.find(a_actor->formID) == ActorHash.end())
-			return true;
-		auto found = ActorHash[a_actor->formID].hash.find(bipedSlot);
-		if (found != ActorHash[a_actor->formID].hash.end())
+		if (ActorHash.find(a_actor->formID) != ActorHash.end())
 		{
-			found->second->hashValue = 0;
-			logger::debug("{:x} {} {}: initialized hash for ActorVertexHasher", a_actor->formID, a_actor->GetName(), bipedSlot);
+			auto found = ActorHash[a_actor->formID].hash.find(bipedSlot);
+			if (found != ActorHash[a_actor->formID].hash.end())
+			{
+				found->second->hashValue = 0;
+				logger::debug("{:x} {} {}: initialized hash for ActorVertexHasher", a_actor->formID, a_actor->GetName(), bipedSlot);
+			}
 		}
 		ActorHashLock.unlock_shared();
 		return true;
