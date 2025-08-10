@@ -26,7 +26,6 @@ namespace Mus {
         if (priorityCoreMask > 0)
             SetThreadAffinityMask(GetCurrentThread(), priorityCoreMask);
         while (true) {
-            std::this_thread::yield();
             std::function<void()> task;
             {
                 std::unique_lock lock(queueMutex);
@@ -67,7 +66,6 @@ namespace Mus {
         if (priorityCoreMask > 0)
             SetThreadAffinityMask(GetCurrentThread(), priorityCoreMask);
         while (true) {
-            std::this_thread::yield();
             std::function<void()> task;
             {
                 std::unique_lock lock(queueMutex);

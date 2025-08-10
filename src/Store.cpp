@@ -14,5 +14,7 @@ namespace Mus {
 	std::clock_t currentTime = 0;
 
 	float weldDistance = 0.0001f;
-	std::uint32_t weldDistanceMult = 10000;
+	float weldDistanceMult = 10000;
+	float boundaryWeldDistance = 0.0001f;
+	float boundaryWeldDistanceMult = 10000;
 }

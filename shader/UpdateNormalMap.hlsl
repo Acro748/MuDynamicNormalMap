@@ -32,6 +32,16 @@ RWTexture2D<float4> dstTexture      : register(u0);
 
 SamplerState samplerState           : register(s0);
 
+float3 SlerpVector(float3 a, float3 b, float t)
+{
+    a = normalize(a);
+    b = normalize(b);
+    float dotAB = clamp(dot(a, b), -1.0f, 1.0f);
+    float theta = acos(dotAB) * t;
+    float3 relVec = normalize(b - a * dotAB);
+    return normalize(a * cos(theta) + relVec * sin(theta));
+}
+
 bool ComputeBarycentric(float2 p, float2 a, float2 b, float2 c, out float3 bary)
 {
     float2 v0 = b - a;
@@ -69,6 +79,10 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
     uint i0 = indices[index + 0];
     uint i1 = indices[index + 1];
     uint i2 = indices[index + 2];
+
+    //float3 v0 = vertices[i0];
+    //float3 v1 = vertices[i1];
+    //float3 v2 = vertices[i2];
 
     float2 uv0 = uvs[i0];
     float2 uv1 = uvs[i1];
@@ -118,14 +132,15 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
 
             if (overlayColor.a < 1.0f)
             {
-                float4 maskColor = float4(1.0f, 1.0f, 1.0f, 0.0f);
+                float4 maskColor = float4(0.5f, 0.5f, 0.5f, 0.0f);
                 if (hasMaskTexture > 0 && hasSrcTexture > 0)
                 {
                     maskColor = maskTexture.SampleLevel(samplerState, uv, 0);
                 }
                 if (maskColor.a < 1.0f)
                 {
-                    float3 n = normalize(n0 * bary.x + n1 * bary.y + n2 * bary.z);
+                    float3 n01 = SlerpVector(n0, n1, bary.y / (bary.x + bary.y + 1e-6f));
+                    float3 n = SlerpVector(n01, n2, bary.z);
 
                     float4 detailColor = float4(0.5f, 0.5f, 1.0f, 0.5f);
                     if (hasDetailTexture > 0)
@@ -137,12 +152,14 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
                     float3 normalResult;
                     if (detailColor.a > 0.0f)
                     {
-                        float3 t = normalize(t0 * bary.x + t1 * bary.y + t2 * bary.z);
-                        float3 b = normalize(b0 * bary.x + b1 * bary.y + b2 * bary.z);
+                        float3 t01 = SlerpVector(t0, t1, bary.y / (bary.x + bary.y + 1e-6f));
+                        float3 t = SlerpVector(t01, t2, bary.z);
 
-                        float3 ft = normalize(t - n * dot(n, t).x);
+                        float3 b01 = SlerpVector(b0, b1, bary.y / (bary.x + bary.y + 1e-6f));
+                        float3 b = SlerpVector(b01, b2, bary.z);
+
+                        float3 ft = normalize(t - n * dot(n, t));
                         float3 fb = normalize(cross(n, ft));
-
                         float3x3 tbn = float3x3(ft, fb, n);
 
                         float3 srcN = float3(detailColor.rgb * 2.0f - 1.0f);

@@ -16,6 +16,7 @@ namespace Mus {
 		}
 
 		void InitialConditionMap();
+		void InitialConditionList() { ConditionList.clear(); };
 
 		enum ConditionType : std::uint32_t {
 			HasKeyword,
@@ -57,6 +58,7 @@ namespace Mus {
 			std::vector<std::string> ProxyDetailTextureFolder;
 			std::vector<std::string> ProxyOverlayTextureFolder;
 			std::vector<std::string> ProxyMaskTextureFolder;
+			bool ProxyFirstScan = false;
 			std::int32_t Priority = 0;
 		};
 		bool RegisterCondition(Condition condition);

@@ -34,7 +34,9 @@ namespace Mus {
 
 	constexpr float floatPrecision = 1e-6f;
 	extern float weldDistance;
-	extern std::uint32_t weldDistanceMult;
+	extern float weldDistanceMult;
+	extern float boundaryWeldDistance;
+	extern float boundaryWeldDistanceMult;
 
 	constexpr std::uint32_t pixelGroup = 2048 * 2048;
 }

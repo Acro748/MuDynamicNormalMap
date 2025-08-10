@@ -110,10 +110,57 @@ namespace Mus {
                 {
                     DebugTexture = GetBoolValue(variableValue);
                 }
-                else if (variableName == "PerformanceLog")
+                else if (variableName == "QueueTime")
                 {
-                    PerformanceLog = GetBoolValue(variableValue);
-                    PerformanceCheck = PerformanceLog;
+                    QueueTime = GetBoolValue(variableValue);
+                }
+                else if (variableName == "FullUpdateTime")
+                {
+                    FullUpdateTime = GetBoolValue(variableValue);
+                }
+                else if (variableName == "ActorVertexHasherTime1")
+                {
+                    ActorVertexHasherTime1 = GetBoolValue(variableValue);
+                }
+                else if (variableName == "ActorVertexHasherTime2")
+                {
+                    ActorVertexHasherTime2 = GetBoolValue(variableValue);
+                }
+                else if (variableName == "GeometryDataTime")
+                {
+                    GeometryDataTime = GetBoolValue(variableValue);
+                }
+                else if (variableName == "UpdateNormalMapTime1")
+                {
+                    UpdateNormalMapTime1 = GetBoolValue(variableValue);
+                }
+                else if (variableName == "UpdateNormalMapTime2")
+                {
+                    UpdateNormalMapTime2 = GetBoolValue(variableValue);
+                }
+                else if (variableName == "BleedTextureTime1")
+                {
+                    BleedTextureTime1 = GetBoolValue(variableValue);
+                }
+                else if (variableName == "BleedTextureTime2")
+                {
+                    BleedTextureTime2 = GetBoolValue(variableValue);
+                }
+                else if (variableName == "TextureCopyTime")
+                {
+                    TextureCopyTime = GetBoolValue(variableValue);
+                }
+                else if (variableName == "MergeTime1")
+                {
+                    MergeTime1 = GetBoolValue(variableValue);
+                }
+                else if (variableName == "MergeTime2")
+                {
+                    MergeTime2 = GetBoolValue(variableValue);
+                }
+                else if (variableName == "CompressTime")
+                {
+                    CompressTime = GetBoolValue(variableValue);
                 }
             }
             else if (currentSetting == "[General]")
@@ -138,143 +185,22 @@ namespace Mus {
 				{
                     HeadEnable = GetBoolValue(variableValue);
 				}
-                else if (variableName == "RealtimeDetect")
-				{
-                    RealtimeDetect = GetBoolValue(variableValue);
-				}
-                else if (variableName == "RealtimeDetectHead")
-				{
-                    RealtimeDetectHead = GetUIntValue(variableValue);
-				}
-                else if (variableName == "RealtimeDetectHead")
-				{
-                    RealtimeDetectOnBackGround = GetBoolValue(variableValue);
-				}
-                else if (variableName == "DetectDistance")
-				{
-                    float value = GetFloatValue(variableValue);
-                    DetectDistance = value * value;
-				}
-                else if (variableName == "DetectTickMS")
-				{
-                    DetectTickMS = GetIntValue(variableValue);
-				}
-                else if (variableName == "UpdateDistance")
+                else if (variableName == "HotKey1")
                 {
-                    float value = GetFloatValue(variableValue);
-                    UpdateDistance = value * value;
+                    HotKey1 = GetUIntValue(variableValue);
+                }
+                else if (variableName == "HotKey2")
+                {
+                    HotKey2 = GetUIntValue(variableValue);
                 }
                 else if (variableName == "RevertNormalMap")
                 {
                     RevertNormalMap = GetBoolValue(variableValue);
                 }
-                else if (variableName == "GPUEnable")
+                else if (variableName == "UpdateDelayTick")
                 {
-					GPUEnable = GetBoolValue(variableValue);
-                }
-                else if (variableName == "WaitForRendererTickMS")
-                {
-                    WaitForRendererTickMS = GetUIntValue(variableValue);
-                }
-                else if (variableName == "PriorityCores")
-				{
-                    auto list = split(variableValue, ',');
-                    for (auto& c : list) {
-                        PriorityCoreList.insert(GetUIntValue(c));
-                    }
-				}
-                else if (variableName == "DetectPriorityCores")
-                {
-                    DetectPriorityCores = GetIntValue(variableValue);
-                }
-				else if (variableName == "AutoTaskQ")
-				{
-                    AutoTaskQ = std::min(std::uint32_t(AutoTaskQList::Total - 1), GetUIntValue(variableValue));
-				}
-				else if (variableName == "TaskQMax")
-				{
-                    TaskQMax = GetUIntValue(variableValue);
-				}
-				else if (variableName == "TaskQTickMS")
-				{
-                    TaskQTickMS = GetUIntValue(variableValue);
-				}
-				else if (variableName == "DirectTaskQ")
-				{
-                    DirectTaskQ = GetBoolValue(variableValue);
-				}
-				else if (variableName == "DivideTaskQ")
-				{
-                    DivideTaskQ = GetUIntValue(variableValue);
-				}
-				else if (variableName == "UpdateDelayTick")
-				{
                     UpdateDelayTick = GetUIntValue(variableValue);
-				}
-				else if (variableName == "HotKey1")
-				{
-                    HotKey1 = GetUIntValue(variableValue);
-				}
-				else if (variableName == "HotKey2")
-				{
-                    HotKey2 = GetUIntValue(variableValue);
-				}
-				else if (variableName == "WeldDistance")
-				{
-                    WeldDistance = GetFloatValue(variableValue);
-				}
-				else if (variableName == "NormalSmoothDegree")
-				{
-                    NormalSmoothDegree = std::clamp(GetFloatValue(variableValue), 0.0f, 180.0f);
-				}
-				else if (variableName == "Subdivision")
-				{
-                    Subdivision = GetUIntValue(variableValue);
-				}
-				else if (variableName == "VertexSmooth")
-				{
-                    VertexSmooth = GetUIntValue(variableValue);
-				}
-				else if (variableName == "VertexSmoothStrength")
-				{
-                    VertexSmoothStrength = GetFloatValue(variableValue);
-				}
-				else if (variableName == "TextureMargin")
-				{
-                    TextureMargin = GetIntValue(variableValue);
-				}
-				else if (variableName == "TextureMarginGPU")
-				{
-                    TextureMarginGPU = GetBoolValue(variableValue);
-				}
-				else if (variableName == "MergeTextureGPU")
-				{
-                    MergeTextureGPU = GetBoolValue(variableValue);
-				}
-				else if (variableName == "TextureCompress")
-				{
-                    TextureCompress = GetIntValue(variableValue);
-				}
-				else if (variableName == "TextureWidth")
-				{
-                    TextureWidth = GetUIntValue(variableValue);
-				}
-				else if (variableName == "TextureHeight")
-				{
-                    TextureHeight = GetUIntValue(variableValue);
-				}
-                else if (variableName == "BlueRadius")
-                {
-                    BlueRadius = GetUIntValue(variableValue);
                 }
-				else if (variableName == "TangentZCorrection")
-				{
-                    TangentZCorrection = GetBoolValue(variableValue);
-				}
-				else if (variableName == "DetailStrength")
-				{
-                    DetailStrength = std::clamp(GetFloatValue(variableValue), 0.0f, 1.0f);
-				}
                 else if (variableName == "RemoveSkinOverrides")
                 {
                     RemoveSkinOverrides = GetBoolValue(variableValue);
@@ -284,8 +210,168 @@ namespace Mus {
                     RemoveNodeOverrides = GetBoolValue(variableValue);
                 }
 			}
+            else if (currentSetting == "[Geometry]")
+            {
+                if (variableName == "WeldDistance")
+                {
+                    WeldDistance = std::max(GetFloatValue(variableValue), 0.0001f);
+                }
+                else if (variableName == "BoundaryWeldDistance")
+                {
+                    BoundaryWeldDistance = std::max(GetFloatValue(variableValue), 0.0001f);
+                }
+                else if (variableName == "NormalSmoothDegree")
+                {
+                    NormalSmoothDegree = std::clamp(GetFloatValue(variableValue), 0.0f, 180.0f);
+                }
+                else if (variableName == "AllowInvertNormalSmooth")
+                {
+                    AllowInvertNormalSmooth = GetBoolValue(variableValue);
+                }
+                else if (variableName == "Subdivision")
+                {
+                    Subdivision = GetUIntValue(variableValue);
+                }
+                else if (variableName == "SubdivisionTriThreshold")
+                {
+                    SubdivisionTriThreshold = GetUIntValue(variableValue);
+                }
+                else if (variableName == "VertexSmooth")
+                {
+                    VertexSmooth = GetUIntValue(variableValue);
+                }
+                else if (variableName == "VertexSmoothStrength")
+                {
+                    VertexSmoothStrength = std::clamp(GetFloatValue(variableValue), 0.0f, 1.0f);
+                }
+                else if (variableName == "VertexSmoothByAngle")
+                {
+                    VertexSmoothByAngle = GetUIntValue(variableValue);
+                }
+                else if (variableName == "VertexSmoothByAngleThreshold1")
+                {
+                    VertexSmoothByAngleThreshold1 = std::clamp(GetFloatValue(variableValue), 0.0f, 180.0f);
+                }
+                else if (variableName == "VertexSmoothByAngleThreshold2")
+                {
+                    VertexSmoothByAngleThreshold2 = std::clamp(GetFloatValue(variableValue), 0.0f, 180.0f);
+                }
+            }
+            else if (currentSetting == "[Texture]")
+            {
+                if (variableName == "TextureWidth")
+				{
+                    TextureWidth = GetUIntValue(variableValue);
+				}
+				else if (variableName == "TextureHeight")
+				{
+                    TextureHeight = GetUIntValue(variableValue);
+				}
+				else if (variableName == "TextureMargin")
+				{
+                    TextureMargin = GetIntValue(variableValue);
+				}
+				else if (variableName == "TangentZCorrection")
+				{
+                    TangentZCorrection = GetBoolValue(variableValue);
+				}
+				else if (variableName == "DetailStrength")
+				{
+                    DetailStrength = std::clamp(GetFloatValue(variableValue), 0.0f, 1.0f);
+				}
+                else if (variableName == "BlueRadius")
+                {
+                    BlueRadius = GetUIntValue(variableValue);
+                }
+            }
+            else if (currentSetting == "[Performance]")
+            {
+                if (variableName == "GPUEnable")
+                {
+                    GPUEnable = GetBoolValue(variableValue);
+                }
+                else if (variableName == "TextureMarginGPU")
+                {
+                    TextureMarginGPU = GetBoolValue(variableValue);
+                }
+                else if (variableName == "MergeTextureGPU")
+                {
+                    MergeTextureGPU = GetBoolValue(variableValue);
+                }
+                else if (variableName == "WaitForRendererTickMS")
+                {
+                    WaitForRendererTickMS = GetUIntValue(variableValue);
+                }
+                else if (variableName == "UpdateDistance")
+                {
+                    float value = GetFloatValue(variableValue);
+                    UpdateDistance = value * value;
+                }
+                else if (variableName == "AutoTaskQ")
+                {
+                    AutoTaskQ = std::min(std::uint32_t(AutoTaskQList::Total - 1), GetUIntValue(variableValue));
+                }
+                else if (variableName == "TaskQMax")
+                {
+                    TaskQMax = GetUIntValue(variableValue);
+                }
+                else if (variableName == "TaskQTickMS")
+                {
+                    TaskQTickMS = GetUIntValue(variableValue);
+                }
+                else if (variableName == "DirectTaskQ")
+                {
+                    DirectTaskQ = GetBoolValue(variableValue);
+                }
+                else if (variableName == "DivideTaskQ")
+                {
+                    DivideTaskQ = GetUIntValue(variableValue);
+                }
+                else if (variableName == "PriorityCores")
+                {
+                    auto list = split(variableValue, ',');
+                    for (auto& c : list) {
+                        PriorityCoreList.insert(GetUIntValue(c));
+                    }
+                }
+                else if (variableName == "DetectPriorityCores")
+                {
+                    DetectPriorityCores = GetIntValue(variableValue);
+                }
+                else if (variableName == "TextureCompress")
+                {
+                    TextureCompress = GetUIntValue(variableValue);
+                }
+            }
+            else if (currentSetting == "[RealtimeDetect]")
+            {
+                if (variableName == "RealtimeDetect")
+                {
+                    RealtimeDetect = GetBoolValue(variableValue);
+                }
+                else if (variableName == "RealtimeDetectHead")
+                {
+                    RealtimeDetectHead = GetUIntValue(variableValue);
+                }
+                else if (variableName == "RealtimeDetectHead")
+                {
+                    RealtimeDetectOnBackGround = GetBoolValue(variableValue);
+                }
+                else if (variableName == "DetectDistance")
+                {
+                    float value = GetFloatValue(variableValue);
+                    DetectDistance = value * value;
+                }
+                else if (variableName == "DetectTickMS")
+                {
+                    DetectTickMS = GetIntValue(variableValue);
+                }
+            }
         }
-        UpdateDistance = std::max(DetectDistance, UpdateDistance);
+        if (DetectDistance > floatPrecision)
+            UpdateDistance = std::max(DetectDistance, UpdateDistance);
+        else
+            UpdateDistance = 0.0f;
         return true;
     }
 
@@ -432,6 +518,10 @@ namespace Mus {
                         }
                         isNormalConditionFile = true;
                     }
+                    else if (variableName == "ProxyFirstScan")
+                    {
+                        condition.ProxyFirstScan = GetBoolValue(variableValue);
+                    }
                     else if (variableName == "Priority")
                     {
                         condition.Priority = GetIntValue(variableValue);
@@ -453,6 +543,115 @@ namespace Mus {
                 ConditionManager::GetSingleton().RegisterCondition(condition);
         });
         return false;
+    }
+
+    void InitialSetting()
+    {
+        std::uint32_t actorThreads = 2;
+        std::uint32_t memoryManageThreads = 3;
+        std::uint32_t processingThreads = Mus::Config::GetSingleton().GetPriorityCoreCount();
+        if (Mus::Config::GetSingleton().GetAutoTaskQ() > 0)
+        {
+            //float benchMarkResult = Mus::miniBenchMark();
+            //55~high-end, 35~middle-end, 15~low-end
+            //logger::info("CPU bench mark score : {}", (std::uint32_t)benchMarkResult);
+            //float CPUPerformanceMult = std::max(1.0f, 55.0f / benchMarkResult);
+            float gpuBenchMarkResult = Mus::miniBenchMarkGPU();
+            float GPUPerformanceMult = 1.0f;
+            if (gpuBenchMarkResult < 0.0f) {
+            }
+            else
+            {
+                //500 middle-end
+                logger::info("GPU bench mark score : {}", (std::int32_t)gpuBenchMarkResult);
+                GPUPerformanceMult = std::max(1.0f, 500.0f / gpuBenchMarkResult);
+            }
+
+            switch (Mus::Config::GetSingleton().GetAutoTaskQ()) {
+            case Mus::Config::AutoTaskQList::Fastest:
+                Mus::Config::GetSingleton().SetTaskQMax(2);
+                Mus::Config::GetSingleton().SetTaskQTickMS(0);
+                Mus::Config::GetSingleton().SetDirectTaskQ(true);
+                Mus::Config::GetSingleton().SetDivideTaskQ(0);
+                Mus::Config::GetSingleton().SetPriorityCores(0);
+                actorThreads = 2;
+                memoryManageThreads = 2;
+                processingThreads = std::max(unsigned long(1), Mus::Config::GetSingleton().GetPriorityCoreCount());
+                break;
+            case Mus::Config::AutoTaskQList::Faster:
+                Mus::Config::GetSingleton().SetTaskQMax(1);
+                Mus::Config::GetSingleton().SetTaskQTickMS(0);
+                Mus::Config::GetSingleton().SetDirectTaskQ(false);
+                Mus::Config::GetSingleton().SetDivideTaskQ(0);
+                Mus::Config::GetSingleton().SetPriorityCores(0);
+                actorThreads = 1;
+                memoryManageThreads = 1;
+                processingThreads = std::max(unsigned long(1), Mus::Config::GetSingleton().GetPriorityCoreCount());
+                break;
+            case Mus::Config::AutoTaskQList::Balanced:
+                Mus::Config::GetSingleton().SetTaskQMax(1);
+                Mus::Config::GetSingleton().SetTaskQTickMS(Mus::TaskQTickBase * GPUPerformanceMult);
+                Mus::Config::GetSingleton().SetDirectTaskQ(false);
+                Mus::Config::GetSingleton().SetDivideTaskQ(0);
+                Mus::Config::GetSingleton().SetPriorityCores(0);
+                actorThreads = 1;
+                memoryManageThreads = 1;
+                processingThreads = std::max(unsigned long(1), Mus::Config::GetSingleton().GetPriorityCoreCount());
+                break;
+            case Mus::Config::AutoTaskQList::BetterPerformance:
+                Mus::Config::GetSingleton().SetTaskQMax(1);
+                Mus::Config::GetSingleton().SetTaskQTickMS(Mus::TaskQTickBase * GPUPerformanceMult);
+                Mus::Config::GetSingleton().SetDirectTaskQ(false);
+                Mus::Config::GetSingleton().SetDivideTaskQ(1);
+                Mus::Config::GetSingleton().SetPriorityCores(1);
+                actorThreads = 1;
+                memoryManageThreads = 1;
+                processingThreads = std::max(unsigned long(1), Mus::Config::GetSingleton().GetPriorityCoreCount() - actorThreads - memoryManageThreads);
+                break;
+            case Mus::Config::AutoTaskQList::BestPerformance:
+                Mus::Config::GetSingleton().SetTaskQMax(1);
+                Mus::Config::GetSingleton().SetTaskQTickMS(Mus::TaskQTickBase * GPUPerformanceMult * 2);
+                Mus::Config::GetSingleton().SetDirectTaskQ(false);
+                Mus::Config::GetSingleton().SetDivideTaskQ(1);
+                Mus::Config::GetSingleton().SetPriorityCores(2);
+                actorThreads = 1;
+                memoryManageThreads = 1;
+                processingThreads = std::max(unsigned long(1), Mus::Config::GetSingleton().GetPriorityCoreCount() - actorThreads - memoryManageThreads);
+                break;
+            default:
+                Mus::Config::GetSingleton().SetPriorityCores(-1);
+                actorThreads = 1;
+                memoryManageThreads = 1;
+                processingThreads = std::max(unsigned long(1), Mus::Config::GetSingleton().GetPriorityCoreCount());
+                break;
+            }
+        }
+
+        Mus::gpuTask = std::make_unique<Mus::ThreadPool_GPUTaskModule>(0, Mus::Config::GetSingleton().GetDirectTaskQ(), Mus::Config::GetSingleton().GetTaskQMax());
+        Mus::g_frameEventDispatcher.addListener(Mus::gpuTask.get());
+
+        Mus::actorThreads = std::make_unique<Mus::ThreadPool_ParallelModule>(actorThreads);
+        logger::info("set actorThreads {}", actorThreads);
+
+        Mus::memoryManageThreads = std::make_unique<Mus::ThreadPool_ParallelModule>(memoryManageThreads);
+        logger::info("set memoryManageThreads {}", memoryManageThreads);
+
+        Mus::processingThreads = std::make_unique<Mus::ThreadPool_ParallelModule>(processingThreads);
+        logger::info("set processingThreads {}", processingThreads);
+
+        Mus::weldDistance = std::max(0.0001f, Mus::Config::GetSingleton().GetWeldDistance());
+        Mus::weldDistanceMult = 1.0f / Mus::weldDistance;
+
+        Mus::boundaryWeldDistance = std::max(0.0001f, Mus::Config::GetSingleton().GetBoundaryWeldDistance());
+        Mus::boundaryWeldDistanceMult = 1.0f / Mus::boundaryWeldDistance;
+
+        if (Mus::Config::GetSingleton().GetRealtimeDetectOnBackGround())
+        {
+            Mus::g_armorAttachEventEventDispatcher.addListener(&Mus::ActorVertexHasher::GetSingleton());
+            Mus::g_facegenNiNodeEventDispatcher.addListener(&Mus::ActorVertexHasher::GetSingleton());
+            Mus::g_actorChangeHeadPartEventDispatcher.addListener(&Mus::ActorVertexHasher::GetSingleton());
+            Mus::ActorVertexHasher::GetSingleton().Init();
+        }
     }
 }
 

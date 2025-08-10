@@ -68,13 +68,12 @@ namespace Mus {
 		void RunUpdateQueue();
 		void RegisterDelayTask(std::function<void()> func);
 		void RegisterDelayTask(std::int16_t delayTick, std::function<void()> func);
-		std::string GetDelayTaskID(RE::FormID refrID, std::uint32_t bipedSlot);
 
 		std::unordered_set<RE::BSGeometry*> GetAllGeometries(RE::Actor* a_actor);
 
-		bool QUpdateNormalMap(RE::Actor* a_actor, std::uint32_t bipedSlot);
+		bool QUpdateNormalMap(RE::Actor* a_actor, bSlotbit bipedSlot);
 
-		bool QUpdateNormalMapImpl(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, std::uint32_t bipedSlot);
+		bool QUpdateNormalMapImpl(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, bSlotbit bipedSlot);
 		void QUpdateNormalMapImpl(RE::FormID a_actorID, std::string a_actorName, GeometryDataPtr a_geoData, UpdateSet a_updateSet);
 
 		bool RemoveNormalMap(RE::Actor* a_actor);
@@ -91,31 +90,47 @@ namespace Mus {
 		EventResult ProcessEvent(const RE::MenuOpenCloseEvent* evn, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override;
 
 	private:
-		std::vector<std::function<void()>> delayTask; //id, task;
+		std::vector<std::function<void()>> delayTask; //task;
 		std::mutex delayTaskLock;
 
 		bool isPressedHotKey1 = false;
 		bool isResetTasks = false;
 
-		std::string GetTextureName(RE::Actor* a_actor, std::uint32_t a_bipedSlot, std::string a_texturePath); // ActorID + BipedSlot + TexturePath
+		const std::string MDNMPrefix = "[MDNM]";
+		std::string GetTextureName(RE::Actor* a_actor, bSlot a_bipedSlot, std::string a_texturePath); // ActorID + slot + TexturePath
 		bool GetTextureInfo(std::string a_textureName, TextureInfo& a_textureInfo); // ActorID + BipedSlot + TexturePath
+		bool IsCreatedByMDNM(std::string a_textureName);
 		
 		std::string GetDetailNormalMapPath(std::string a_normalMapPath);
-		std::string GetDetailNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder);
+		std::string GetDetailNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder, bool a_proxyFirstScan);
 		std::string GetDetailNormalMapPath(RE::Actor* a_actor);
 		std::string GetOverlayNormalMapPath(std::string a_normalMapPath);
-		std::string GetOverlayNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder);
+		std::string GetOverlayNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder, bool a_proxyFirstScan);
 		std::string GetOverlayNormalMapPath(RE::Actor* a_actor);
 		std::string GetMaskNormalMapPath(std::string a_normalMapPath);
-		std::string GetMaskNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder);
+		std::string GetMaskNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder, bool a_proxyFirstScan);
 		std::string GetMaskNormalMapPath(RE::Actor* a_actor);
 
-		concurrency::concurrent_unordered_map<RE::FormID, std::uint32_t> updateSlotQueue;
+		concurrency::concurrent_unordered_map<RE::FormID, bSlotbit> updateSlotQueue;
 		std::shared_mutex updateQueueLock;
 		concurrency::concurrent_unordered_map<RE::FormID, bool> isUpdating;
 
 		std::shared_mutex lastNormalMapLock;
-		concurrency::concurrent_unordered_map<RE::FormID, concurrency::concurrent_unordered_map<std::string, bool>> lastNormalMap; // ActorID, TextureName>
+		struct SlotTexKey {
+			bSlot slot;
+			std::string texturePath;
+			bool operator==(const SlotTexKey& other) const {
+				return slot == other.slot && texturePath == other.texturePath;
+			}
+		};
+		struct SlotTexHash {
+			std::size_t operator()(const SlotTexKey k) const {
+				std::size_t h1 = std::hash<std::uint32_t>()(k.slot);
+				std::size_t h2 = std::hash<std::string>()(k.texturePath);
+				return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
+			}
+		};
+		concurrency::concurrent_unordered_map<RE::FormID, concurrency::concurrent_unordered_map<SlotTexKey, std::string, SlotTexHash>> lastNormalMap; // ActorID, SlotTexKey, TextureName
 		concurrency::concurrent_unordered_map<RE::FormID, bool> isActiveActors; // ActorID, isActive
 	};
 }
