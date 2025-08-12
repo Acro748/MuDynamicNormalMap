@@ -92,7 +92,8 @@ namespace Mus {
 			return;
 
 		memoryManageThreads->submitAsync([&]() {
-			for (auto& map : lastNormalMap)
+			auto lastNormalMap_ = lastNormalMap;
+			for (auto& map : lastNormalMap_)
 			{
 				RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
 				if (!actor || !actor->loadedData || !actor->loadedData->data3D)
@@ -152,7 +153,10 @@ namespace Mus {
 			{
 				if (!isInRange)
 				{
-					if (lastNormalMap.find(actor->formID) != lastNormalMap.end())
+					lastNormalMapLock.lock_shared();
+					bool isFoundLastNormalMap = lastNormalMap.find(actor->formID) != lastNormalMap.end();
+					lastNormalMapLock.unlock_shared();
+					if (isFoundLastNormalMap)
 					{
 						if (!isUpdating[actor->formID])
 							RemoveNormalMap(actor);
