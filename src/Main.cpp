@@ -163,11 +163,9 @@ namespace {
 
         Mus::InitialSetting();
 
-		Mus::g_frameEventDispatcher.addListener(&Mus::ObjectNormalMapUpdater::GetSingleton());
 		Mus::g_frameEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_frameEventDispatcher.addListener(&Mus::ActorVertexHasher::GetSingleton());
 
-        Mus::g_playerCellChangeEventDispatcher.addListener(&Mus::ObjectNormalMapUpdater::GetSingleton());
         Mus::g_playerCellChangeEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 
 		Mus::g_armorAttachEventEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());

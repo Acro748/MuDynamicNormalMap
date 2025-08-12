@@ -431,13 +431,6 @@ namespace Mus {
 			if (Config::GetSingleton().GetFullUpdateTime())
 				PerformanceLog(std::string("QUpdateNormalMapImpl") + "::" + SetHex(a_actorID, 0), false, false);
 
-			if (!ObjectNormalMapUpdater::GetSingleton().CreateGeometryResourceData(a_actorID, a_geoData))
-			{
-				logger::error("{:x}::{} : Failed to get geometry data", a_actorID, a_actorName);
-				isUpdating[a_actorID] = false;
-				return;
-			}
-
 			ObjectNormalMapUpdater::UpdateResult textures;
 			if (Config::GetSingleton().GetGPUEnable())
 				textures = ObjectNormalMapUpdater::GetSingleton().UpdateObjectNormalMapGPU(a_actorID, a_geoData, a_updateSet);
@@ -482,19 +475,19 @@ namespace Mus {
 						else
 							return RE::BSVisit::BSVisitControl::kContinue;
 
-						found = std::find_if(textures.begin(), textures.end(), [&](ObjectNormalMapUpdater::NormalMapResult normalmap) {
-							return normalmap.slot == slot;
+						found = std::find_if(textures.begin(), textures.end(), [&](ObjectNormalMapUpdater::NormalMapResultPtr normalmap) {
+							return normalmap->slot == slot;
 						});
 					}
 					else
 					{
-						found = std::find_if(textures.begin(), textures.end(), [&](ObjectNormalMapUpdater::NormalMapResult normalmap) {
-							return normalmap.geometry == geo;
+						found = std::find_if(textures.begin(), textures.end(), [&](ObjectNormalMapUpdater::NormalMapResultPtr normalmap) {
+							return normalmap->geometry == geo;
 						});
 					}
 					if (found == textures.end())
 						return RE::BSVisit::BSVisitControl::kContinue;
-					if (!found->normalmapTexture2D || !found->normalmapShaderResourceView)
+					if (!(*found)->normalmapTexture2D || !(*found)->normalmapShaderResourceView)
 						return RE::BSVisit::BSVisitControl::kContinue;
 					auto effect = geo->GetGeometryRuntimeData().properties[State::kEffect].get();
 					if (!effect)
@@ -505,25 +498,43 @@ namespace Mus {
 					RE::BSLightingShaderMaterialBase* material = skyrim_cast<RE::BSLightingShaderMaterialBase*>(lightingShader->material);
 					if (!material || !material->normalTexture)
 						return RE::BSVisit::BSVisitControl::kContinue;
+					bool isNeedInitialize = false;
 					RE::NiSourceTexturePtr normalmap = nullptr;
-					if (auto texIt = createdTextures.find(found->textureName); texIt != createdTextures.end())
+					if (auto texIt = createdTextures.find((*found)->textureName); texIt != createdTextures.end())
 					{
 						normalmap = texIt->second;
 					}
 					else
 					{
-						if (Shader::TextureLoadManager::GetSingleton().CreateNiTexture(found->textureName, found->normalmapTexture2D, found->normalmapShaderResourceView, normalmap) < 0)
+						auto createResult = Shader::TextureLoadManager::GetSingleton().CreateNiTexture((*found)->textureName, (*found)->normalmapTexture2D, (*found)->normalmapShaderResourceView, normalmap);
+						if (createResult < 0)
 						{
 							logger::error("{:x}::{}::{} : Failed to create NiTexture", a_actorID, a_actorName, geo->name.c_str());
 							return RE::BSVisit::BSVisitControl::kContinue;
 						}
-						createdTextures.insert(std::make_pair(found->textureName, normalmap));
+						isNeedInitialize = createResult == 1;
+						createdTextures.insert(std::make_pair((*found)->textureName, normalmap));
 					}
-					if (Config::GetSingleton().GetDebugTexture())
-						material->diffuseTexture = normalmap;
-					material->normalTexture = normalmap;
+					if (isNeedInitialize)
+					{
+						RE::BSLightingShaderMaterialBase* newMaterial = skyrim_cast<RE::BSLightingShaderMaterialBase*>(material->Create());
+						newMaterial->CopyMembers(material);
+						if (Config::GetSingleton().GetDebugTexture())
+							material->diffuseTexture = normalmap;
+						material->normalTexture = normalmap;
+						lightingShader->SetMaterial(newMaterial, 1);
+						Shader::TextureLoadManager::InitializeShader(lightingShader, geo);
+						newMaterial->~BSLightingShaderMaterialBase();
+						RE::free(newMaterial);
+					}
+					else
+					{
+						if (Config::GetSingleton().GetDebugTexture())
+							material->diffuseTexture = normalmap;
+						material->normalTexture = normalmap;
+					}
 					lastNormalMapLock.lock_shared();
-					lastNormalMap[a_actorID][{ found->slot, found->texturePath }] = found->textureName;
+					lastNormalMap[a_actorID][{ (*found)->slot, (*found)->texturePath }] = (*found)->textureName;
 					lastNormalMapLock.unlock_shared();
 					logger::info("{:x}::{}::{} : update object normalmap done", a_actorID, a_actorName, geo->name.c_str());
 					return RE::BSVisit::BSVisitControl::kContinue;
