@@ -51,7 +51,6 @@
 #include <DirectXMath.h>
 #include <DirectXTex.h>
 #pragma comment(lib, "d3dcompiler.lib")
-#include <dxgi1_4.h>
 #include <exception>
 #include <execution>
 #include <filesystem>
