@@ -124,60 +124,53 @@ namespace Mus {
 				if (Config::GetSingleton().GetActorVertexHasherTime1())
 					PerformanceLog(std::string(__func__), false, true);
 
-				std::vector<std::future<void>> processes;
 				auto ActorHash_ = ActorHash;
-				for(auto& map : ActorHash_) {
-					processes.push_back(processingThreads->submitAsync([&, map]() {
-						RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
-						if (!actor || !actor->loadedData || !actor->loadedData->data3D)
+				for (auto& map : ActorHash_) {
+					RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
+					if (!actor || !actor->loadedData || !actor->loadedData->data3D)
+					{
+						ActorHashLock.lock();
+						ActorHash.unsafe_erase(map.first);
+						ActorHashLock.unlock();
+						return;
+					}
+
+					class ActorGuard {
+						RE::Actor* actor = nullptr;
+					public:
+						ActorGuard() = delete;
+						ActorGuard(RE::Actor* a_actor) : actor(a_actor) { actor->IncRefCount(); };
+						~ActorGuard() { actor->DecRefCount(); };
+					};
+					ActorGuard ag(actor);
+
+					if (BlockActors[actor->formID])
+						return;
+					if (!isPlayer(actor->formID) && (Config::GetSingleton().GetDetectDistance() > floatPrecision && playerPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) > Config::GetSingleton().GetDetectDistance()))
+						return;
+					if (!GetHash(actor, map.second))
+						return;
+
+					std::uint32_t bipedSlot = 0;
+					for (auto& hashmap : map.second.hash)
+					{
+						std::size_t hash = hashmap.second->GetNewHash();
+						hashmap.second->Reset();
+						if (hashmap.second->hashValue != 0 && hash != 0)
 						{
-							ActorHashLock.lock();
-							ActorHash.unsafe_erase(map.first);
-							ActorHashLock.unlock();
-							return;
-						}
-
-						class ActorGuard {
-							RE::Actor* actor = nullptr;
-						public:
-							ActorGuard() = delete;
-							ActorGuard(RE::Actor* a_actor) : actor(a_actor) { actor->IncRefCount(); };
-							~ActorGuard() { actor->DecRefCount(); };
-						};
-						ActorGuard ag(actor);
-
-						if (BlockActors[actor->formID])
-							return;
-						if (!isPlayer(actor->formID) && (Config::GetSingleton().GetDetectDistance() > floatPrecision && playerPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) > Config::GetSingleton().GetDetectDistance()))
-							return;
-						if (!GetHash(actor, map.second))
-							return;
-
-						std::uint32_t bipedSlot = 0;
-						for (auto& hashmap : map.second.hash)
-						{
-							std::size_t hash = hashmap.second->GetNewHash();
-							hashmap.second->Reset();
-							if (hashmap.second->hashValue != 0 && hash != 0)
+							if (hashmap.second->hashValue != hash)
 							{
-								if (hashmap.second->hashValue != hash)
-								{
-									bipedSlot |= 1 << hashmap.first;
-									logger::trace("{:x} {} {} : found different hash {:x}", actor->formID, actor->GetName(), hashmap.first, hash);
-								}
+								bipedSlot |= 1 << hashmap.first;
+								logger::trace("{:x} {} {} : found different hash {:x}", actor->formID, actor->GetName(), hashmap.first, hash);
 							}
-							hashmap.second->hashValue = hash;
 						}
-						if (bipedSlot > 0)
-						{
-							logger::debug("{:x} {} : detected changed slot {:x}", actor->formID, actor->GetName(), bipedSlot);
-							TaskManager::GetSingleton().QUpdateNormalMap(actor, bipedSlot);
-						}
-					}));
-				}
-				for (auto& process : processes)
-				{
-					process.get();
+						hashmap.second->hashValue = hash;
+					}
+					if (bipedSlot > 0)
+					{
+						logger::debug("{:x} {} : detected changed slot {:x}", actor->formID, actor->GetName(), bipedSlot);
+						TaskManager::GetSingleton().QUpdateNormalMap(actor, bipedSlot);
+					}
 				}
 				
 				if (Config::GetSingleton().GetActorVertexHasherTime1())

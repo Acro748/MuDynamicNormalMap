@@ -6,7 +6,7 @@ namespace Mus {
     std::unique_ptr<ThreadPool_ParallelModule> processingThreads;
 
     ThreadPool_ParallelModule::ThreadPool_ParallelModule(std::uint32_t threadSize)
-        : stop(false), priorityCoreMask(Config::GetSingleton().GetPriorityCores())
+        : stop(false)
     {
         std::uint32_t coreCount = std::max(std::uint32_t(1), threadSize);
         for (std::uint32_t i = 0; i < coreCount; i++) {
@@ -23,8 +23,6 @@ namespace Mus {
 
     void ThreadPool_ParallelModule::workerLoop() {
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
-        if (priorityCoreMask > 0)
-            SetThreadAffinityMask(GetCurrentThread(), priorityCoreMask);
         while (true) {
             std::function<void()> task;
             {
@@ -46,7 +44,6 @@ namespace Mus {
     ThreadPool_GPUTaskModule::ThreadPool_GPUTaskModule(std::uint8_t a_taskQTick, bool a_directTaskQ, std::uint8_t a_taskQMax)
         : stop(false), taskQTick(a_taskQTick)
         , directTaskQ(a_directTaskQ)
-        , priorityCoreMask(Config::GetSingleton().GetPriorityCores())
         , taskQMaxCount(std::max(std::uint8_t(1), a_taskQMax))
     {
         for (std::uint8_t i = 0; i < taskQMaxCount + 1; i++) {
@@ -63,8 +60,6 @@ namespace Mus {
 
     void ThreadPool_GPUTaskModule::workerLoop() {
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
-        if (priorityCoreMask > 0)
-            SetThreadAffinityMask(GetCurrentThread(), priorityCoreMask);
         while (true) {
             std::function<void()> task;
             {

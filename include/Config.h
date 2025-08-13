@@ -106,6 +106,10 @@ namespace Mus {
             return UpdateDelayTick;
         }
 
+        [[nodiscard]] inline auto GetApplyOverlay() const noexcept {
+            return ApplyOverlay;
+        }
+
         [[nodiscard]] inline auto GetRemoveSkinOverrides() const noexcept {
             return RemoveSkinOverrides;
         }
@@ -164,9 +168,6 @@ namespace Mus {
         [[nodiscard]] inline auto GetDetailStrength() const noexcept {
             return DetailStrength;
         }
-        [[nodiscard]] inline auto GetBlueRadius() const noexcept {
-            return BlueRadius;
-        }
 
         //Performance
         [[nodiscard]] inline auto GetGPUEnable() const noexcept {
@@ -188,12 +189,6 @@ namespace Mus {
         [[nodiscard]] inline auto GetAutoTaskQ() const noexcept {
             return AutoTaskQ;
         }
-        [[nodiscard]] inline auto GetPriorityCores() const noexcept {
-            return PriorityCoreMask;
-        }
-        [[nodiscard]] inline auto GetPriorityCoreCount() const noexcept {
-            return PriorityCoreCount;
-        }
         [[nodiscard]] inline auto GetTaskQMax() const noexcept {
             return TaskQMax;
         }
@@ -205,6 +200,9 @@ namespace Mus {
         }
         [[nodiscard]] inline auto GetDivideTaskQ() const noexcept {
             return DivideTaskQ;
+        }
+        [[nodiscard]] inline auto GetVRAMSaveMode() const noexcept {
+            return VRAMSaveMode;
         }
         [[nodiscard]] inline auto GetTextureCompress() const noexcept {
             return TextureCompress;
@@ -244,6 +242,10 @@ namespace Mus {
             DivideTaskQ = newDivideTaskQ;
             logger::info("Set DivideTaskQ {}", newDivideTaskQ);
         }
+        inline void SetVRAMSaveMode(bool newVRAMSaveMode) {
+            VRAMSaveMode = newVRAMSaveMode;
+            logger::info("Set VRAMSaveMode {}", newVRAMSaveMode);
+        }
     protected:
         //Debug
         spdlog::level::level_enum logLevel{ spdlog::level::level_enum::info };
@@ -278,6 +280,8 @@ namespace Mus {
 
         std::uint8_t UpdateDelayTick = 1;
 
+        bool ApplyOverlay = true;
+
         bool RemoveSkinOverrides = true;
         bool RemoveNodeOverrides = true;
 
@@ -300,7 +304,6 @@ namespace Mus {
         std::int32_t TextureMargin = -1;
         bool TangentZCorrection = true;
         float DetailStrength = 0.5f;
-        std::uint32_t BlueRadius = 8;
 
         //Performance
         bool GPUEnable = true;
@@ -314,12 +317,7 @@ namespace Mus {
         std::clock_t TaskQTickMS = 13;
         bool DirectTaskQ = false;
         std::uint8_t DivideTaskQ = 1;
-
-        std::unordered_set<std::int32_t> PriorityCoreList;
-        unsigned long PriorityCoreMask = 0;
-        std::int32_t DetectPriorityCores = 0;
-        unsigned long PriorityCoreCount = 0;
-
+        bool VRAMSaveMode = false;
         std::uint8_t TextureCompress = 0; //0 no compress, 1 dxt5, 2 bc7
 
         //RealtimeDetect

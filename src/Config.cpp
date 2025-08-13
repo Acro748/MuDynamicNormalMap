@@ -201,6 +201,10 @@ namespace Mus {
                 {
                     UpdateDelayTick = GetUIntValue(variableValue);
                 }
+                else if (variableName == "ApplyOverlay")
+                {
+                    ApplyOverlay = GetBoolValue(variableValue);
+                }
                 else if (variableName == "RemoveSkinOverrides")
                 {
                     RemoveSkinOverrides = GetBoolValue(variableValue);
@@ -279,10 +283,6 @@ namespace Mus {
 				{
                     DetailStrength = std::clamp(GetFloatValue(variableValue), 0.0f, 1.0f);
 				}
-                else if (variableName == "BlueRadius")
-                {
-                    BlueRadius = GetUIntValue(variableValue);
-                }
             }
             else if (currentSetting == "[Performance]")
             {
@@ -327,16 +327,9 @@ namespace Mus {
                 {
                     DivideTaskQ = GetUIntValue(variableValue);
                 }
-                else if (variableName == "PriorityCores")
+                else if (variableName == "VRAMSaveMode")
                 {
-                    auto list = split(variableValue, ',');
-                    for (auto& c : list) {
-                        PriorityCoreList.insert(GetUIntValue(c));
-                    }
-                }
-                else if (variableName == "DetectPriorityCores")
-                {
-                    DetectPriorityCores = GetIntValue(variableValue);
+                    VRAMSaveMode = GetBoolValue(variableValue);
                 }
                 else if (variableName == "TextureCompress")
                 {
@@ -373,59 +366,6 @@ namespace Mus {
         else
             UpdateDistance = 0.0f;
         return true;
-    }
-
-    void Config::SetPriorityCores(std::int32_t detectPriorityCores)
-    {
-        if (detectPriorityCores == -1)
-            detectPriorityCores = DetectPriorityCores;
-
-        PriorityCoreMask = 0;
-        std::uint32_t cores = std::thread::hardware_concurrency();
-        logger::info("Detected cores : {}", cores);
-        if (PriorityCoreList.empty())
-        {
-            PriorityCoreCount = std::max(2.0, cores / (std::pow(2, detectPriorityCores)));
-            logger::info("Enable cores for task : {}", PriorityCoreCount);
-        }
-        else
-        {
-            auto PriorityCoreList_ = PriorityCoreList;
-            auto PriorityCoreList__ = PriorityCoreList_;
-            PriorityCoreList_.clear();
-            for (auto& core : PriorityCoreList__) {
-                if (core < 0 || core >= cores)
-                    continue;
-                PriorityCoreList_.insert(core);
-            }
-            if (detectPriorityCores > 0)
-            {
-                detectPriorityCores = cores / (std::pow(2, detectPriorityCores));
-                detectPriorityCores = std::max(std::int32_t(1), detectPriorityCores);
-                detectPriorityCores -= PriorityCoreList_.size();
-                if (detectPriorityCores > 0)
-                {
-                    for (std::int32_t i = cores; i > 1; i--) { //excluding first core
-                        std::int32_t coreNum = i - 1;
-                        if (PriorityCoreList_.find(coreNum) != PriorityCoreList_.end())
-                            continue;
-                        PriorityCoreList_.insert(coreNum);
-                        detectPriorityCores--;
-                        if (detectPriorityCores == 0)
-                            break;
-                    }
-                }
-            }
-            std::string coreList = "";
-            for (auto core : PriorityCoreList_) {
-                if (!coreList.empty())
-                    coreList += ", ";
-                coreList += std::to_string(core);
-                PriorityCoreMask |= 1 << core;
-                PriorityCoreCount += 1;
-            }
-            logger::info("Enable cores for task : {} / {:x}", coreList, PriorityCoreMask);
-        }
     }
 
     bool MultipleConfig::LoadConditionFile()
@@ -549,7 +489,7 @@ namespace Mus {
     {
         std::uint32_t actorThreads = 2;
         std::uint32_t memoryManageThreads = 3;
-        std::uint32_t processingThreads = Mus::Config::GetSingleton().GetPriorityCoreCount();
+        std::uint32_t processingThreads = std::thread::hardware_concurrency();
         if (Mus::Config::GetSingleton().GetAutoTaskQ() > 0)
         {
             //float benchMarkResult = Mus::miniBenchMark();
@@ -573,56 +513,47 @@ namespace Mus {
                 Mus::Config::GetSingleton().SetTaskQTickMS(0);
                 Mus::Config::GetSingleton().SetDirectTaskQ(true);
                 Mus::Config::GetSingleton().SetDivideTaskQ(0);
-                Mus::Config::GetSingleton().SetPriorityCores(0);
+                Mus::Config::GetSingleton().SetVRAMSaveMode(false);
                 actorThreads = 2;
                 memoryManageThreads = 2;
-                processingThreads = std::max(unsigned long(1), Mus::Config::GetSingleton().GetPriorityCoreCount());
                 break;
             case Mus::Config::AutoTaskQList::Faster:
                 Mus::Config::GetSingleton().SetTaskQMax(1);
                 Mus::Config::GetSingleton().SetTaskQTickMS(0);
                 Mus::Config::GetSingleton().SetDirectTaskQ(false);
                 Mus::Config::GetSingleton().SetDivideTaskQ(0);
-                Mus::Config::GetSingleton().SetPriorityCores(0);
+                Mus::Config::GetSingleton().SetVRAMSaveMode(false);
                 actorThreads = 1;
                 memoryManageThreads = 1;
-                processingThreads = std::max(unsigned long(1), Mus::Config::GetSingleton().GetPriorityCoreCount());
                 break;
             case Mus::Config::AutoTaskQList::Balanced:
                 Mus::Config::GetSingleton().SetTaskQMax(1);
                 Mus::Config::GetSingleton().SetTaskQTickMS(Mus::TaskQTickBase * GPUPerformanceMult);
                 Mus::Config::GetSingleton().SetDirectTaskQ(false);
                 Mus::Config::GetSingleton().SetDivideTaskQ(0);
-                Mus::Config::GetSingleton().SetPriorityCores(0);
+                Mus::Config::GetSingleton().SetVRAMSaveMode(true);
                 actorThreads = 1;
                 memoryManageThreads = 1;
-                processingThreads = std::max(unsigned long(1), Mus::Config::GetSingleton().GetPriorityCoreCount());
                 break;
             case Mus::Config::AutoTaskQList::BetterPerformance:
                 Mus::Config::GetSingleton().SetTaskQMax(1);
                 Mus::Config::GetSingleton().SetTaskQTickMS(Mus::TaskQTickBase * GPUPerformanceMult);
                 Mus::Config::GetSingleton().SetDirectTaskQ(false);
-                Mus::Config::GetSingleton().SetDivideTaskQ(1);
-                Mus::Config::GetSingleton().SetPriorityCores(1);
+                Mus::Config::GetSingleton().SetDivideTaskQ(2);
+                Mus::Config::GetSingleton().SetVRAMSaveMode(true);
                 actorThreads = 1;
                 memoryManageThreads = 1;
-                processingThreads = std::max(unsigned long(1), Mus::Config::GetSingleton().GetPriorityCoreCount() - actorThreads - memoryManageThreads);
                 break;
             case Mus::Config::AutoTaskQList::BestPerformance:
                 Mus::Config::GetSingleton().SetTaskQMax(1);
                 Mus::Config::GetSingleton().SetTaskQTickMS(Mus::TaskQTickBase * GPUPerformanceMult * 2);
                 Mus::Config::GetSingleton().SetDirectTaskQ(false);
-                Mus::Config::GetSingleton().SetDivideTaskQ(1);
-                Mus::Config::GetSingleton().SetPriorityCores(2);
+                Mus::Config::GetSingleton().SetDivideTaskQ(2);
+                Mus::Config::GetSingleton().SetVRAMSaveMode(true);
                 actorThreads = 1;
                 memoryManageThreads = 1;
-                processingThreads = std::max(unsigned long(1), Mus::Config::GetSingleton().GetPriorityCoreCount() - actorThreads - memoryManageThreads);
                 break;
             default:
-                Mus::Config::GetSingleton().SetPriorityCores(-1);
-                actorThreads = 1;
-                memoryManageThreads = 1;
-                processingThreads = std::max(unsigned long(1), Mus::Config::GetSingleton().GetPriorityCoreCount());
                 break;
             }
         }
