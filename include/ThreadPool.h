@@ -37,8 +37,6 @@ namespace Mus {
         std::clock_t lastTickTime = 0;
         int tasksProcessed = 0;
 
-        const unsigned long priorityCoreMask = 0;
-
         void workerLoop();
     };
     extern std::unique_ptr<ThreadPool_ParallelModule> actorThreads;

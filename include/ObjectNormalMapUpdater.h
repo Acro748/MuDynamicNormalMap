@@ -16,6 +16,17 @@ namespace Mus {
 		void Init();
 		bool CreateGeometryResourceData(RE::FormID a_actorID, GeometryDataPtr a_data);
 
+		inline bool IsBeforeTaskReleased() {
+			if (Config::GetSingleton().GetVRAMSaveMode())
+			{
+				ResourceDataMapLock.lock_shared();
+				bool isEmpty = ResourceDataMap.empty();
+				ResourceDataMapLock.unlock_shared();
+				return isEmpty;
+			}
+			return true;
+		};
+
 		struct NormalMapResult {
 			bSlot slot;
 			RE::BSGeometry* geometry = nullptr; //for ptr compare only 
@@ -121,7 +132,6 @@ namespace Mus {
 		bool IsValidPixel(const std::uint32_t a_pixel);
 		bool BleedTexture(TextureResourceDataPtr& resourceData, std::int32_t margin, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut);
 		bool BleedTextureGPU(TextureResourceDataPtr& resourceData, std::int32_t margin, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut);
-		bool TexturePostProcessingGPU(TextureResourceDataPtr& resourceData, std::uint32_t blurRadius, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> maskSrv, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut);
 		bool MergeTexture(TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTex, Microsoft::WRL::ComPtr<ID3D11Texture2D> srvTex);
 		bool MergeTextureGPU(TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& dstSrv, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTex, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcSrv, Microsoft::WRL::ComPtr<ID3D11Texture2D> srvTex);
 
@@ -132,6 +142,8 @@ namespace Mus {
 		void GPUPerformanceLog(std::string funcStr, bool isEnd, bool isAverage = true, std::uint32_t args = 0);
 		void WaitForGPU();
 
+		void WaitForFreeVram();
+
 		const std::string_view BleedTextureShaderName = "BleedTexture";
 		const std::string_view UpdateNormalMapShaderName = "UpdateNormalMap";
 		const std::string_view MergeTextureShaderName = "MergeTexture";
@@ -140,41 +152,7 @@ namespace Mus {
 		Microsoft::WRL::ComPtr<ID3D11SamplerState> samplerState = nullptr;
 
 		struct GeometryResourceData {
-			std::clock_t time = -1;
-
-			Microsoft::WRL::ComPtr<ID3D11Query> query = nullptr;
-			bool GetQuery(ID3D11Device* device, ID3D11DeviceContext* context) {
-				if (!device || !context)
-					return false;
-
-				D3D11_QUERY_DESC queryDesc = {};
-				queryDesc.Query = D3D11_QUERY_EVENT;
-				queryDesc.MiscFlags = 0;
-
-				HRESULT hr = device->CreateQuery(&queryDesc, &query);
-				if (FAILED(hr)) {
-					query = nullptr;
-					return false;
-				}
-				Shader::ShaderManager::GetSingleton().ShaderContextLock();
-				context->End(query.Get());
-				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-				return true;
-			}
-			bool IsQueryDone(ID3D11DeviceContext* context) {
-				if (!context)
-					return true;
-				Shader::ShaderManager::GetSingleton().ShaderContextLock();
-				HRESULT hr = context->GetData(query.Get(), nullptr, 0, 0);
-				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-				if (FAILED(hr))
-					return true;
-				if (hr == S_OK)
-					return true;
-				return false;
-			}
 			void clear() {
-				query.Reset();
 				vertexBuffer.Reset();
 				vertexSRV.Reset();
 				uvBuffer.Reset();

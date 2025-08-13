@@ -169,10 +169,16 @@ namespace Mus {
 					QUpdateNormalMap(actor, BipedObjectSlot::kAll);
 				}
 			}
-			if (isInRange && updateSlotQueue[actor->formID] > 0)
+			updateQueueLock.lock_shared();
+			bool isNeedQueue = updateSlotQueue[actor->formID] > 0;
+			updateQueueLock.unlock_shared();
+
+			if (isInRange && isNeedQueue && !isUpdating[actor->formID])
 			{
 				QUpdateNormalMapImpl(actor, GetAllGeometries(actor), updateSlotQueue[actor->formID]);
+				updateQueueLock.lock_shared();
 				updateSlotQueue[actor->formID] = 0;
+				updateQueueLock.unlock_shared();
 				isUpdated = true;
 			}
 			map.second = isInRange;
@@ -411,10 +417,15 @@ namespace Mus {
 				if (overrideInterfaceAPI->OverrideInterfaceload())
 				{
 					if (Config::GetSingleton().GetRemoveSkinOverrides())
+					{
 						overrideInterfaceAPI->RemoveSkinOverride(a_actor, gender == RE::SEX::kFemale, false, 1 << slot, OverrideInterfaceAPI::Key::ShaderTexture, RE::BGSTextureSet::Textures::kNormal);
+						logger::info("{:x}::{} : {} - remove skin override for normalmap update", id, actorName, geo->name.c_str());
+					}
 					if (Config::GetSingleton().GetRemoveNodeOverrides())
+					{
 						overrideInterfaceAPI->RemoveNodeOverride(a_actor, gender == RE::SEX::kFemale, geo->name, OverrideInterfaceAPI::Key::ShaderTexture, RE::BGSTextureSet::Textures::kNormal);
-					logger::info("{:x}::{} : {} - remove skin/node override for normalmap update", id, actorName, geo->name.c_str());
+						logger::info("{:x}::{} : {} - remove node override for normalmap update", id, actorName, geo->name.c_str());
+					}
 				}
 			}
 		}
@@ -470,6 +481,9 @@ namespace Mus {
 					auto found = textures.end();
 					if (IsContainString(geo->name.c_str(), "[Ovl") || IsContainString(geo->name.c_str(), "[SOvl") || IsContainString(geo->name.c_str(), "overlay"))
 					{
+						if (!Config::GetSingleton().GetApplyOverlay())
+							return RE::BSVisit::BSVisitControl::kContinue;
+
 						bSlot slot = 0;
 						if (IsContainString(geo->name.c_str(), "Body"))
 							slot = RE::BIPED_OBJECT::kBody;

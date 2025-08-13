@@ -4,6 +4,11 @@
 namespace Mus {
 	void ObjectNormalMapUpdater::onEvent(const FrameEvent& e)
 	{
+		if (ResourceDataMap.empty() && Config::GetSingleton().GetWaitForRendererTickMS() == 0)
+			return;
+		if (ResourceDataMap.empty())
+			return;
+
 		static std::clock_t lastTickTime = currentTime;
 		if (currentTime - lastTickTime < 100) //0.1sec
 			return;
@@ -156,6 +161,8 @@ namespace Mus {
 
 	ObjectNormalMapUpdater::UpdateResult ObjectNormalMapUpdater::UpdateObjectNormalMap(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet a_updateSet)
 	{
+		WaitForFreeVram();
+
 		std::string_view _func_ = __func__;
 
 		UpdateResult result;
@@ -687,7 +694,8 @@ namespace Mus {
 
 			bool isCompress = CompressTexture(newResourceData, newResourceData->dstCompressTexture2D, newResourceData->dstCompressShaderResourceView, newResourceData->dstTexture2D, newResourceData->dstShaderResourceView);
 
-			newResourceData->GetQuery(device, context);
+			if (Config::GetSingleton().GetWaitForRendererTickMS() > 0)
+				newResourceData->GetQuery(device, context);
 
 			NormalMapResult newNormalMapResult;
 			newNormalMapResult.slot = update.second.slot;
@@ -699,9 +707,12 @@ namespace Mus {
 			newNormalMapResult.normalmapShaderResourceView = isCompress ? newResourceData->dstCompressShaderResourceView : newResourceData->dstShaderResourceView;
 			result.push_back(newNormalMapResult);
 
-			ResourceDataMapLock.lock_shared();
-			ResourceDataMap.push_back(newResourceData);
-			ResourceDataMapLock.unlock_shared();
+			if (Config::GetSingleton().GetWaitForRendererTickMS() > 0)
+			{
+				ResourceDataMapLock.lock_shared();
+				ResourceDataMap.push_back(newResourceData);
+				ResourceDataMapLock.unlock_shared();
+			}
 			logger::info("{}::{:x}::{} : normalmap updated", _func_, a_actorID, update.second.geometryName);
 		}
 		return result;
@@ -709,6 +720,8 @@ namespace Mus {
 
 	ObjectNormalMapUpdater::UpdateResult ObjectNormalMapUpdater::UpdateObjectNormalMapGPU(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet a_updateSet)
 	{
+		WaitForFreeVram();
+
 		std::string_view _func_ = __func__;
 
 		UpdateResult result;
@@ -933,8 +946,10 @@ namespace Mus {
 					context->CSGetShaderResources(9, 1, &maskSRV);
 					context->CSGetUnorderedAccessViews(0, 1, &dstUAV);
 					context->CSGetSamplers(0, 1, &samplerState);
+					Unbind(context);
 				}
 				void Revert(ID3D11DeviceContext* context) {
+					Unbind(context);
 					context->CSSetShader(shader.Get(), nullptr, 0);
 					context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
 					context->CSSetShaderResources(0, 1, vertexSRV.GetAddressOf());
@@ -950,6 +965,20 @@ namespace Mus {
 					context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
 					context->CSSetSamplers(0, 1, samplerState.GetAddressOf());
 				}
+			private:
+				void Unbind(ID3D11DeviceContext* context) {
+					ID3D11Buffer* emptyBuffer[1] = { nullptr };
+					ID3D11ShaderResourceView* emptySRV[10] = { nullptr };
+					ID3D11UnorderedAccessView* emptyUAV[1] = { nullptr };
+					ID3D11SamplerState* emptySamplerState[1] = { nullptr };
+
+					context->CSSetShader(nullptr, nullptr, 0);
+					context->CSSetConstantBuffers(0, 1, emptyBuffer);
+					context->CSSetShaderResources(0, 10, emptySRV);
+					context->CSSetUnorderedAccessViews(0, 1, emptyUAV, nullptr);
+					context->CSSetSamplers(0, 1, emptySamplerState);
+				}
+
 				Shader::ShaderManager::ComputeShader shader;
 				Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
 				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> vertexSRV;
@@ -964,10 +993,8 @@ namespace Mus {
 				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> maskSRV;
 				Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> dstUAV;
 				Microsoft::WRL::ComPtr<ID3D11SamplerState> samplerState;
-			private:
-			} sb;
+			};
 
-			std::mutex constBuffersLock;
 			const std::uint32_t totalTris = objInfo.indicesCount() / 3;
 			std::uint32_t subSize = std::max(std::uint32_t(1), totalTris / 10000);
 
@@ -991,6 +1018,7 @@ namespace Mus {
 					if (Config::GetSingleton().GetUpdateNormalMapTime2())
 						GPUPerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName + "::" + std::to_string(subIndex), false, false);
 
+					ShaderBackup sb;
 					Shader::ShaderManager::GetSingleton().ShaderContextLock();
 					sb.Backup(context);
 					context->CSSetShader(shader.Get(), nullptr, 0);
@@ -1010,13 +1038,11 @@ namespace Mus {
 					context->Dispatch(dispatch, 1, 1);
 					sb.Revert(context);
 					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-					constBuffersLock.lock();
-					newResourceData->constBuffers.push_back(constBuffer);
-					constBuffersLock.unlock();
 
 					if (Config::GetSingleton().GetUpdateNormalMapTime2())
 						GPUPerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName + "::" + std::to_string(subIndex), true, false);
 				}));
+				newResourceData->constBuffers.push_back(constBuffer);
 			}
 			for (auto& task : gpuTasks) {
 				task.get();
@@ -1073,7 +1099,8 @@ namespace Mus {
 
 			const bool isCompress = CompressTexture(newResourceData, newResourceData->dstCompressTexture2D, newResourceData->dstCompressShaderResourceView, newResourceData->dstTexture2D, newResourceData->dstShaderResourceView);
 
-			newResourceData->GetQuery(device, context);
+			if (Config::GetSingleton().GetWaitForRendererTickMS() > 0)
+				newResourceData->GetQuery(device, context);
 
 			NormalMapResult newNormalMapResult;
 			newNormalMapResult.slot = update.second.slot;
@@ -1086,12 +1113,14 @@ namespace Mus {
 			newNormalMapResult.normalmapShaderResourceView = isCompress ? newResourceData->dstCompressShaderResourceView : newResourceData->dstShaderResourceView;
 			result.push_back(newNormalMapResult);
 
-			ResourceDataMapLock.lock_shared();
-			ResourceDataMap.push_back(newResourceData);
-			ResourceDataMapLock.unlock_shared();
+			if (Config::GetSingleton().GetWaitForRendererTickMS() > 0)
+			{
+				ResourceDataMapLock.lock_shared();
+				ResourceDataMap.push_back(newResourceData);
+				ResourceDataMapLock.unlock_shared();
+			}
 			logger::info("{}::{:x}::{} : normalmap updated", _func_, a_actorID, update.second.geometryName);
 		}
-		geoData->GetQuery(device, context);
 		return result;
 	}
 
@@ -1386,19 +1415,31 @@ namespace Mus {
 				context->CSGetConstantBuffers(0, 1, &constBuffer);
 				context->CSGetShaderResources(0, 1, &srv);
 				context->CSGetUnorderedAccessViews(0, 1, &uav);
+				Unbind(context);
 			}
 			void Revert(ID3D11DeviceContext* context) {
+				Unbind(context);
 				context->CSSetShader(shader.Get(), nullptr, 0);
 				context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
 				context->CSSetShaderResources(0, 1, srv.GetAddressOf());
 				context->CSSetUnorderedAccessViews(0, 1, uav.GetAddressOf(), nullptr);
 			}
+		private:
+			void Unbind(ID3D11DeviceContext* context) {
+				ID3D11Buffer* emptyBuffer[1] = { nullptr };
+				ID3D11ShaderResourceView* emptySRV[1] = { nullptr };
+				ID3D11UnorderedAccessView* emptyUAV[1] = { nullptr };
+				context->CSSetShader(nullptr, nullptr, 0);
+				context->CSSetConstantBuffers(0, 1, emptyBuffer);
+				context->CSSetShaderResources(0, 1, emptySRV);
+				context->CSSetUnorderedAccessViews(0, 1, emptyUAV, nullptr);
+			}
+
 			Shader::ShaderManager::ComputeShader shader;
 			Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
 			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
 			Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav;
-		private:
-		} sb;
+		};
 
 
 		const UINT width = desc.Width;
@@ -1465,7 +1506,6 @@ namespace Mus {
 		if (Config::GetSingleton().GetBleedTextureTime1())
 			PerformanceLog(std::string(_func_) + "::" + resourceData->textureName, true, false);
 
-		std::mutex constBuffersLock;
 		const std::uint32_t subResolution = 4096 / (1u << Config::GetSingleton().GetDivideTaskQ());
 		const DirectX::XMUINT2 dispatch = { (std::min(width, subResolution) + 8 - 1) / 8, (std::min(height, subResolution) + 8 - 1) / 8};
 		if (margin < 0)
@@ -1497,11 +1537,11 @@ namespace Mus {
 						return false;
 					}
 					gpuTasks.push_back(gpuTask->submitAsync([&, constBuffer, subX, subY]() {
-
 						if (Config::GetSingleton().GetBleedTextureTime2())
 						GPUPerformanceLog(std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
 										  + "::" + std::to_string(subX) + "|" + std::to_string(subY) + "::" + std::to_string(mi), false, false);
 
+						ShaderBackup sb;
 						Shader::ShaderManager::GetSingleton().ShaderContextLock();
 						sb.Backup(context);
 						context->CSSetShader(shader.Get(), nullptr, 0);
@@ -1527,10 +1567,10 @@ namespace Mus {
 						context->Dispatch(dispatch.x, dispatch.y, 1);
 						for (std::uint32_t mu = 1; mu < marginUnit; mu++)
 						{
-							ID3D11ShaderResourceView* nullSRV[1] = { nullptr };
-							ID3D11UnorderedAccessView* nullUAV[1] = { nullptr };
-							context->CSSetShaderResources(0, 1, nullSRV);
-							context->CSSetUnorderedAccessViews(0, 1, nullUAV, nullptr);
+							ID3D11ShaderResourceView* emptySRV[1] = { nullptr };
+							ID3D11UnorderedAccessView* emptyUAV[1] = { nullptr };
+							context->CSSetShaderResources(0, 1, emptySRV);
+							context->CSSetUnorderedAccessViews(0, 1, emptyUAV, nullptr);
 							isResultFirst = !isResultFirst;
 							if (isResultFirst)
 							{
@@ -1546,14 +1586,12 @@ namespace Mus {
 						}
 						sb.Revert(context);
 						Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-						constBuffersLock.lock();
-						resourceData->bleedTextureData.constBuffers.push_back(constBuffer);
-						constBuffersLock.unlock();
 
 						if (Config::GetSingleton().GetBleedTextureTime2())
 							GPUPerformanceLog(std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
 										  + "::" + std::to_string(subX) + "|" + std::to_string(subY) + "::" + std::to_string(mi), true, false);
 					}));
+					resourceData->bleedTextureData.constBuffers.push_back(constBuffer);
 				}
 			}
 			for (auto& task : gpuTasks)
@@ -1570,165 +1608,6 @@ namespace Mus {
 			CopySubresourceRegion(texInOut, resourceData->bleedTextureData.texture2D_2, 0, 0);
 		}
 
-		return true;
-	}
-
-	bool ObjectNormalMapUpdater::TexturePostProcessingGPU(TextureResourceDataPtr& resourceData, std::uint32_t blurRadius, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> maskSrv, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut)
-	{
-		if (!maskSrv || !srvInOut || !texInOut)
-			return false;
-		if (blurRadius == 0)
-			return true;
-
-		std::string_view _func_ = __func__;
-#ifdef POSTPROCESSING_TEST1
-		PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, false, false);
-#endif // POSTPROCESSING_TEST1
-
-		logger::debug("{}::{} : TexturePostProcessing...", _func_, resourceData->textureName);
-
-		auto device = Shader::ShaderManager::GetSingleton().GetDevice();
-		auto context = Shader::ShaderManager::GetSingleton().GetContext();
-		auto shader = Shader::ShaderManager::GetSingleton().GetComputeShader(TexturePostProcessingShaderName.data());
-		if (!device || !context || !shader)
-			return false;
-
-		HRESULT hr;
-
-		D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
-		srvInOut->GetDesc(&srvDesc);
-		D3D11_TEXTURE2D_DESC desc;
-		texInOut->GetDesc(&desc);
-
-		//create buffers
-		struct ConstBufferData
-		{
-			UINT width;
-			UINT height;
-			UINT widthStart;
-			UINT heightStart;
-
-			INT searchRadius;
-			UINT padding1;
-			UINT padding2;
-			UINT padding3;
-		};
-		static_assert(sizeof(ConstBufferData) % 16 == 0, "Constant buffer must be 16-byte aligned.");
-
-		struct ShaderBackup {
-		public:
-			void Backup(ID3D11DeviceContext* context) {
-				context->CSGetShader(&shader, nullptr, 0);
-				context->CSGetConstantBuffers(0, 1, &constBuffer);
-				context->CSGetShaderResources(0, 1, &srv);
-				context->CSGetUnorderedAccessViews(0, 1, &uav);
-				context->CSGetSamplers(0, 1, &samplerState);
-			}
-			void Revert(ID3D11DeviceContext* context) {
-				context->CSSetShader(shader.Get(), nullptr, 0);
-				context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
-				context->CSSetShaderResources(0, 1, srv.GetAddressOf());
-				context->CSSetUnorderedAccessViews(0, 1, uav.GetAddressOf(), nullptr);
-				context->CSSetSamplers(0, 1, samplerState.GetAddressOf());
-			}
-			Shader::ShaderManager::ComputeShader shader;
-			Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
-			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
-			Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav;
-			Microsoft::WRL::ComPtr<ID3D11SamplerState> samplerState;
-		private:
-		} sb;
-
-		const UINT width = desc.Width;
-		const UINT height = desc.Height;
-
-		ConstBufferData cbData = {};
-		cbData.width = width;
-		cbData.height = height;
-		cbData.searchRadius = 1024; //std::max(1.0f, (float)blurRadius * ((float)width / 4096.0f));
-
-		D3D11_BUFFER_DESC cbDesc = {};
-		cbDesc.Usage = D3D11_USAGE_DEFAULT;
-		cbDesc.ByteWidth = sizeof(ConstBufferData);
-		cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-		cbDesc.CPUAccessFlags = 0;
-		cbDesc.MiscFlags = 0;
-		cbDesc.StructureByteStride = 0;
-
-		desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		desc.Usage = D3D11_USAGE_DEFAULT;
-		desc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
-		desc.MiscFlags = 0;
-		desc.MipLevels = srvDesc.Texture2D.MipLevels;
-		desc.CPUAccessFlags = 0;
-		hr = device->CreateTexture2D(&desc, nullptr, &resourceData->texturePostProcessingData.texture2D);
-		if (FAILED(hr)) {
-			logger::error("{} : Failed to create texture 2d ({})", _func_, hr);
-			return false;
-		}
-
-		D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
-		uavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		uavDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
-		uavDesc.Texture2D.MipSlice = 0;
-		hr = device->CreateUnorderedAccessView(resourceData->texturePostProcessingData.texture2D.Get(), &uavDesc, &resourceData->texturePostProcessingData.uav);
-		if (FAILED(hr)) {
-			logger::error("{} : Failed to create unordered access view ({})", _func_, hr);
-			return false;
-		}
-#ifdef POSTPROCESSING_TEST1
-		PerformanceLog(std::string(_func_) + "::" + resourceData->textureName, true, false);
-#endif // POSTPROCESSING_TEST1
-
-		std::mutex constBuffersLock;
-		std::vector<std::future<void>> gpuTasks;
-		const std::uint32_t subResolution = 4096 / (1u << Config::GetSingleton().GetDivideTaskQ());
-		const DirectX::XMUINT2 dispatch = { (std::min(width, subResolution) + 8 - 1) / 8, (std::min(height, subResolution) + 8 - 1) / 8 };
-		const std::uint32_t subXSize = std::max(std::uint32_t(1), width / subResolution);
-		const std::uint32_t subYSize = std::max(std::uint32_t(1), height / subResolution);
-		for (std::uint32_t subY = 0; subY < subYSize; subY++)
-		{
-			for (std::uint32_t subX = 0; subX < subXSize; subX++)
-			{
-				auto cbData_ = cbData;
-				cbData_.widthStart = subResolution * subX;
-				cbData_.heightStart = subResolution * subY;
-				D3D11_SUBRESOURCE_DATA cbInitData = {};
-				cbInitData.pSysMem = &cbData_;
-				Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
-				hr = device->CreateBuffer(&cbDesc, &cbInitData, &constBuffer);
-				if (FAILED(hr)) {
-					logger::error("{} : Failed to create const buffer ({})", _func_, hr);
-					return false;
-				}
-				gpuTasks.push_back(gpuTask->submitAsync([&, constBuffer]() {
-#ifdef POSTPROCESSING_TEST2
-					GPUPerformanceLog(std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height), false, false);
-#endif // POSTPROCESSING_TEST2
-					Shader::ShaderManager::GetSingleton().ShaderContextLock();
-					sb.Backup(context);
-					context->CSSetShader(shader.Get(), nullptr, 0);
-					context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
-					context->CSSetShaderResources(0, 1, srvInOut.GetAddressOf());
-					context->CSSetShaderResources(1, 1, maskSrv.GetAddressOf());
-					context->CSSetUnorderedAccessViews(0, 1, resourceData->texturePostProcessingData.uav.GetAddressOf(), nullptr);
-					context->CSSetSamplers(0, 1, samplerState.GetAddressOf());
-					context->Dispatch(dispatch.x, dispatch.y, 1);
-					sb.Revert(context);
-					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-					resourceData->texturePostProcessingData.constBuffer.push_back(constBuffer);
-#ifdef POSTPROCESSING_TEST2
-					GPUPerformanceLog(std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height), true, false);
-#endif // POSTPROCESSING_TEST2
-				}));
-			}
-		}
-		for (auto& task : gpuTasks)
-		{
-			task.get();
-		}
-
-		CopySubresourceRegion(texInOut, resourceData->texturePostProcessingData.texture2D, 0, 0);
 		return true;
 	}
 
@@ -1873,22 +1752,33 @@ namespace Mus {
 				context->CSGetShaderResources(0, 1, &srv1);
 				context->CSGetShaderResources(1, 1, &srv2);
 				context->CSGetUnorderedAccessViews(0, 1, &uav);
+				Unbind(context);
 			}
 			void Revert(ID3D11DeviceContext* context) {
+				Unbind(context);
 				context->CSSetShader(shader.Get(), nullptr, 0);
 				context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
 				context->CSSetShaderResources(0, 1, srv1.GetAddressOf());
 				context->CSSetShaderResources(1, 1, srv2.GetAddressOf());
 				context->CSSetUnorderedAccessViews(0, 1, uav.GetAddressOf(), nullptr);
 			}
+		private:
+			void Unbind(ID3D11DeviceContext* context) {
+				ID3D11Buffer* emptyBuffer[1] = { nullptr };
+				ID3D11ShaderResourceView* emptySRV[2] = { nullptr };
+				ID3D11UnorderedAccessView* emptyUAV[1] = { nullptr };
+				context->CSSetShader(nullptr, nullptr, 0);
+				context->CSSetConstantBuffers(0, 1, emptyBuffer);
+				context->CSSetShaderResources(0, 2, emptySRV);
+				context->CSSetUnorderedAccessViews(0, 1, emptyUAV, nullptr);
+			}
+
 			Shader::ShaderManager::ComputeShader shader;
 			Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
 			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv1;
 			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv2;
 			Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav;
-		private:
-		} sb;
-
+		};
 
 		const UINT width = desc.Width;
 		const UINT height = desc.Height;
@@ -1930,7 +1820,6 @@ namespace Mus {
 		if (Config::GetSingleton().GetMergeTime1())
 			PerformanceLog(std::string(_func_) + "::" + resourceData->textureName, true, false);
 
-		std::mutex constBuffersLock;
 		const std::uint32_t subResolution = 4096 / (1u << Config::GetSingleton().GetDivideTaskQ());
 		const DirectX::XMUINT2 dispatch = { (std::min(width, subResolution) + 8 - 1) / 8, (std::min(height, subResolution) + 8 - 1) / 8 };
 		const std::uint32_t subXSize = std::max(std::uint32_t(1), width / subResolution);
@@ -1958,6 +1847,7 @@ namespace Mus {
 						GPUPerformanceLog(std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
 									  + "::" + std::to_string(subX) + "|" + std::to_string(subY), false, false);
 
+					ShaderBackup sb;
 					Shader::ShaderManager::GetSingleton().ShaderContextLock();
 					sb.Backup(context);
 					context->CSSetShader(shader.Get(), nullptr, 0);
@@ -1968,14 +1858,12 @@ namespace Mus {
 					context->Dispatch(dispatch.x, dispatch.y, 1);
 					sb.Revert(context);
 					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-					constBuffersLock.lock();
-					resourceData->mergeTextureData.constBuffers.push_back(constBuffer);
-					constBuffersLock.unlock();
 
 					if (Config::GetSingleton().GetMergeTime2())
 						GPUPerformanceLog(std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
 									  + "::" + std::to_string(subX) + "|" + std::to_string(subY), true, false);
 				}));
+				resourceData->mergeTextureData.constBuffers.push_back(constBuffer);
 			}
 		}
 		for (auto& task : gpuTasks)
@@ -2362,7 +2250,6 @@ namespace Mus {
 		Shader::ShaderManager::GetSingleton().ShaderContextLock();
 		context->End(query.Get());
 		Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-		std::uint32_t spinCount = 0;
 		logger::debug("Wait for Renderer...");
 		while (true) {
 			Shader::ShaderManager::GetSingleton().ShaderContextLock();
@@ -2372,13 +2259,21 @@ namespace Mus {
 				break;
 			if (hr == S_OK)
 				break;
-			if (spinCount < 100)
-				std::this_thread::yield();
-			else
-				std::this_thread::sleep_for(std::chrono::milliseconds(1));
-			spinCount++;
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
 		logger::debug("Wait for Renderer done");
 		return;
+	}
+
+	void ObjectNormalMapUpdater::WaitForFreeVram()
+	{
+		if (IsBeforeTaskReleased())
+			return;
+		logger::debug("Wait for vram free...");
+		while (!IsBeforeTaskReleased())
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
+		logger::debug("Wait for vram free done");
 	}
 }
