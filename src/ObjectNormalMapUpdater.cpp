@@ -25,7 +25,7 @@ namespace Mus {
 					if (map->IsQueryDone(Shader::ShaderManager::GetSingleton().GetContext()))
 						map->time = currentTime;
 				}
-				else if (currentTime - map->time > Config::GetSingleton().GetWaitForRendererTickMS()) //1sec
+				else if (currentTime - map->time > Config::GetSingleton().GetWaitForRendererTickMS())
 				{
 					logger::debug("{} : Removed garbage texture resource", map->textureName);
 					continue;
@@ -45,7 +45,10 @@ namespace Mus {
 		if (!e.IsChangedInOut)
 			return;
 		memoryManageThreads->submitAsync([&]() {
-			for (auto& map : GeometryResourceDataMap)
+			ResourceDataMapLock.lock_shared();
+			auto GeometryResourceDataMap_ = GeometryResourceDataMap;
+			ResourceDataMapLock.unlock_shared();
+			for (auto& map : GeometryResourceDataMap_)
 			{
 				RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
 				if (!actor || !actor->loadedData || !actor->loadedData->data3D)
@@ -56,8 +59,10 @@ namespace Mus {
 					logger::debug("{:x} : Removed garbage geometry resource", map.first);
 				}
 			}
+			ResourceDataMapLock.lock_shared();
 			if (GeometryResourceDataMap.size() > 0)
 				logger::debug("Current remain geometry resource {}", GeometryResourceDataMap.size());
+			ResourceDataMapLock.unlock_shared();
 		});
 	}
 
@@ -144,19 +149,31 @@ namespace Mus {
 				return false;
 			if (!CreateStructuredBuffer(a_data->indices.data(), UINT(sizeof(std::uint32_t) * a_data->indices.size()), sizeof(std::uint32_t), newGeometryResourceData->indicesBuffer, newGeometryResourceData->indicesSRV))
 				return false;
+
 			ResourceDataMapLock.lock_shared();
-			auto found = GeometryResourceDataMap.find(a_actorID);
-			if (found == GeometryResourceDataMap.end())
 			{
-				GeometryResourceDataMap.insert(std::make_pair(a_actorID, newGeometryResourceData));
-			}
-			else
-			{
-				found->second = newGeometryResourceData;
+				auto found = GeometryResourceDataMap.find(a_actorID);
+				if (found == GeometryResourceDataMap.end())
+				{
+					GeometryResourceDataMap.insert(std::make_pair(a_actorID, newGeometryResourceData));
+				}
+				else
+				{
+					found->second = newGeometryResourceData;
+				}
 			}
 			ResourceDataMapLock.unlock_shared();
 		}
 		return true;
+	}
+
+	ObjectNormalMapUpdater::GeometryResourceDataPtr ObjectNormalMapUpdater::GetGeometryResourceData(RE::FormID a_actorID)
+	{
+		ResourceDataMapLock.lock_shared();
+		auto found = GeometryResourceDataMap.find(a_actorID);
+		GeometryResourceDataPtr result = found != GeometryResourceDataMap.end() ? found->second : nullptr;
+		ResourceDataMapLock.unlock_shared();
+		return result;
 	}
 
 	ObjectNormalMapUpdater::UpdateResult ObjectNormalMapUpdater::UpdateObjectNormalMap(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet a_updateSet)
@@ -351,59 +368,40 @@ namespace Mus {
 						 objInfo.normalCount(),
 						 objInfo.indicesCount());
 
-			WaitForGPU();
+			D3D11_MAPPED_SUBRESOURCE mappedResource, srcMappedResource, detailMappedResource, overlayMappedResource, maskMappedResource;
+			std::uint8_t* srcData = nullptr;
+			std::uint8_t* detailData = nullptr;
+			std::uint8_t* overlayData = nullptr;
+			std::uint8_t* maskData = nullptr;
 
-			D3D11_MAPPED_SUBRESOURCE srcMappedResource;
-			uint8_t* srcData = nullptr;
+			Shader::ShaderManager::GetSingleton().ShaderContextLock();
+			hr = context->Map(newResourceData->dstWriteTexture2D.Get(), 0, D3D11_MAP_READ_WRITE, 0, &mappedResource);
 			if (newResourceData->srcTexture2D)
 			{
-				Shader::ShaderManager::GetSingleton().ShaderContextLock();
 				hr = context->Map(newResourceData->srcTexture2D.Get(), 0, D3D11_MAP_READ, 0, &srcMappedResource);
-				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-				srcData = reinterpret_cast<uint8_t*>(srcMappedResource.pData);
+				srcData = reinterpret_cast<std::uint8_t*>(srcMappedResource.pData);
 			}
-			D3D11_MAPPED_SUBRESOURCE detailMappedResource;
-			uint8_t* detailData = nullptr;
 			if (newResourceData->detailTexture2D)
 			{
-				Shader::ShaderManager::GetSingleton().ShaderContextLock();
 				hr = context->Map(newResourceData->detailTexture2D.Get(), 0, D3D11_MAP_READ, 0, &detailMappedResource);
-				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-				detailData = reinterpret_cast<uint8_t*>(detailMappedResource.pData);
+				detailData = reinterpret_cast<std::uint8_t*>(detailMappedResource.pData);
 			}
-			D3D11_MAPPED_SUBRESOURCE overlayMappedResource;
-			uint8_t* overlayData = nullptr;
 			if (newResourceData->overlayTexture2D)
 			{
-				Shader::ShaderManager::GetSingleton().ShaderContextLock();
 				hr = context->Map(newResourceData->overlayTexture2D.Get(), 0, D3D11_MAP_READ, 0, &overlayMappedResource);
-				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-				overlayData = reinterpret_cast<uint8_t*>(overlayMappedResource.pData);
+				overlayData = reinterpret_cast<std::uint8_t*>(overlayMappedResource.pData);
 			}
-			D3D11_MAPPED_SUBRESOURCE maskMappedResource;
-			uint8_t* maskData = nullptr;
 			if (newResourceData->maskTexture2D)
 			{
-				Shader::ShaderManager::GetSingleton().ShaderContextLock();
 				hr = context->Map(newResourceData->maskTexture2D.Get(), 0, D3D11_MAP_READ, 0, &maskMappedResource);
-				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-				maskData = reinterpret_cast<uint8_t*>(maskMappedResource.pData);
+				maskData = reinterpret_cast<std::uint8_t*>(maskMappedResource.pData);
 			}
+			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 
 			const bool hasSrcData = (srcData != nullptr);
 			const bool hasDetailData = (detailData != nullptr);
 			const bool hasOverlayData = (overlayData != nullptr);
 			const bool hasMaskData = (maskData != nullptr);
-
-			D3D11_MAPPED_SUBRESOURCE mappedResource;
-			Shader::ShaderManager::GetSingleton().ShaderContextLock();
-			hr = context->Map(newResourceData->dstWriteTexture2D.Get(), 0, D3D11_MAP_READ_WRITE, 0, &mappedResource);
-			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-			if (FAILED(hr))
-			{
-				logger::error("{}::{:x}::{} Failed to read data from the staging texture ({})", _func_, a_actorID, update.second.geometryName, hr);
-				continue;
-			}
 
 			if (Config::GetSingleton().GetUpdateNormalMapTime1())
 				PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, true, false);
@@ -552,9 +550,9 @@ namespace Mus {
 										if (detailColor.a > 0.0f)
 										{
 											const DirectX::XMVECTOR t01 = SlerpVector(t0v, t1v, bary.y / denomal);
-											const DirectX::XMVECTOR b01 = SlerpVector(b0v, b1v, bary.y / denomal);
-
 											const DirectX::XMVECTOR t = SlerpVector(t01, t2v, bary.z);
+
+											const DirectX::XMVECTOR b01 = SlerpVector(b0v, b1v, bary.y / denomal);
 											const DirectX::XMVECTOR b = SlerpVector(b01, b2v, bary.z);
 
 											const DirectX::XMVECTOR ft = DirectX::XMVector3Normalize(
@@ -601,7 +599,7 @@ namespace Mus {
 									dstColor = RGBA::lerp(dstColor, overlayColor, overlayColor.a);
 								}
 
-								std::uint32_t* dstPixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
+								std::uint32_t* dstPixel = reinterpret_cast<std::uint32_t*>(rowData + x * 4);
 								*dstPixel = dstColor.GetReverse() | 0xFF000000;
 							}
 						}
@@ -617,32 +615,15 @@ namespace Mus {
 
 			Shader::ShaderManager::GetSingleton().ShaderContextLock();
 			context->Unmap(newResourceData->dstWriteTexture2D.Get(), 0);
-			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-
 			if (hasSrcData)
-			{
-				Shader::ShaderManager::GetSingleton().ShaderContextLock();
 				context->Unmap(newResourceData->srcTexture2D.Get(), 0);
-				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-			}
 			if (hasDetailData)
-			{
-				Shader::ShaderManager::GetSingleton().ShaderContextLock();
 				context->Unmap(newResourceData->detailTexture2D.Get(), 0);
-				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-			}
 			if (hasOverlayData)
-			{
-				Shader::ShaderManager::GetSingleton().ShaderContextLock();
 				context->Unmap(newResourceData->overlayTexture2D.Get(), 0);
-				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-			}
 			if (hasMaskData)
-			{
-				Shader::ShaderManager::GetSingleton().ShaderContextLock();
 				context->Unmap(newResourceData->maskTexture2D.Get(), 0);
-				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-			}
+			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 
 			dstDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 			dstDesc.Usage = D3D11_USAGE_DEFAULT;
@@ -694,6 +675,8 @@ namespace Mus {
 
 			bool isCompress = CompressTexture(newResourceData, newResourceData->dstCompressTexture2D, newResourceData->dstCompressShaderResourceView, newResourceData->dstTexture2D, newResourceData->dstShaderResourceView);
 
+			Shader::ShaderManager::GetSingleton().Flush();
+
 			if (Config::GetSingleton().GetWaitForRendererTickMS() > 0)
 				newResourceData->GetQuery(device, context);
 
@@ -739,16 +722,13 @@ namespace Mus {
 			logger::error("{}::{:x} : Invalid renderer", _func_, a_actorID);
 			return result;
 		}
-		ResourceDataMapLock.lock_shared();
-		auto geoDataFound = GeometryResourceDataMap.find(a_actorID);
-		if (geoDataFound == GeometryResourceDataMap.end())
+
+		GeometryResourceDataPtr geoData = GetGeometryResourceData(a_actorID);
+		if (!geoData)
 		{
-			logger::error("{}::{:x} : Invalid geometry data", _func_, a_actorID);
-			ResourceDataMapLock.unlock_shared();
+			logger::error("{}::{:x} : GeometryResourceData not found for actor", _func_, a_actorID);
 			return result;
 		}
-		auto& geoData = geoDataFound->second;
-		ResourceDataMapLock.unlock_shared();
 		logger::debug("{}::{:x} : updating... {}", _func_, a_actorID, a_updateSet.size());
 
 		for (auto& update : a_updateSet)
@@ -768,8 +748,6 @@ namespace Mus {
 			TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
 			newResourceData->textureName = update.second.textureName;
 
-			//Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture2D, detailTexture2D, overlayTexture2D, maskTexture2D;
-			//Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcShaderResourceView, detailShaderResourceView, overlayShaderResourceView, maskShaderResourceView;
 			D3D11_TEXTURE2D_DESC srcDesc = {}, detailDesc = {}, overlayDesc = {}, maskDesc = {}, dstDesc = {}, dstWriteDesc = {};
 			D3D11_SHADER_RESOURCE_VIEW_DESC dstShaderResourceViewDesc = {};
 
@@ -1099,6 +1077,8 @@ namespace Mus {
 
 			const bool isCompress = CompressTexture(newResourceData, newResourceData->dstCompressTexture2D, newResourceData->dstCompressShaderResourceView, newResourceData->dstTexture2D, newResourceData->dstShaderResourceView);
 
+			Shader::ShaderManager::GetSingleton().Flush();
+
 			if (Config::GetSingleton().GetWaitForRendererTickMS() > 0)
 				newResourceData->GetQuery(device, context);
 
@@ -1262,8 +1242,6 @@ namespace Mus {
 
 		CopySubresourceRegion(resourceData->bleedTextureData.texture2D_1, texInOut, 0, 0);
 
-		WaitForGPU();
-
 		D3D11_MAPPED_SUBRESOURCE mappedResource;
 		Shader::ShaderManager::GetSingleton().ShaderContextLock();
 		hr = context->Map(resourceData->bleedTextureData.texture2D_1.Get(), 0, D3D11_MAP_READ_WRITE, 0, &mappedResource);
@@ -1282,7 +1260,10 @@ namespace Mus {
 		};
 
 		if (margin < 0)
+		{
 			margin = std::max(UINT(1), std::max(stagingDesc.Width, stagingDesc.Height) / 512);
+			logger::debug("{}::{} : Bleed texture -> set margin {}", __func__, resourceData->textureName, margin);
+		}
 		for (std::uint32_t mi = 0; mi < margin; mi++)
 		{
 			std::vector<std::future<void>> processes;
@@ -1509,7 +1490,11 @@ namespace Mus {
 		const std::uint32_t subResolution = 4096 / (1u << Config::GetSingleton().GetDivideTaskQ());
 		const DirectX::XMUINT2 dispatch = { (std::min(width, subResolution) + 8 - 1) / 8, (std::min(height, subResolution) + 8 - 1) / 8};
 		if (margin < 0)
+		{
 			margin = std::max(UINT(1), std::max(width, height) / 512);
+			logger::debug("{}::{} : Bleed texture -> set margin {}", _func_, resourceData->textureName, margin);
+		}
+
 		const std::uint32_t marginUnit = std::max(std::uint32_t(1), std::min(std::uint32_t(margin), subResolution / width + subResolution / height));
 		const std::uint32_t marginMax = std::max(std::uint32_t(1), margin / marginUnit);
 		const std::uint32_t subXSize = std::max(std::uint32_t(1), width / subResolution);
@@ -1540,53 +1525,39 @@ namespace Mus {
 						if (Config::GetSingleton().GetBleedTextureTime2())
 						GPUPerformanceLog(std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
 										  + "::" + std::to_string(subX) + "|" + std::to_string(subY) + "::" + std::to_string(mi), false, false);
+						
+						for (std::uint32_t mu = 0; mu < marginUnit; mu++)
+						{
+							if (mu > 0)
+								isResultFirst = !isResultFirst;
 
-						ShaderBackup sb;
-						Shader::ShaderManager::GetSingleton().ShaderContextLock();
-						sb.Backup(context);
-						context->CSSetShader(shader.Get(), nullptr, 0);
-						context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
-						if (mi == 0)
-						{
-							context->CSSetShaderResources(0, 1, srvInOut.GetAddressOf());
-							context->CSSetUnorderedAccessViews(0, 1, resourceData->bleedTextureData.uav1.GetAddressOf(), nullptr);
-						}
-						else
-						{
-							if (isResultFirst)
+							ShaderBackup sb;
+							Shader::ShaderManager::GetSingleton().ShaderContextLock();
+							sb.Backup(context);
+							context->CSSetShader(shader.Get(), nullptr, 0);
+							context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
+							if (mu == 0 && mi == 0)
 							{
-								context->CSSetShaderResources(0, 1, resourceData->bleedTextureData.srv2.GetAddressOf());
+								context->CSSetShaderResources(0, 1, srvInOut.GetAddressOf());
 								context->CSSetUnorderedAccessViews(0, 1, resourceData->bleedTextureData.uav1.GetAddressOf(), nullptr);
 							}
 							else
 							{
-								context->CSSetShaderResources(0, 1, resourceData->bleedTextureData.srv1.GetAddressOf());
-								context->CSSetUnorderedAccessViews(0, 1, resourceData->bleedTextureData.uav2.GetAddressOf(), nullptr);
-							}
-						}
-						context->Dispatch(dispatch.x, dispatch.y, 1);
-						for (std::uint32_t mu = 1; mu < marginUnit; mu++)
-						{
-							ID3D11ShaderResourceView* emptySRV[1] = { nullptr };
-							ID3D11UnorderedAccessView* emptyUAV[1] = { nullptr };
-							context->CSSetShaderResources(0, 1, emptySRV);
-							context->CSSetUnorderedAccessViews(0, 1, emptyUAV, nullptr);
-							isResultFirst = !isResultFirst;
-							if (isResultFirst)
-							{
-								context->CSSetShaderResources(0, 1, resourceData->bleedTextureData.srv2.GetAddressOf());
-								context->CSSetUnorderedAccessViews(0, 1, resourceData->bleedTextureData.uav1.GetAddressOf(), nullptr);
-							}
-							else
-							{
-								context->CSSetShaderResources(0, 1, resourceData->bleedTextureData.srv1.GetAddressOf());
-								context->CSSetUnorderedAccessViews(0, 1, resourceData->bleedTextureData.uav2.GetAddressOf(), nullptr);
+								if (isResultFirst)
+								{
+									context->CSSetShaderResources(0, 1, resourceData->bleedTextureData.srv2.GetAddressOf());
+									context->CSSetUnorderedAccessViews(0, 1, resourceData->bleedTextureData.uav1.GetAddressOf(), nullptr);
+								}
+								else
+								{
+									context->CSSetShaderResources(0, 1, resourceData->bleedTextureData.srv1.GetAddressOf());
+									context->CSSetUnorderedAccessViews(0, 1, resourceData->bleedTextureData.uav2.GetAddressOf(), nullptr);
+								}
 							}
 							context->Dispatch(dispatch.x, dispatch.y, 1);
+							sb.Revert(context);
+							Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 						}
-						sb.Revert(context);
-						Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-
 						if (Config::GetSingleton().GetBleedTextureTime2())
 							GPUPerformanceLog(std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
 										  + "::" + std::to_string(subX) + "|" + std::to_string(subY) + "::" + std::to_string(mi), true, false);
@@ -1655,8 +1626,6 @@ namespace Mus {
 
 		CopySubresourceRegion(resourceData->mergeTextureData.texture2D, dstTex, 0, 0);
 		CopySubresourceRegion(resourceData->mergeTextureData.texture2Dalt, srvTex, 0, 0);
-
-		WaitForGPU();
 
 		D3D11_MAPPED_SUBRESOURCE mappedResource, mappedResourceAlt;
 		Shader::ShaderManager::GetSingleton().ShaderContextLock();
@@ -2039,8 +2008,6 @@ namespace Mus {
 
 			CopySubresourceRegion(staging, srcTexture, 0, level);
 
-			WaitForGPU();
-
 			D3D11_MAPPED_SUBRESOURCE mapped;
 			Shader::ShaderManager::GetSingleton().ShaderContextLock();
 			hr = context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped);
@@ -2249,6 +2216,7 @@ namespace Mus {
 		}
 		Shader::ShaderManager::GetSingleton().ShaderContextLock();
 		context->End(query.Get());
+		context->Flush();
 		Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 		logger::debug("Wait for Renderer...");
 		while (true) {

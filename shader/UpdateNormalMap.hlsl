@@ -139,7 +139,8 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
                 }
                 if (maskColor.a < 1.0f)
                 {
-                    float3 n01 = SlerpVector(n0, n1, bary.y / (bary.x + bary.y + 1e-6f));
+                    float denormal = bary.x + bary.y + 1e-6f;
+                    float3 n01 = SlerpVector(n0, n1, bary.y / denormal);
                     float3 n = SlerpVector(n01, n2, bary.z);
 
                     float4 detailColor = float4(0.5f, 0.5f, 1.0f, 0.5f);
@@ -152,10 +153,10 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
                     float3 normalResult;
                     if (detailColor.a > 0.0f)
                     {
-                        float3 t01 = SlerpVector(t0, t1, bary.y / (bary.x + bary.y + 1e-6f));
+                        float3 t01 = SlerpVector(t0, t1, bary.y / denormal);
                         float3 t = SlerpVector(t01, t2, bary.z);
 
-                        float3 b01 = SlerpVector(b0, b1, bary.y / (bary.x + bary.y + 1e-6f));
+                        float3 b01 = SlerpVector(b0, b1, bary.y / denormal);
                         float3 b = SlerpVector(b01, b2, bary.z);
 
                         float3 ft = normalize(t - n * dot(n, t));

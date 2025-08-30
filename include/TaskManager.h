@@ -99,6 +99,7 @@ namespace Mus {
 		const std::string MDNMPrefix = "[MDNM]";
 		std::string GetTextureName(RE::Actor* a_actor, bSlot a_bipedSlot, std::string a_texturePath); // ActorID + slot + TexturePath
 		bool GetTextureInfo(std::string a_textureName, TextureInfo& a_textureInfo); // ActorID + BipedSlot + TexturePath
+		std::string GetOriginalTexturePath(std::string a_textureName);
 		bool IsCreatedByMDNM(std::string a_textureName);
 		
 		std::string GetDetailNormalMapPath(std::string a_normalMapPath);

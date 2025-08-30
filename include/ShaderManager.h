@@ -31,6 +31,8 @@ namespace Mus {
 			inline void ShaderContextLock() { EnterCriticalSection(reinterpret_cast<LPCRITICAL_SECTION>(&RE::BSGraphics::Renderer::GetSingleton()->GetLock())); };
 			inline void ShaderContextUnlock() { LeaveCriticalSection(reinterpret_cast<LPCRITICAL_SECTION>(&RE::BSGraphics::Renderer::GetSingleton()->GetLock())); };
 
+			void Flush();
+
 			class ShaderLockGuard {
 			public:
 				ShaderLockGuard() { EnterCriticalSection(reinterpret_cast<LPCRITICAL_SECTION>(&RE::BSGraphics::Renderer::GetSingleton()->GetLock())); };
