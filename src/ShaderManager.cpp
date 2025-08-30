@@ -408,12 +408,18 @@ namespace Mus {
 			{
 				if (GetContext())
 				{
-					Shader::ShaderManager::GetSingleton().ShaderContextLock();
+					ShaderContextLock();
 					GetContext()->GetDevice(&device);
-					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+					ShaderContextUnlock();
 				}
 			}
 			return device;
+		}
+		void ShaderManager::Flush()
+		{
+			ShaderContextLock();
+			GetContext()->Flush();
+			ShaderContextUnlock();
 		}
 
 		RE::NiPointer<RE::NiSourceTexture> TextureLoadManager::GetNiSourceTexture(std::string filePath, std::string name)
@@ -448,20 +454,18 @@ namespace Mus {
 			{
 				auto oldTexture = output->rendererTexture->texture;
 				auto oldResource = output->rendererTexture->resourceView;
-				output->rendererTexture->texture = texture2d.Get();
-				output->rendererTexture->texture->AddRef();
-				output->rendererTexture->resourceView = textureSRV.Get();
-				output->rendererTexture->resourceView->AddRef();
-				oldTexture->Release();
-				oldResource->Release();
+				output->rendererTexture->texture = texture2d.Detach();
+				output->rendererTexture->resourceView = textureSRV.Detach();
+				if (oldTexture)
+					oldTexture->Release();
+				if (oldResource)
+					oldResource->Release();
 			}
 			else if (result == 1)
 			{
 				RE::BSGraphics::Texture* newRendererTexture = new RE::BSGraphics::Texture();
-				newRendererTexture->texture = texture2d.Get();
-				newRendererTexture->texture->AddRef();
-				newRendererTexture->resourceView = textureSRV.Get();
-				newRendererTexture->resourceView->AddRef();
+				newRendererTexture->texture = texture2d.Detach();
+				newRendererTexture->resourceView = textureSRV.Detach();
 				output->rendererTexture = newRendererTexture;
 			}
 			return output;
@@ -512,10 +516,8 @@ namespace Mus {
 			{
 				auto oldTexture = newTexture->rendererTexture->texture;
 				auto oldResource = newTexture->rendererTexture->resourceView;
-				newTexture->rendererTexture->texture = dstTex.Get();
-				newTexture->rendererTexture->texture->AddRef();
-				newTexture->rendererTexture->resourceView = dstSRV.Get();
-				newTexture->rendererTexture->resourceView->AddRef();
+				newTexture->rendererTexture->texture = dstTex.Detach();
+				newTexture->rendererTexture->resourceView = dstSRV.Detach();
 				if (oldTexture)
 					oldTexture->Release();
 				if (oldResource)
@@ -524,10 +526,8 @@ namespace Mus {
 			else if (result == 1)
 			{
 				RE::BSGraphics::Texture* newRendererTexture = new RE::BSGraphics::Texture();
-				newRendererTexture->texture = dstTex.Get();
-				newRendererTexture->texture->AddRef();
-				newRendererTexture->resourceView = dstSRV.Get();
-				newRendererTexture->resourceView->AddRef();
+				newRendererTexture->texture = dstTex.Detach();
+				newRendererTexture->resourceView = dstSRV.Detach();
 				newTexture->rendererTexture = newRendererTexture;
 			}
 			output = newTexture;
@@ -600,7 +600,7 @@ namespace Mus {
 			}
 			else
 			{
-				ConvertTexture(texture2D, data.metaData.newFormat, data.metaData.newWidth, data.metaData.newHeight, DirectX::TEX_FILTER_FLAGS::TEX_FILTER_DEFAULT, data.texture);
+				ConvertTexture(texture2D, data.metaData.newFormat, data.metaData.newWidth, data.metaData.newHeight, DirectX::TEX_FILTER_FLAGS::TEX_FILTER_FANT, data.texture);
 			}
 			if (!data.texture)
 			{
@@ -728,7 +728,7 @@ namespace Mus {
 				hr = DirectX::Decompress(image.GetImages(), image.GetImageCount(), image.GetMetadata(), newFormat, convertedImage);
 				if (FAILED(hr))
 				{
-					hr = DirectX::Convert(image.GetImages(), image.GetImageCount(), image.GetMetadata(), newFormat, DirectX::TEX_FILTER_DEFAULT, DirectX::TEX_THRESHOLD_DEFAULT, convertedImage);
+					hr = DirectX::Convert(image.GetImages(), image.GetImageCount(), image.GetMetadata(), newFormat, DirectX::TEX_FILTER_FANT, 0.0f, convertedImage);
 					if (FAILED(hr))
 					{
 						logger::error("Failed to convert texture {} to {} ({})", magic_enum::enum_name(textureDesc.Format).data(), magic_enum::enum_name(newFormat).data(), hr);

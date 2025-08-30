@@ -153,6 +153,8 @@ namespace Mus {
 			{
 				if (!isInRange)
 				{
+					if (!Config::GetSingleton().GetUpdateDistanceVramSave())
+						return;
 					lastNormalMapLock.lock_shared();
 					bool isFoundLastNormalMap = lastNormalMap.find(actor->formID) != lastNormalMap.end();
 					lastNormalMapLock.unlock_shared();
@@ -330,11 +332,18 @@ namespace Mus {
 					continue;
 			}
 			RE::BSLightingShaderMaterialBase* material = skyrim_cast<RE::BSLightingShaderMaterialBase*>(lightingShader->material);
-			if (!material || !material->normalTexture || !material->textureSet)
+			if (!material || !material->normalTexture || material->normalTexture->name.empty())
 				continue;
-			std::string texturePath = lowLetter(GetTexturePath(material->textureSet.get(), RE::BSTextureSet::Texture::kNormal));
-			if (texturePath.empty())
-				continue;
+			std::string texturePath = GetOriginalTexturePath(lowLetter(material->normalTexture->name.c_str()));
+			if (texturePath.empty() || !IsExistFile(texturePath, ExistType::textures))
+			{
+				if (material->textureSet)
+				{
+					texturePath = GetTexturePath(material->textureSet.get(), RE::BGSTextureSet::Textures::kNormal);
+					if (texturePath.empty() || !IsExistFile(texturePath, ExistType::textures))
+						continue;
+				}
+			}
 			if (!geo->GetGeometryRuntimeData().skinInstance)
 				continue;
 
@@ -533,9 +542,11 @@ namespace Mus {
 						}
 						createdTextures.insert(std::make_pair(found->textureName, normalmap));
 					}
+
 					if (Config::GetSingleton().GetDebugTexture())
 						material->diffuseTexture = normalmap;
 					material->normalTexture = normalmap;
+
 					lastNormalMapLock.lock_shared();
 					lastNormalMap[a_actorID][{ found->slot, found->texturePath }] = found->textureName;
 					lastNormalMapLock.unlock_shared();
@@ -770,8 +781,15 @@ namespace Mus {
 			return false;
 		a_textureInfo.actorID = GetHex(frag[0]);
 		a_textureInfo.bipedSlot = Config::GetUIntValue(frag[1]);
-		a_textureInfo.texturePath = frag[3];
+		a_textureInfo.texturePath = frag[2];
 		return true;
+	}
+	std::string TaskManager::GetOriginalTexturePath(std::string a_textureName)
+	{
+		TextureInfo info;
+		if (GetTextureInfo(a_textureName, info))
+			return info.texturePath;
+		return a_textureName;
 	}
 	bool TaskManager::IsCreatedByMDNM(std::string a_textureName)
 	{

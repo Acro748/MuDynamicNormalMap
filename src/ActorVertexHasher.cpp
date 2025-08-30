@@ -124,32 +124,25 @@ namespace Mus {
 				if (Config::GetSingleton().GetActorVertexHasherTime1())
 					PerformanceLog(std::string(__func__), false, true);
 
+				ActorHashLock.lock_shared();
 				auto ActorHash_ = ActorHash;
+				ActorHashLock.unlock_shared();
 				for (auto& map : ActorHash_) {
-					RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
+					RE::NiPointer<RE::Actor> actor = RE::NiPointer(GetFormByID<RE::Actor*>(map.first));
 					if (!actor || !actor->loadedData || !actor->loadedData->data3D)
 					{
 						ActorHashLock.lock();
 						ActorHash.unsafe_erase(map.first);
 						ActorHashLock.unlock();
-						return;
+						continue;
 					}
 
-					class ActorGuard {
-						RE::Actor* actor = nullptr;
-					public:
-						ActorGuard() = delete;
-						ActorGuard(RE::Actor* a_actor) : actor(a_actor) { actor->IncRefCount(); };
-						~ActorGuard() { actor->DecRefCount(); };
-					};
-					ActorGuard ag(actor);
-
 					if (BlockActors[actor->formID])
-						return;
+						continue;
 					if (!isPlayer(actor->formID) && (Config::GetSingleton().GetDetectDistance() > floatPrecision && playerPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) > Config::GetSingleton().GetDetectDistance()))
-						return;
-					if (!GetHash(actor, map.second))
-						return;
+						continue;
+					if (!GetHash(actor.get(), map.second))
+						continue;
 
 					std::uint32_t bipedSlot = 0;
 					for (auto& hashmap : map.second.hash)
@@ -169,15 +162,15 @@ namespace Mus {
 					if (bipedSlot > 0)
 					{
 						logger::debug("{:x} {} : detected changed slot {:x}", actor->formID, actor->GetName(), bipedSlot);
-						TaskManager::GetSingleton().QUpdateNormalMap(actor, bipedSlot);
+						TaskManager::GetSingleton().QUpdateNormalMap(actor.get(), bipedSlot);
 					}
 				}
 				
 				if (Config::GetSingleton().GetActorVertexHasherTime1())
-					PerformanceLog(std::string(__func__), true, true, ActorHash.size());
+					PerformanceLog(std::string(__func__), true, true, ActorHash_.size());
 
 				isDetecting.store(false);
-				logger::trace("Check hashes done {}", ActorHash.size());
+				logger::trace("Check hashes done {}", ActorHash_.size());
 			});
 		}
 		else
@@ -185,7 +178,9 @@ namespace Mus {
 			if (Config::GetSingleton().GetActorVertexHasherTime1())
 				PerformanceLog(std::string(__func__), false, true);
 
+			ActorHashLock.lock_shared();
 			auto ActorHash_ = ActorHash;
+			ActorHashLock.unlock_shared();
 			concurrency::parallel_for_each(ActorHash_.begin(), ActorHash_.end(), [&](auto& map) {
 				RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
 				if (!actor || !actor->loadedData || !actor->loadedData->data3D)
@@ -221,10 +216,10 @@ namespace Mus {
 					TaskManager::GetSingleton().QUpdateNormalMap(actor, bipedSlot);
 				}
 			});
-			logger::trace("Check hashes done {}", ActorHash.size());
+			logger::trace("Check hashes done {}", ActorHash_.size());
 
 			if (Config::GetSingleton().GetActorVertexHasherTime1())
-				PerformanceLog(std::string(__func__), true, true, ActorHash.size());
+				PerformanceLog(std::string(__func__), true, true, ActorHash_.size());
 		}
 	}
 
@@ -238,9 +233,8 @@ namespace Mus {
 		if (Config::GetSingleton().GetActorVertexHasherTime2())
 			PerformanceLog(std::string(__func__), false, false);
 
-		auto root = a_actor->loadedData->data3D.get();
-		root->IncRefCount();
-		RE::BSVisit::TraverseScenegraphGeometries(root, [&](RE::BSGeometry* geo) -> RE::BSVisit::BSVisitControl {
+		auto root = a_actor->loadedData->data3D;
+		RE::BSVisit::TraverseScenegraphGeometries(root.get(), [&](RE::BSGeometry* geo) -> RE::BSVisit::BSVisitControl {
 			using State = RE::BSGeometry::States;
 			using Feature = RE::BSShaderMaterial::Feature;
 			if (BlockActors[a_actor->formID])
@@ -336,7 +330,7 @@ namespace Mus {
 				}
 				else if (Config::GetSingleton().GetRealtimeDetectHead() == 2)
 				{
-					found->second->Update(dynamicTriShape->GetDynamicTrishapeRuntimeData().dynamicData, sizeof(DirectX::XMFLOAT4) * vertexCount);
+					found->second->Update(dynamicTriShape->GetDynamicTrishapeRuntimeData().dynamicData, sizeof(DirectX::XMVECTOR) * vertexCount);
 				}
 			}
 			else
@@ -348,7 +342,6 @@ namespace Mus {
 			}
 			return RE::BSVisit::BSVisitControl::kContinue;
 		});
-		root->DecRefCount();
 
 		if (Config::GetSingleton().GetActorVertexHasherTime2())
 			PerformanceLog(std::string(__func__), true, false);

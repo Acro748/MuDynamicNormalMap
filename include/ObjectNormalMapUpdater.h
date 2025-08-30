@@ -152,21 +152,6 @@ namespace Mus {
 		Microsoft::WRL::ComPtr<ID3D11SamplerState> samplerState = nullptr;
 
 		struct GeometryResourceData {
-			void clear() {
-				vertexBuffer.Reset();
-				vertexSRV.Reset();
-				uvBuffer.Reset();
-				uvSRV.Reset();
-				normalBuffer.Reset();
-				normalSRV.Reset();
-				tangentBuffer.Reset();
-				tangentSRV.Reset();
-				bitangentBuffer.Reset();
-				bitangentSRV.Reset();
-				indicesBuffer.Reset();
-				indicesSRV.Reset();
-			}
-
 			Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer = nullptr;
 			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> vertexSRV = nullptr;
 			Microsoft::WRL::ComPtr<ID3D11Buffer> uvBuffer = nullptr;
@@ -182,6 +167,7 @@ namespace Mus {
 		};
 		typedef std::shared_ptr<GeometryResourceData> GeometryResourceDataPtr;
 		concurrency::concurrent_unordered_map<RE::FormID, GeometryResourceDataPtr> GeometryResourceDataMap;
+		GeometryResourceDataPtr GetGeometryResourceData(RE::FormID a_actorID);
 
 		std::shared_mutex ResourceDataMapLock;
 		concurrency::concurrent_vector<TextureResourceDataPtr> ResourceDataMap;

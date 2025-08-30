@@ -185,6 +185,9 @@ namespace Mus {
         [[nodiscard]] inline auto GetUpdateDistance() const noexcept {
             return UpdateDistance;
         }
+        [[nodiscard]] inline auto GetUpdateDistanceVramSave() const noexcept {
+            return UpdateDistanceVramSave;
+        }
 
         [[nodiscard]] inline auto GetAutoTaskQ() const noexcept {
             return AutoTaskQ;
@@ -311,6 +314,7 @@ namespace Mus {
         bool MergeTextureGPU = true;
         std::clock_t WaitForRendererTickMS = 1000; //1sec
         float UpdateDistance = 4096.0f * 4096.0f;
+        bool UpdateDistanceVramSave = false;
 
         std::uint8_t AutoTaskQ = AutoTaskQList::Disable;
         std::uint8_t TaskQMax = 1;

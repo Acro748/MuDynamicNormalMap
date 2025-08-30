@@ -784,7 +784,6 @@ namespace Mus {
 			if (Config::GetSingleton().GetGeometryDataTime())
 				PerformanceLog(std::string(__func__) + "::" + std::to_string(vertices.size()), false, false);
 
-			concurrency::concurrent_unordered_map<std::uint32_t, bool> smoothedVertices;
 			auto tempVertices = vertices;
 			std::vector<std::future<void>> processes;
 			const std::size_t sub = std::max((std::size_t)1, std::min(vertices.size(), processingThreads->GetThreads() * 8));

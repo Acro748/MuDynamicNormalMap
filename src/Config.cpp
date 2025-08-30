@@ -7,7 +7,7 @@ namespace Mus {
     {
         std::string configPath = GetRuntimeSKSEDirectory();
         configPath += SKSE::PluginDeclaration::GetSingleton()->GetName().data();
-        configPath += +".ini";
+        configPath += ".ini";
 
         std::ifstream file(configPath);
 
@@ -56,7 +56,8 @@ namespace Mus {
 
     bool Config::LoadConfig() {
         std::string configPath = GetRuntimeSKSEDirectory();
-        configPath += "MuDynamicNormalMap.ini";
+        configPath += SKSE::PluginDeclaration::GetSingleton()->GetName().data();
+        configPath += ".ini";
 
         std::ifstream file(configPath);
 
@@ -307,6 +308,10 @@ namespace Mus {
                     float value = GetFloatValue(variableValue);
                     UpdateDistance = value * value;
                 }
+                else if (variableName == "UpdateDistanceVramSave")
+                {
+                    UpdateDistanceVramSave = GetBoolValue(variableValue);
+                }
                 else if (variableName == "AutoTaskQ")
                 {
                     AutoTaskQ = std::min(std::uint32_t(AutoTaskQList::Total - 1), GetUIntValue(variableValue));
@@ -346,7 +351,7 @@ namespace Mus {
                 {
                     RealtimeDetectHead = GetUIntValue(variableValue);
                 }
-                else if (variableName == "RealtimeDetectHead")
+                else if (variableName == "RealtimeDetectOnBackGround")
                 {
                     RealtimeDetectOnBackGround = GetBoolValue(variableValue);
                 }
@@ -361,7 +366,7 @@ namespace Mus {
                 }
             }
         }
-        if (DetectDistance > floatPrecision)
+        if (UpdateDistance > floatPrecision && DetectDistance > floatPrecision)
             UpdateDistance = std::max(DetectDistance, UpdateDistance);
         else
             UpdateDistance = 0.0f;
