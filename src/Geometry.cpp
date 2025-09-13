@@ -542,6 +542,28 @@ namespace Mus {
 			data.vertices.assign(vertices.begin() + geometry.objInfo.vertexStart, vertices.begin() + geometry.objInfo.vertexEnd);
 			data.uvs.assign(uvs.begin() + geometry.objInfo.uvStart, uvs.begin() + geometry.objInfo.uvEnd);
 			data.indices.assign(indices.begin() + geometry.objInfo.indicesStart, indices.begin() + geometry.objInfo.indicesEnd);
+
+			std::size_t triCount = data.indices.size() / 3;
+			std::vector<std::future<void>> processes;
+			const std::size_t sub = std::max((std::size_t)1, std::min(triCount, processingThreads->GetThreads()));
+			const std::size_t unit = (triCount + sub - 1) / sub;
+			for (std::size_t p = 0; p < sub; p++) {
+				const std::size_t begin = p * unit;
+				const std::size_t end = std::min(begin + unit, triCount);
+				processes.push_back(processingThreads->submitAsync([&, begin, end]() {
+					for (std::size_t i = begin; i < end; i++)
+					{
+						std::size_t offset = i * 3;
+						data.indices[offset + 0] -= geometry.objInfo.vertexStart;
+						data.indices[offset + 1] -= geometry.objInfo.vertexStart;
+						data.indices[offset + 2] -= geometry.objInfo.vertexStart;
+					}
+				}));
+			}
+			for (auto& process : processes) {
+				process.get();
+			}
+
 			data.objInfo = geometry.objInfo;
 
 			subdividedDatas.push_back(data);
@@ -554,9 +576,7 @@ namespace Mus {
 
 		for (auto& data : subdividedDatas)
 		{
-			const std::size_t triCount = data.indices.size() / 3;
-			const std::size_t vertexStart = vertices.size();
-			if (triCount < a_triThreshold)
+			if (data.indices.size() / 3 < a_triThreshold)
 			{
 				for (std::uint32_t doSubdivision = 0; doSubdivision < a_subCount; doSubdivision++)
 				{
@@ -566,7 +586,7 @@ namespace Mus {
 							std::uint32_t a = (std::min)(i0, i1);
 							std::uint32_t b = std::max(i0, i1);
 							return (static_cast<std::size_t>(a) << 32) | b;
-							};
+						};
 
 						auto key = createKey(i0, i1);
 						if (auto it = midpointMap.find(key); it != midpointMap.end())
@@ -592,7 +612,7 @@ namespace Mus {
 						data.uvs.push_back(midUV);
 
 						midpointMap[key] = index;
-						return index;
+							return index;
 						};
 
 					auto oldIndices = data.indices;
@@ -600,53 +620,31 @@ namespace Mus {
 					for (std::size_t i = 0; i < oldIndices.size() / 3; i++)
 					{
 						std::size_t offset = i * 3;
-						std::uint32_t v0 = oldIndices[offset + 0] - data.objInfo.vertexStart;
-						std::uint32_t v1 = oldIndices[offset + 1] - data.objInfo.vertexStart;
-						std::uint32_t v2 = oldIndices[offset + 2] - data.objInfo.vertexStart;
+						std::uint32_t v0 = oldIndices[offset + 0];
+						std::uint32_t v1 = oldIndices[offset + 1];
+						std::uint32_t v2 = oldIndices[offset + 2];
 
 						std::uint32_t m01 = getMidpointIndex(v0, v1);
 						std::uint32_t m12 = getMidpointIndex(v1, v2);
 						std::uint32_t m20 = getMidpointIndex(v2, v0);
 
 						std::size_t triOffset = offset * 4;
-						data.indices[triOffset + 0] = v0 + vertexStart;
-						data.indices[triOffset + 1] = m01 + vertexStart;
-						data.indices[triOffset + 2] = m20 + vertexStart;
+						data.indices[triOffset + 0] = v0;
+						data.indices[triOffset + 1] = m01;
+						data.indices[triOffset + 2] = m20;
 
-						data.indices[triOffset + 3] = v1 + vertexStart;
-						data.indices[triOffset + 4] = m12 + vertexStart;
-						data.indices[triOffset + 5] = m01 + vertexStart;
+						data.indices[triOffset + 3] = v1;
+						data.indices[triOffset + 4] = m12;
+						data.indices[triOffset + 5] = m01;
 
-						data.indices[triOffset + 6] = v2 + vertexStart;
-						data.indices[triOffset + 7] = m20 + vertexStart;
-						data.indices[triOffset + 8] = m12 + vertexStart;
+						data.indices[triOffset + 6] = v2;
+						data.indices[triOffset + 7] = m20;
+						data.indices[triOffset + 8] = m12;
 
-						data.indices[triOffset + 9] = m01 + vertexStart;
-						data.indices[triOffset + 10] = m12 + vertexStart;
-						data.indices[triOffset + 11] = m20 + vertexStart;
+						data.indices[triOffset + 9] = m01;
+						data.indices[triOffset + 10] = m12;
+						data.indices[triOffset + 11] = m20;
 					}
-				}
-			}
-			else
-			{
-				std::vector<std::future<void>> processes;
-				const std::size_t sub = std::max((std::size_t)1, std::min(triCount, processingThreads->GetThreads()));
-				const std::size_t unit = (triCount + sub - 1) / sub;
-				for (std::size_t p = 0; p < sub; p++) {
-					const std::size_t begin = p * unit;
-					const std::size_t end = std::min(begin + unit, triCount);
-					processes.push_back(processingThreads->submitAsync([&, begin, end]() {
-						for (std::size_t i = begin; i < end; i++)
-						{
-							std::size_t offset = i * 3;
-							data.indices[offset + 0] = data.indices[offset + 0] - data.objInfo.vertexStart + vertexStart;
-							data.indices[offset + 1] = data.indices[offset + 1] - data.objInfo.vertexStart + vertexStart;
-							data.indices[offset + 2] = data.indices[offset + 2] - data.objInfo.vertexStart + vertexStart;
-						}
-					}));
-				}
-				for (auto& process : processes) {
-					process.get();
 				}
 			}
 
@@ -658,6 +656,28 @@ namespace Mus {
 
 			vertices.insert(vertices.end(), data.vertices.begin(), data.vertices.end());
 			uvs.insert(uvs.end(), data.uvs.begin(), data.uvs.end());
+
+			std::size_t triCount = data.indices.size() / 3;
+			std::vector<std::future<void>> processes;
+			const std::size_t sub = std::max((std::size_t)1, std::min(triCount, processingThreads->GetThreads()));
+			const std::size_t unit = (triCount + sub - 1) / sub;
+			for (std::size_t p = 0; p < sub; p++) {
+				const std::size_t begin = p * unit;
+				const std::size_t end = std::min(begin + unit, triCount);
+				processes.push_back(processingThreads->submitAsync([&, begin, end]() {
+					for (std::size_t i = begin; i < end; i++)
+					{
+						std::size_t offset = i * 3;
+						data.indices[offset + 0] += newObjInfo.vertexStart;
+						data.indices[offset + 1] += newObjInfo.vertexStart;
+						data.indices[offset + 2] += newObjInfo.vertexStart;
+					}
+				}));
+			}
+			for (auto& process : processes) {
+				process.get();
+			}
+
 			indices.insert(indices.end(), data.indices.begin(), data.indices.end());
 
 			newObjInfo.vertexEnd = vertices.size();

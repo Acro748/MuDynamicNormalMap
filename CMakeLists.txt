@@ -6,7 +6,7 @@ message("Using toolchain file ${CMAKE_TOOLCHAIN_FILE}.")
 ########################################################################################################################
 project(
         MuDynamicNormalMap
-        VERSION 1.4.3
+        VERSION 1.4.4
         DESCRIPTION "MuDynamicNormalMap VR by Acro."
         LANGUAGES CXX
 )
@@ -133,7 +133,7 @@ target_precompile_headers(
     PRIVATE
         include/PCH.h)
         
-target_compile_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:/sdl;/utf-8;/Zi;/permissive-;/Zc:preprocessor;/Zc:inline;/JMC-;/O2;/fp:fast;/Ob3>")
+target_compile_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:/sdl;/utf-8;/Zi;/permissive-;/Zc:preprocessor;/Zc:inline;/JMC-;/O2;/Ob3>")
 target_link_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:/INCREMENTAL:NO;/OPT:REF;/OPT:ICF;/DEBUG:FULL>")
 
 install(TARGETS ${PROJECT_NAME}

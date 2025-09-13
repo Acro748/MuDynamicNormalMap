@@ -188,6 +188,9 @@ namespace Mus {
         [[nodiscard]] inline auto GetUpdateDistanceVramSave() const noexcept {
             return UpdateDistanceVramSave;
         }
+        [[nodiscard]] inline auto GetUseMipMap() const noexcept {
+            return UseMipMap;
+        }
 
         [[nodiscard]] inline auto GetAutoTaskQ() const noexcept {
             return AutoTaskQ;
@@ -315,6 +318,7 @@ namespace Mus {
         std::clock_t WaitForRendererTickMS = 1000; //1sec
         float UpdateDistance = 4096.0f * 4096.0f;
         bool UpdateDistanceVramSave = false;
+		bool UseMipMap = true;
 
         std::uint8_t AutoTaskQ = AutoTaskQList::Disable;
         std::uint8_t TaskQMax = 1;
