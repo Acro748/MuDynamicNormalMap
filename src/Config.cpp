@@ -312,6 +312,10 @@ namespace Mus {
                 {
                     UpdateDistanceVramSave = GetBoolValue(variableValue);
                 }
+                else if (variableName == "UseMipMap")
+                {
+                    UseMipMap = GetBoolValue(variableValue);
+                }
                 else if (variableName == "AutoTaskQ")
                 {
                     AutoTaskQ = std::min(std::uint32_t(AutoTaskQList::Total - 1), GetUIntValue(variableValue));

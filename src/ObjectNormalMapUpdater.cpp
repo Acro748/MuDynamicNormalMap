@@ -247,7 +247,7 @@ namespace Mus {
 						}
 						else
 						{
-							CopySubresourceRegion(newResourceData->srcTexture2D, srcTexture2D, 0, 0);
+							CopySubresourceRegion(newResourceData->srcTexture2D.Get(), srcTexture2D.Get(), 0, 0);
 						}
 					}
 				}
@@ -281,7 +281,7 @@ namespace Mus {
 					}
 					else
 					{
-						CopySubresourceRegion(newResourceData->detailTexture2D, detailTexture2D, 0, 0);
+						CopySubresourceRegion(newResourceData->detailTexture2D.Get(), detailTexture2D.Get(), 0, 0);
 					}
 				}
 
@@ -314,7 +314,7 @@ namespace Mus {
 					}
 					else
 					{
-						CopySubresourceRegion(newResourceData->overlayTexture2D, overlayTexture2D, 0, 0);
+						CopySubresourceRegion(newResourceData->overlayTexture2D.Get(), overlayTexture2D.Get(), 0, 0);
 					}
 				}
 			}
@@ -341,7 +341,7 @@ namespace Mus {
 					}
 					else
 					{
-						CopySubresourceRegion(newResourceData->maskTexture2D, maskTexture2D, 0, 0);
+						CopySubresourceRegion(newResourceData->maskTexture2D.Get(), maskTexture2D.Get(), 0, 0);
 					}
 				}
 			}
@@ -627,9 +627,9 @@ namespace Mus {
 
 			dstDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 			dstDesc.Usage = D3D11_USAGE_DEFAULT;
-			dstDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
-			dstDesc.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
-			dstDesc.MipLevels = 0;
+			dstDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | (Config::GetSingleton().GetUseMipMap() ? D3D11_BIND_RENDER_TARGET : 0);
+			dstDesc.MiscFlags = Config::GetSingleton().GetUseMipMap() ? D3D11_RESOURCE_MISC_GENERATE_MIPS : 0;
+			dstDesc.MipLevels = Config::GetSingleton().GetUseMipMap() ? 0 : 1;
 			dstDesc.ArraySize = 1;
 			dstDesc.CPUAccessFlags = 0;
 			dstDesc.SampleDesc.Count = 1;
@@ -640,11 +640,11 @@ namespace Mus {
 				continue;
 			}
 
-			CopySubresourceRegion(newResourceData->dstTexture2D, newResourceData->dstWriteTexture2D, 0, 0);
+			CopySubresourceRegion(newResourceData->dstTexture2D.Get(), newResourceData->dstWriteTexture2D.Get(), 0, 0);
 
 			dstShaderResourceViewDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 			dstShaderResourceViewDesc.Texture2D.MostDetailedMip = 0;
-			dstShaderResourceViewDesc.Texture2D.MipLevels = -1;
+			dstShaderResourceViewDesc.Texture2D.MipLevels = Config::GetSingleton().GetUseMipMap() ? -1 : 1;
 			hr = device->CreateShaderResourceView(newResourceData->dstTexture2D.Get(), &dstShaderResourceViewDesc, &newResourceData->dstShaderResourceView);
 			if (FAILED(hr)) {
 				logger::error("{}::{:x} : Failed to create ShaderResourceView ({})", _func_, a_actorID, hr);
@@ -652,9 +652,9 @@ namespace Mus {
 			}
 
 			if (Config::GetSingleton().GetTextureMarginGPU())
-				BleedTextureGPU(newResourceData, Config::GetSingleton().GetTextureMargin(), newResourceData->dstShaderResourceView, newResourceData->dstTexture2D);
+				BleedTextureGPU(newResourceData, Config::GetSingleton().GetTextureMargin(), newResourceData->dstShaderResourceView.Get(), newResourceData->dstTexture2D.Get());
 			else
-				BleedTexture(newResourceData, Config::GetSingleton().GetTextureMargin(), newResourceData->dstTexture2D);
+				BleedTexture(newResourceData, Config::GetSingleton().GetTextureMargin(), newResourceData->dstTexture2D.Get());
 
 			auto resultFound = std::find_if(result.begin(), result.end(), [&](NormalMapResult& a_result) {
 				return update.second.textureName == a_result.textureName;
@@ -662,18 +662,21 @@ namespace Mus {
 			if (resultFound != result.end()) {
 				logger::info("{}::{:x} : Merge texture into {}...", _func_, a_actorID, resultFound->geoName);
 				if (Config::GetSingleton().GetMergeTextureGPU())
-					MergeTextureGPU(newResourceData, newResourceData->dstShaderResourceView, newResourceData->dstTexture2D, resultFound->normalmapShaderResourceView, resultFound->normalmapTexture2D);
+					MergeTextureGPU(newResourceData, newResourceData->dstShaderResourceView.Get(), newResourceData->dstTexture2D.Get(), resultFound->normalmapShaderResourceView.Get(), resultFound->normalmapTexture2D.Get());
 				else
-					MergeTexture(newResourceData, newResourceData->dstTexture2D, resultFound->normalmapTexture2D);
+					MergeTexture(newResourceData, newResourceData->dstTexture2D.Get(), resultFound->normalmapTexture2D.Get());
 				resultFound->normalmapTexture2D = newResourceData->dstTexture2D;
 				resultFound->normalmapShaderResourceView = newResourceData->dstShaderResourceView;
 			}
 
-			Shader::ShaderManager::GetSingleton().ShaderContextLock();
-			context->GenerateMips(newResourceData->dstShaderResourceView.Get());
-			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+			if (Config::GetSingleton().GetUseMipMap())
+			{
+				Shader::ShaderManager::GetSingleton().ShaderContextLock();
+				context->GenerateMips(newResourceData->dstShaderResourceView.Get());
+				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+			}
 
-			bool isCompress = CompressTexture(newResourceData, newResourceData->dstCompressTexture2D, newResourceData->dstCompressShaderResourceView, newResourceData->dstTexture2D, newResourceData->dstShaderResourceView);
+			bool isCompress = CompressTexture(newResourceData, newResourceData->dstCompressTexture2D.Get(), newResourceData->dstCompressShaderResourceView.Get(), newResourceData->dstTexture2D.Get(), newResourceData->dstShaderResourceView.Get());
 
 			Shader::ShaderManager::GetSingleton().Flush();
 
@@ -1028,9 +1031,9 @@ namespace Mus {
 
 			dstDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 			dstDesc.Usage = D3D11_USAGE_DEFAULT;
-			dstDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
-			dstDesc.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
-			dstDesc.MipLevels = 0;
+			dstDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | (Config::GetSingleton().GetUseMipMap() ? D3D11_BIND_RENDER_TARGET : 0);
+			dstDesc.MiscFlags = Config::GetSingleton().GetUseMipMap() ? D3D11_RESOURCE_MISC_GENERATE_MIPS : 0;
+			dstDesc.MipLevels = Config::GetSingleton().GetUseMipMap() ? 0 : 1;
 			dstDesc.ArraySize = 1;
 			dstDesc.CPUAccessFlags = 0;
 			dstDesc.SampleDesc.Count = 1;
@@ -1041,22 +1044,24 @@ namespace Mus {
 				continue;
 			}
 
-			CopySubresourceRegion(newResourceData->dstTexture2D, newResourceData->dstWriteTexture2D, 0, 0);
+			CopySubresourceRegion(newResourceData->dstTexture2D.Get(), newResourceData->dstWriteTexture2D.Get(), 0, 0);
 
 			dstShaderResourceViewDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 			dstShaderResourceViewDesc.Texture2D.MostDetailedMip = 0;
-			dstShaderResourceViewDesc.Texture2D.MipLevels = -1;
+			dstShaderResourceViewDesc.Texture2D.MipLevels = Config::GetSingleton().GetUseMipMap() ? -1 : 1;
 			hr = device->CreateShaderResourceView(newResourceData->dstTexture2D.Get(), &dstShaderResourceViewDesc, &newResourceData->dstShaderResourceView);
 			if (FAILED(hr)) {
 				logger::error("{}::{:x} : Failed to create ShaderResourceView ({})", _func_, a_actorID, hr);
 				continue;
 			}
 
+			Shader::ShaderManager::GetSingleton().Flush();
+
 			//TexturePostProcessingGPU(newResourceData, Config::GetSingleton().GetBlueRadius(), newResourceData->maskShaderResourceView, newResourceData->dstShaderResourceView, newResourceData->dstTexture2D);
 			if (Config::GetSingleton().GetTextureMarginGPU())
-				BleedTextureGPU(newResourceData, Config::GetSingleton().GetTextureMargin(), newResourceData->dstShaderResourceView, newResourceData->dstTexture2D);
+				BleedTextureGPU(newResourceData, Config::GetSingleton().GetTextureMargin(), newResourceData->dstShaderResourceView.Get(), newResourceData->dstTexture2D.Get());
 			else
-				BleedTexture(newResourceData, Config::GetSingleton().GetTextureMargin(), newResourceData->dstTexture2D);
+				BleedTexture(newResourceData, Config::GetSingleton().GetTextureMargin(), newResourceData->dstTexture2D.Get());
 
 			const auto resultFound = std::find_if(result.begin(), result.end(), [&](NormalMapResult& a_result) {
 				return update.second.textureName == a_result.textureName;
@@ -1064,18 +1069,21 @@ namespace Mus {
 			if (resultFound != result.end()) {
 				logger::info("{}::{:x} : Merge texture into {}...", _func_, a_actorID, resultFound->geoName);
 				if (Config::GetSingleton().GetMergeTextureGPU())
-					MergeTextureGPU(newResourceData, newResourceData->dstShaderResourceView, newResourceData->dstTexture2D, resultFound->normalmapShaderResourceView, resultFound->normalmapTexture2D);
+					MergeTextureGPU(newResourceData, newResourceData->dstShaderResourceView.Get(), newResourceData->dstTexture2D.Get(), resultFound->normalmapShaderResourceView.Get(), resultFound->normalmapTexture2D.Get());
 				else
-					MergeTexture(newResourceData, newResourceData->dstTexture2D, resultFound->normalmapTexture2D);
+					MergeTexture(newResourceData, newResourceData->dstTexture2D.Get(), resultFound->normalmapTexture2D.Get());
 				resultFound->normalmapTexture2D = newResourceData->dstTexture2D;
 				resultFound->normalmapShaderResourceView = newResourceData->dstShaderResourceView;
 			}
 
-			Shader::ShaderManager::GetSingleton().ShaderContextLock();
-			context->GenerateMips(newResourceData->dstShaderResourceView.Get());
-			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+			if (Config::GetSingleton().GetUseMipMap())
+			{
+				Shader::ShaderManager::GetSingleton().ShaderContextLock();
+				context->GenerateMips(newResourceData->dstShaderResourceView.Get());
+				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+			}
 
-			const bool isCompress = CompressTexture(newResourceData, newResourceData->dstCompressTexture2D, newResourceData->dstCompressShaderResourceView, newResourceData->dstTexture2D, newResourceData->dstShaderResourceView);
+			const bool isCompress = CompressTexture(newResourceData, newResourceData->dstCompressTexture2D.Get(), newResourceData->dstCompressShaderResourceView.Get(), newResourceData->dstTexture2D.Get(), newResourceData->dstShaderResourceView.Get());
 
 			Shader::ShaderManager::GetSingleton().Flush();
 
@@ -1209,7 +1217,7 @@ namespace Mus {
 	{
 		return (a_pixel & 0xFF000000) != 0;
 	}
-	bool Mus::ObjectNormalMapUpdater::BleedTexture(TextureResourceDataPtr& resourceData, std::int32_t margin, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut)
+	bool Mus::ObjectNormalMapUpdater::BleedTexture(TextureResourceDataPtr& resourceData, std::int32_t margin, ID3D11Texture2D* texInOut)
 	{
 		if (margin == 0)
 			return true;
@@ -1240,7 +1248,7 @@ namespace Mus {
 			return false;
 		}
 
-		CopySubresourceRegion(resourceData->bleedTextureData.texture2D_1, texInOut, 0, 0);
+		CopySubresourceRegion(resourceData->bleedTextureData.texture2D_1.Get(), texInOut, 0, 0);
 
 		D3D11_MAPPED_SUBRESOURCE mappedResource;
 		Shader::ShaderManager::GetSingleton().ShaderContextLock();
@@ -1261,7 +1269,7 @@ namespace Mus {
 
 		if (margin < 0)
 		{
-			margin = std::max(UINT(1), std::max(stagingDesc.Width, stagingDesc.Height) / 512);
+			margin = Config::GetSingleton().GetUseMipMap() ? std::max(UINT(1), std::max(stagingDesc.Width, stagingDesc.Height) / 512) : 1;
 			logger::debug("{}::{} : Bleed texture -> set margin {}", __func__, resourceData->textureName, margin);
 		}
 		for (std::uint32_t mi = 0; mi < margin; mi++)
@@ -1351,11 +1359,11 @@ namespace Mus {
 		if (Config::GetSingleton().GetBleedTextureTime1())
 			PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, true, false);
 
-		CopySubresourceRegion(texInOut, resourceData->bleedTextureData.texture2D_1, 0, 0);
+		CopySubresourceRegion(texInOut, resourceData->bleedTextureData.texture2D_1.Get(), 0, 0);
 
 		return true;
 	}
-	bool ObjectNormalMapUpdater::BleedTextureGPU(TextureResourceDataPtr& resourceData, std::int32_t margin, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut)
+	bool ObjectNormalMapUpdater::BleedTextureGPU(TextureResourceDataPtr& resourceData, std::int32_t margin, ID3D11ShaderResourceView* srvInOut, ID3D11Texture2D* texInOut)
 	{
 		std::string_view _func_ = __func__;
 		if (Config::GetSingleton().GetBleedTextureTime1())
@@ -1444,6 +1452,7 @@ namespace Mus {
 		desc.MiscFlags = 0;
 		desc.MipLevels = 1;
 		desc.CPUAccessFlags = 0;
+
 		hr = device->CreateTexture2D(&desc, nullptr, &resourceData->bleedTextureData.texture2D_1);
 		if (FAILED(hr)) {
 			logger::error("{} : Failed to create texture 2d 1 ({})", _func_, hr);
@@ -1457,15 +1466,16 @@ namespace Mus {
 
 		srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Texture2D.MostDetailedMip = 0;
 		srvDesc.Texture2D.MipLevels = 1;
 		hr = device->CreateShaderResourceView(resourceData->bleedTextureData.texture2D_1.Get(), &srvDesc, &resourceData->bleedTextureData.srv1);
 		if (FAILED(hr)) {
-			logger::error("{} : Failed to create unordered access view ({})", _func_, hr);
+			logger::error("{} : Failed to create shader resource view ({})", _func_, hr);
 			return false;
 		}
 		hr = device->CreateShaderResourceView(resourceData->bleedTextureData.texture2D_2.Get(), &srvDesc, &resourceData->bleedTextureData.srv2);
 		if (FAILED(hr)) {
-			logger::error("{} : Failed to create unordered access view ({})", _func_, hr);
+			logger::error("{} : Failed to create shader resource view ({})", _func_, hr);
 			return false;
 		}
 
@@ -1491,20 +1501,33 @@ namespace Mus {
 		const DirectX::XMUINT2 dispatch = { (std::min(width, subResolution) + 8 - 1) / 8, (std::min(height, subResolution) + 8 - 1) / 8};
 		if (margin < 0)
 		{
-			margin = std::max(UINT(1), std::max(width, height) / 512);
+			margin = std::max(UINT(1), std::max(width, height) / 256);
 			logger::debug("{}::{} : Bleed texture -> set margin {}", _func_, resourceData->textureName, margin);
 		}
 
-		const std::uint32_t marginUnit = std::max(std::uint32_t(1), std::min(std::uint32_t(margin), subResolution / width + subResolution / height));
-		const std::uint32_t marginMax = std::max(std::uint32_t(1), margin / marginUnit);
 		const std::uint32_t subXSize = std::max(std::uint32_t(1), width / subResolution);
 		const std::uint32_t subYSize = std::max(std::uint32_t(1), height / subResolution);
 
-		bool isResultFirst = true;
-		for (std::uint32_t mi = 0; mi < marginMax; mi++)
+		auto srv = srvInOut;
+		auto srvAlt = resourceData->bleedTextureData.srv1.Get();
+		auto uav = resourceData->bleedTextureData.uav1.Get();
+		auto uavAlt = resourceData->bleedTextureData.uav2.Get();
+		auto tex = resourceData->bleedTextureData.texture2D_1.Get();
+		auto texAlt = resourceData->bleedTextureData.texture2D_2.Get();
+		for (std::uint32_t mi = 0; mi < margin; mi++)
 		{
 			if (mi > 0)
-				isResultFirst = !isResultFirst;
+			{
+				auto tmpSrv = srv;
+				srv = srvAlt;
+				srvAlt = tmpSrv;
+				auto tmpUav = uav;
+				uav = uavAlt;
+				uavAlt = tmpUav;
+				auto tmpTex = tex;
+				tex = texAlt;
+				texAlt = tmpTex;
+			}
 			std::vector<std::future<void>> gpuTasks;
 			for (std::uint32_t subY = 0; subY < subYSize; subY++)
 			{
@@ -1521,46 +1544,25 @@ namespace Mus {
 						logger::error("{} : Failed to create const buffer ({})", _func_, hr);
 						return false;
 					}
-					gpuTasks.push_back(gpuTask->submitAsync([&, constBuffer, subX, subY]() {
-						if (Config::GetSingleton().GetBleedTextureTime2())
-						GPUPerformanceLog(std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
-										  + "::" + std::to_string(subX) + "|" + std::to_string(subY) + "::" + std::to_string(mi), false, false);
-						
-						for (std::uint32_t mu = 0; mu < marginUnit; mu++)
-						{
-							if (mu > 0)
-								isResultFirst = !isResultFirst;
-
-							ShaderBackup sb;
-							Shader::ShaderManager::GetSingleton().ShaderContextLock();
-							sb.Backup(context);
-							context->CSSetShader(shader.Get(), nullptr, 0);
-							context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
-							if (mu == 0 && mi == 0)
-							{
-								context->CSSetShaderResources(0, 1, srvInOut.GetAddressOf());
-								context->CSSetUnorderedAccessViews(0, 1, resourceData->bleedTextureData.uav1.GetAddressOf(), nullptr);
-							}
-							else
-							{
-								if (isResultFirst)
-								{
-									context->CSSetShaderResources(0, 1, resourceData->bleedTextureData.srv2.GetAddressOf());
-									context->CSSetUnorderedAccessViews(0, 1, resourceData->bleedTextureData.uav1.GetAddressOf(), nullptr);
-								}
-								else
-								{
-									context->CSSetShaderResources(0, 1, resourceData->bleedTextureData.srv1.GetAddressOf());
-									context->CSSetUnorderedAccessViews(0, 1, resourceData->bleedTextureData.uav2.GetAddressOf(), nullptr);
-								}
-							}
-							context->Dispatch(dispatch.x, dispatch.y, 1);
-							sb.Revert(context);
-							Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-						}
+					gpuTasks.push_back(gpuTask->submitAsync([&, constBuffer, subX, subY, mi, srv, uav]() {
 						if (Config::GetSingleton().GetBleedTextureTime2())
 							GPUPerformanceLog(std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
-										  + "::" + std::to_string(subX) + "|" + std::to_string(subY) + "::" + std::to_string(mi), true, false);
+											  + "::" + std::to_string(subX) + "|" + std::to_string(subY) + "::" + std::to_string(mi), false, false);
+
+						ShaderBackup sb;
+						Shader::ShaderManager::GetSingleton().ShaderContextLock();
+						sb.Backup(context);
+						context->CSSetShader(shader.Get(), nullptr, 0);
+						context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
+						context->CSSetShaderResources(0, 1, &srv);
+						context->CSSetUnorderedAccessViews(0, 1, &uav, nullptr);
+						context->Dispatch(dispatch.x, dispatch.y, 1);
+						sb.Revert(context);
+						Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+
+						if (Config::GetSingleton().GetBleedTextureTime2())
+							GPUPerformanceLog(std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
+											  + "::" + std::to_string(subX) + "|" + std::to_string(subY) + "::" + std::to_string(mi), true, false);
 					}));
 					resourceData->bleedTextureData.constBuffers.push_back(constBuffer);
 				}
@@ -1569,20 +1571,18 @@ namespace Mus {
 			{
 				task.get();
 			}
-		}
-		if (isResultFirst)
-		{
-			CopySubresourceRegion(texInOut, resourceData->bleedTextureData.texture2D_1, 0, 0);
-		}
-		else
-		{
-			CopySubresourceRegion(texInOut, resourceData->bleedTextureData.texture2D_2, 0, 0);
-		}
+			Shader::ShaderManager::GetSingleton().Flush();
+			if (mi == 0)
+			{
+				srv = resourceData->bleedTextureData.srv2.Get();
+			}
 
+		}
+		CopySubresourceRegion(texInOut, tex, 0, 0);
 		return true;
 	}
 
-	bool ObjectNormalMapUpdater::MergeTexture(TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTex, Microsoft::WRL::ComPtr<ID3D11Texture2D> srvTex)
+	bool ObjectNormalMapUpdater::MergeTexture(TextureResourceDataPtr& resourceData, ID3D11Texture2D* dstTex, ID3D11Texture2D* srvTex)
 	{
 		if (Config::GetSingleton().GetMergeTime1())
 			PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, false, false);
@@ -1624,8 +1624,8 @@ namespace Mus {
 			return false;
 		}
 
-		CopySubresourceRegion(resourceData->mergeTextureData.texture2D, dstTex, 0, 0);
-		CopySubresourceRegion(resourceData->mergeTextureData.texture2Dalt, srvTex, 0, 0);
+		CopySubresourceRegion(resourceData->mergeTextureData.texture2D.Get(), dstTex, 0, 0);
+		CopySubresourceRegion(resourceData->mergeTextureData.texture2Dalt.Get(), srvTex, 0, 0);
 
 		D3D11_MAPPED_SUBRESOURCE mappedResource, mappedResourceAlt;
 		Shader::ShaderManager::GetSingleton().ShaderContextLock();
@@ -1681,10 +1681,10 @@ namespace Mus {
 		if (Config::GetSingleton().GetMergeTime1())
 			PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, true, false);
 
-		CopySubresourceRegion(dstTex, resourceData->mergeTextureData.texture2D, 0, 0);
+		CopySubresourceRegion(dstTex, resourceData->mergeTextureData.texture2D.Get(), 0, 0);
 		return true;
 	}
-	bool ObjectNormalMapUpdater::MergeTextureGPU(TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& dstSrv, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTex, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcSrv, Microsoft::WRL::ComPtr<ID3D11Texture2D> srvTex)
+	bool ObjectNormalMapUpdater::MergeTextureGPU(TextureResourceDataPtr& resourceData, ID3D11ShaderResourceView* dstSrv, ID3D11Texture2D* dstTex, ID3D11ShaderResourceView* srcSrv, ID3D11Texture2D* srvTex)
 	{
 		std::string_view _func_ = __func__;
 		if (Config::GetSingleton().GetMergeTime1())
@@ -1821,8 +1821,8 @@ namespace Mus {
 					sb.Backup(context);
 					context->CSSetShader(shader.Get(), nullptr, 0);
 					context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
-					context->CSSetShaderResources(0, 1, srcSrv.GetAddressOf());
-					context->CSSetShaderResources(1, 1, dstSrv.GetAddressOf());
+					context->CSSetShaderResources(0, 1, &srcSrv);
+					context->CSSetShaderResources(1, 1, &dstSrv);
 					context->CSSetUnorderedAccessViews(0, 1, resourceData->mergeTextureData.uav.GetAddressOf(), nullptr);
 					context->Dispatch(dispatch.x, dispatch.y, 1);
 					sb.Revert(context);
@@ -1840,21 +1840,21 @@ namespace Mus {
 			task.get();
 		}
 
-		CopySubresourceRegion(dstTex, resourceData->mergeTextureData.texture2D, 0, 0);
+		CopySubresourceRegion(dstTex, resourceData->mergeTextureData.texture2D.Get(), 0, 0);
 		return true;
 	}
 
-	bool ObjectNormalMapUpdater::CopySubresourceRegion(Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTexture, Microsoft::WRL::ComPtr<ID3D11Texture2D>& srcTexture, UINT dstMipMapLevel, UINT srcMipMapLevel)
+	bool ObjectNormalMapUpdater::CopySubresourceRegion(ID3D11Texture2D* dstTexture, ID3D11Texture2D* srcTexture, UINT dstMipMapLevel, UINT srcMipMapLevel)
 	{
 		D3D11_TEXTURE2D_DESC dstDesc, srcDesc;
 		dstTexture->GetDesc(&dstDesc);
 		srcTexture->GetDesc(&srcDesc);
 
-		if (dstDesc.Width != srcDesc.Width || dstDesc.Height != srcDesc.Height)
-			return false;
-
 		auto context = Shader::ShaderManager::GetSingleton().GetContext();
 		if (!context)
+			return false;
+
+		if (dstDesc.Width != srcDesc.Width || dstDesc.Height != srcDesc.Height)
 			return false;
 
 		const UINT width = dstDesc.Width;
@@ -1882,9 +1882,9 @@ namespace Mus {
 
 					Shader::ShaderManager::GetSingleton().ShaderContextLock();
 					context->CopySubresourceRegion(
-						dstTexture.Get(), dstMipMapLevel,
+						dstTexture, dstMipMapLevel,
 						box.left, box.top, 0,
-						srcTexture.Get(), srcMipMapLevel,
+						srcTexture, srcMipMapLevel,
 						&box);
 					Shader::ShaderManager::GetSingleton().ShaderContextUnlock(); 
 
@@ -1900,7 +1900,7 @@ namespace Mus {
 		return true;
 	}
 
-	bool ObjectNormalMapUpdater::CompressTexture(TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTexture, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& dstSrv, Microsoft::WRL::ComPtr<ID3D11Texture2D>& srcTexture, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srcSrv)
+	bool ObjectNormalMapUpdater::CompressTexture(TextureResourceDataPtr& resourceData, ID3D11Texture2D* dstTexture, ID3D11ShaderResourceView* dstSrv, ID3D11Texture2D* srcTexture, ID3D11ShaderResourceView* srcSrv)
 	{
 		if (!srcTexture || !srcSrv || Config::GetSingleton().GetTextureCompress() == 0)
 			return false;
@@ -1939,7 +1939,7 @@ namespace Mus {
 			srcSrv->GetDesc(&srvDesc);
 			srvDesc.Format = desc.Format;
 			srvDesc.Texture2D.MipLevels = desc.MipLevels;
-			auto hr = device->CreateShaderResourceView(dstTexture.Get(), &srvDesc, &dstSrv);
+			auto hr = device->CreateShaderResourceView(dstTexture, &srvDesc, &dstSrv);
 			if (FAILED(hr)) {
 				logger::error("{}::{} : Failed to create ShaderResourceView ({})", __func__, resourceData->textureName, hr);
 				return false;
@@ -1949,7 +1949,7 @@ namespace Mus {
 		return isCompressed;
 	}
 
-	bool ObjectNormalMapUpdater::CompressTextureBC7(TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTexture, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& dstSrv, Microsoft::WRL::ComPtr<ID3D11Texture2D>& srcTexture, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srcSrv)
+	bool ObjectNormalMapUpdater::CompressTextureBC7(TextureResourceDataPtr& resourceData, ID3D11Texture2D* dstTexture, ID3D11ShaderResourceView* dstSrv, ID3D11Texture2D* srcTexture, ID3D11ShaderResourceView* srcSrv)
 	{
 		auto device = Shader::ShaderManager::GetSingleton().GetDevice();
 		auto context = Shader::ShaderManager::GetSingleton().GetContext();
@@ -2006,7 +2006,7 @@ namespace Mus {
 				return false;
 			}
 
-			CopySubresourceRegion(staging, srcTexture, 0, level);
+			CopySubresourceRegion(staging.Get(), srcTexture, 0, level);
 
 			D3D11_MAPPED_SUBRESOURCE mapped;
 			Shader::ShaderManager::GetSingleton().ShaderContextLock();
@@ -2069,7 +2069,7 @@ namespace Mus {
 			initData[level].SysMemSlicePitch = 0;
 		}
 
-		hr = device->CreateTexture2D(&dstDesc, initData.data(), dstTexture.GetAddressOf());
+		hr = device->CreateTexture2D(&dstDesc, initData.data(), &dstTexture);
 		if (FAILED(hr))
 		{
 			logger::error("Failed to create BC7 compressed");
@@ -2081,7 +2081,7 @@ namespace Mus {
 		srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 		srvDesc.Texture2D.MipLevels = dstDesc.MipLevels;
 		srvDesc.Texture2D.MostDetailedMip = 0;
-		hr = device->CreateShaderResourceView(dstTexture.Get(), &srvDesc, dstSrv.GetAddressOf());
+		hr = device->CreateShaderResourceView(dstTexture, &srvDesc, &dstSrv);
 		if (FAILED(hr))
 		{
 			logger::error("Failed to create shader resource view for BC7");
@@ -2140,10 +2140,10 @@ namespace Mus {
 		{
 			double tick = PerformanceCheckTick ? (double)(RE::GetSecondsSinceLastFrame() * 1000) : (double)(TimeTick60 * 1000);
 			Shader::ShaderManager::GetSingleton().ShaderContextLock();
+			context->Flush();
 			context->End(gpuTimers[funcStr].endQuery.Get());
 			context->End(gpuTimers[funcStr].disjointQuery.Get());
 
-			context->Flush();
 			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 
 			D3D11_QUERY_DATA_TIMESTAMP_DISJOINT disjointData = {};
@@ -2215,8 +2215,8 @@ namespace Mus {
 			return;
 		}
 		Shader::ShaderManager::GetSingleton().ShaderContextLock();
-		context->End(query.Get());
 		context->Flush();
+		context->End(query.Get());
 		Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 		logger::debug("Wait for Renderer...");
 		while (true) {

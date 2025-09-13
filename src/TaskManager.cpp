@@ -833,7 +833,8 @@ namespace Mus {
 		lastNormalMapLock.lock_shared();
 		if (auto found = lastNormalMap.find(a_actor->formID); found != lastNormalMap.end())
 		{
-			for (auto& texture : found->second)
+			auto textures = found->second;
+			for (auto& texture : textures)
 			{
 				Shader::TextureLoadManager::GetSingleton().ReleaseNiTexture(texture.second);
 				logger::debug("{:x} : Removed unused NiTexture", a_actor->formID);
