@@ -9,7 +9,7 @@ namespace Mus {
 				return instance;
 			}
 
-			ShaderManager() {};
+			ShaderManager() { InitializeCriticalSectionAndSpinCount(&subContextLock, 4000); };
 			~ShaderManager() {};
 
 			typedef Microsoft::WRL::ComPtr<ID3D11ComputeShader> ComputeShader;
@@ -18,20 +18,32 @@ namespace Mus {
 			typedef Microsoft::WRL::ComPtr<ID3DBlob> Blob;
 			typedef Microsoft::WRL::ComPtr<ID3D11Device> Device;
 
-			ComputeShader GetComputeShader(std::string shaderName);
-			VertexShader GetVertexShader(std::string shaderName);
-			PixelShader GetPixelShader(std::string shaderName);
+			ComputeShader GetComputeShader(ID3D11Device* device, std::string shaderName);
+			VertexShader GetVertexShader(ID3D11Device* device, std::string shaderName);
+			PixelShader GetPixelShader(ID3D11Device* device, std::string shaderName);
 
 			Blob GetComputeShaderBlob(std::string shaderName);
 			Blob GetVertexShaderBlob(std::string shaderName);
 			Blob GetPixelShaderBlob(std::string shaderName);
 
+			bool CreateDeviceContextWithSecondGPUImpl();
+			bool CreateDeviceContextWithSecondGPU();
+
 			ID3D11DeviceContext* GetContext();
 			ID3D11Device* GetDevice();
+
 			inline void ShaderContextLock() { EnterCriticalSection(reinterpret_cast<LPCRITICAL_SECTION>(&RE::BSGraphics::Renderer::GetSingleton()->GetLock())); };
 			inline void ShaderContextUnlock() { LeaveCriticalSection(reinterpret_cast<LPCRITICAL_SECTION>(&RE::BSGraphics::Renderer::GetSingleton()->GetLock())); };
 
-			void Flush();
+			ID3D11DeviceContext* GetSecondContext();
+			ID3D11Device* GetSecondDevice();
+			bool IsValidSecondGPU();
+			inline void ShaderSecondContextLock() { EnterCriticalSection(&subContextLock); };
+			inline void ShaderSecondContextUnlock() { LeaveCriticalSection(&subContextLock); };
+			inline void SetSearchSecondGPU(bool isSearch) { isSearchSecondGPU = isSearch; };
+
+			bool IsSecondGPUResource(ID3D11DeviceContext* context) { return context == secondContext_.Get(); };
+			bool IsSecondGPUResource(ID3D11Device* device) { return device == secondDevice_.Get(); };
 
 			class ShaderLockGuard {
 			public:
@@ -44,21 +56,21 @@ namespace Mus {
 
 			bool IsFailedShader(std::string shaderName);
 
-			void ResetShader() { ComputeShaders.clear(); VertexShaders.clear(); PixelShaders.clear(); Failed.clear(); };
+			void ResetShader() { computeShaders.clear(); vertexShaders.clear(); pixelShaders.clear(); failedList.clear(); };
 		private:
-			bool SaveCompiledShaderFile(Microsoft::WRL::ComPtr<ID3DBlob>& compiledShader, const std::wstring& shaderFile);
+			bool SaveCompiledShaderFile(Blob& compiledShader, const std::wstring& shaderFile);
 
-			bool LoadComputeShader(const char* shaderCode, ID3D11ComputeShader** computeShader, Microsoft::WRL::ComPtr<ID3DBlob>& shaderData);
-			bool LoadComputeShaderFile(const std::wstring& shaderFile, ID3D11ComputeShader** computeShader, Microsoft::WRL::ComPtr<ID3DBlob>& shaderData);
-			bool LoadCompiledComputeShader(const std::wstring& shaderFile, ID3D11ComputeShader** computeShader);
+			bool LoadComputeShader(ID3D11Device* device, const char* shaderCode, ID3D11ComputeShader** computeShader, Blob& shaderData);
+			bool LoadComputeShaderFile(ID3D11Device* device, const std::wstring& shaderFile, ID3D11ComputeShader** computeShader, Blob& shaderData);
+			bool LoadCompiledComputeShader(ID3D11Device* device, const std::wstring& shaderFile, ID3D11ComputeShader** computeShader);
 
-			bool LoadVertexShader(const char* shaderCode, ID3D11VertexShader** vertexShader, Microsoft::WRL::ComPtr<ID3DBlob>& shaderData);
-			bool LoadVertexShaderFile(const std::wstring& shaderFile, ID3D11VertexShader** vertexShader, Microsoft::WRL::ComPtr<ID3DBlob>& shaderData);
-			bool LoadCompiledVertexShader(const std::wstring& shaderFile, ID3D11VertexShader** vertexShader);
+			bool LoadVertexShader(ID3D11Device* device, const char* shaderCode, ID3D11VertexShader** vertexShader, Blob& shaderData);
+			bool LoadVertexShaderFile(ID3D11Device* device, const std::wstring& shaderFile, ID3D11VertexShader** vertexShader, Blob& shaderData);
+			bool LoadCompiledVertexShader(ID3D11Device* device, const std::wstring& shaderFile, ID3D11VertexShader** vertexShader);
 
-			bool LoadPixelShader(const char* shaderCode, ID3D11PixelShader** pixelShader, Microsoft::WRL::ComPtr<ID3DBlob>& shaderData);
-			bool LoadPixelShaderFile(const std::wstring& shaderFile, ID3D11PixelShader** pixelShader, Microsoft::WRL::ComPtr<ID3DBlob>& shaderData);
-			bool LoadCompiledPixelShader(const std::wstring& shaderFile, ID3D11PixelShader** pixelShader);
+			bool LoadPixelShader(ID3D11Device* device, const char* shaderCode, ID3D11PixelShader** pixelShader, Blob& shaderData);
+			bool LoadPixelShaderFile(ID3D11Device* device, const std::wstring& shaderFile, ID3D11PixelShader** pixelShader, Blob& shaderData);
+			bool LoadCompiledPixelShader(ID3D11Device* device, const std::wstring& shaderFile, ID3D11PixelShader** pixelShader);
 
 			enum ShaderType {
 				Compute,
@@ -66,22 +78,27 @@ namespace Mus {
 				Pixel
 			};
 			std::wstring GetShaderFilePath(std::string shaderName, bool compiled, ShaderType shaderType);
-			ComputeShader CreateComputeShader(std::string shaderName);
-			VertexShader CreateVertexShader(std::string shaderName);
-			PixelShader CreatePixelShader(std::string shaderName);
+			ComputeShader CreateComputeShader(ID3D11Device* device, std::string shaderName);
+			VertexShader CreateVertexShader(ID3D11Device* device, std::string shaderName);
+			PixelShader CreatePixelShader(ID3D11Device* device, std::string shaderName);
 
-			ID3D11DeviceContext* context;
-			ID3D11Device* device;
+			ID3D11DeviceContext* context_;
+			ID3D11Device* device_;
 
-			concurrency::concurrent_unordered_map<std::string, ComputeShader> ComputeShaders;
-			concurrency::concurrent_unordered_map<std::string, VertexShader> VertexShaders;
-			concurrency::concurrent_unordered_map<std::string, PixelShader> PixelShaders;
+			CRITICAL_SECTION subContextLock;
+			Microsoft::WRL::ComPtr<ID3D11DeviceContext> secondContext_;
+			Microsoft::WRL::ComPtr<ID3D11Device> secondDevice_;
+			bool isSearchSecondGPU = true;
 
-			concurrency::concurrent_unordered_map<std::string, Blob> CSBlobs;
-			concurrency::concurrent_unordered_map<std::string, Blob> VSBlobs;
-			concurrency::concurrent_unordered_map<std::string, Blob> PSBlobs;
+			concurrency::concurrent_unordered_map<std::string, ComputeShader> computeShaders;
+			concurrency::concurrent_unordered_map<std::string, VertexShader> vertexShaders;
+			concurrency::concurrent_unordered_map<std::string, PixelShader> pixelShaders;
 
-			std::unordered_set<std::string> Failed;
+			concurrency::concurrent_unordered_map<std::string, Blob> csBlobs;
+			concurrency::concurrent_unordered_map<std::string, Blob> vsBlobs;
+			concurrency::concurrent_unordered_map<std::string, Blob> psBlobs;
+
+			std::unordered_set<std::string> failedList;
 		};
 
 		class TextureLoadManager {
@@ -100,6 +117,13 @@ namespace Mus {
 			bool GetTexture2D(std::string filePath, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
 			bool GetTexture2D(std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
 			bool GetTexture2D(std::string filePath, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
+
+			bool GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, UINT newWidth, UINT newHeight, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
+			bool GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
+			bool GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
+			bool GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
+			bool GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
+
 			bool UpdateTexture(std::string filePath);
 
 			static RE::NiTexture* CreateTexture(const RE::BSFixedString& name)
@@ -149,40 +173,21 @@ namespace Mus {
 				return func(shaderProperty, unk1);
 			}
 
-			bool ConvertTexture(Microsoft::WRL::ComPtr<ID3D11Texture2D> texture, DXGI_FORMAT newFormat, UINT newWidth, UINT newHeight, DirectX::TEX_FILTER_FLAGS resizeFilter, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
-			bool CopyTexture(Microsoft::WRL::ComPtr<ID3D11Texture2D>& srcTexture, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTexture);
-			bool CompressTexture(Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTexture);
-			bool GetTextureFromFile(std::string filePath, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texture, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv);
-
+			bool ConvertTexture(ID3D11Device* device, ID3D11DeviceContext* context, Microsoft::WRL::ComPtr<ID3D11Texture2D> texture, DXGI_FORMAT newFormat, UINT newWidth, UINT newHeight, DirectX::TEX_FILTER_FLAGS resizeFilter, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
+			bool CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTexture);
+		
 			std::int8_t IsCompressFormat(DXGI_FORMAT format); // -1 non compress, 1 cpu compress, 2 gpu compress
 
 			std::int8_t CreateNiTexture(std::string name, Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTex, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> dstSRV, RE::NiPointer<RE::NiSourceTexture>& output);
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> GetNiTexture(std::string name);
 			void ReleaseNiTexture(std::string name);
+
+			bool PrintTexture(std::string filePath, ID3D11Texture2D* texture);
 		private:
-			bool ConvertD3D11(DirectX::ScratchImage& image, Microsoft::WRL::ComPtr<ID3D11Resource>& output);
+			bool ConvertD3D11(ID3D11Device* device, DirectX::ScratchImage& image, Microsoft::WRL::ComPtr<ID3D11Resource>& output);
 			bool UpdateNiTexture(std::string filePath);
 
-			struct textureData {
-				Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
-				D3D11_TEXTURE2D_DESC texDesc;
-				D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
-				struct MetaData {
-					DXGI_FORMAT newFormat;
-					UINT newWidth;
-					UINT newHeight;
-				};
-				MetaData metaData;
-			};
 			concurrency::concurrent_unordered_map<std::string, RE::NiPointer<RE::NiSourceTexture>> niTextures;
 		};
 	}
-	struct HSVA {
-		float hue = 0; // 0~360
-		float saturation = 0; // 0~100
-		float value = 100; // 0~100
-		float alpha = 100; // 0~100
-
-		static RGBA HSVAtoRGBA(HSVA hsva);
-		static HSVA RGBAtoHSVA(RGBA rgba);
-	};
 }

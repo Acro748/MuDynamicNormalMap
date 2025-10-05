@@ -99,6 +99,10 @@ namespace Mus {
             return HotKey2;
         }
 
+        [[nodiscard]] inline auto GetUseConsoleRef() const noexcept {
+            return UseConsoleRef;
+        }
+
         [[nodiscard]] inline auto GetRevertNormalMap() const noexcept {
             return RevertNormalMap;
         }
@@ -179,6 +183,9 @@ namespace Mus {
         [[nodiscard]] inline auto GetMergeTextureGPU() const noexcept {
             return MergeTextureGPU;
         }
+        [[nodiscard]] inline auto GetGPUDeviceIndex() const noexcept {
+            return GPUDeviceIndex;
+        }
         [[nodiscard]] inline auto GetWaitForRendererTickMS() const noexcept {
             return WaitForRendererTickMS;
         }
@@ -198,7 +205,7 @@ namespace Mus {
         [[nodiscard]] inline auto GetTaskQMax() const noexcept {
             return TaskQMax;
         }
-        [[nodiscard]] inline auto GetTaskQmsTick() const noexcept {
+        [[nodiscard]] inline auto GetTaskQTickMS() const noexcept {
             return TaskQTickMS;
         }
         [[nodiscard]] inline auto GetDirectTaskQ() const noexcept {
@@ -236,7 +243,7 @@ namespace Mus {
             TaskQMax = newTaskQMax;
             logger::info("Set TaskQMax {}", newTaskQMax);
         }
-        inline void SetTaskQTickMS(std::uint8_t newTaskQTick) {
+        inline void SetTaskQTickMS(std::clock_t newTaskQTick) {
             TaskQTickMS = newTaskQTick;
             logger::info("Set TaskQTickMS {}", newTaskQTick);
         }
@@ -282,6 +289,8 @@ namespace Mus {
         std::uint32_t HotKey1 = 0;
         std::uint32_t HotKey2 = 43;
 
+        bool UseConsoleRef = true;
+
         bool RevertNormalMap = false;
 
         std::uint8_t UpdateDelayTick = 1;
@@ -315,6 +324,7 @@ namespace Mus {
         bool GPUEnable = true;
         bool TextureMarginGPU = true;
         bool MergeTextureGPU = true;
+        std::int32_t GPUDeviceIndex = -1;
         std::clock_t WaitForRendererTickMS = 1000; //1sec
         float UpdateDistance = 4096.0f * 4096.0f;
         bool UpdateDistanceVramSave = false;
@@ -322,11 +332,11 @@ namespace Mus {
 
         std::uint8_t AutoTaskQ = AutoTaskQList::Disable;
         std::uint8_t TaskQMax = 1;
-        std::clock_t TaskQTickMS = 13;
+        std::clock_t TaskQTickMS = 100;
         bool DirectTaskQ = false;
         std::uint8_t DivideTaskQ = 1;
         bool VRAMSaveMode = false;
-        std::uint8_t TextureCompress = 0; //0 no compress, 1 dxt5, 2 bc7
+        std::int8_t TextureCompress = 0; //-1 auto compress, 0 no compress, 1 dxt5, 2 bc7
 
         //RealtimeDetect
         bool RealtimeDetect = true;

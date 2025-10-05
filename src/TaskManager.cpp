@@ -506,7 +506,8 @@ namespace Mus {
 							return RE::BSVisit::BSVisitControl::kContinue;
 
 						found = std::find_if(textures.begin(), textures.end(), [&](ObjectNormalMapUpdater::NormalMapResult normalmap) {
-							return normalmap.slot == slot;
+							return normalmap.slot == slot &&
+								!IsContainString(normalmap.geoName, "Vagina") && !IsContainString(normalmap.geoName, "Anus") && !IsContainString(normalmap.geoName, "Canal");
 						});
 					}
 					else
@@ -517,7 +518,7 @@ namespace Mus {
 					}
 					if (found == textures.end())
 						return RE::BSVisit::BSVisitControl::kContinue;
-					if (!found->normalmapTexture2D || !found->normalmapShaderResourceView)
+					if (!found->texture || !found->texture->normalmapTexture2D || !found->texture->normalmapShaderResourceView)
 						return RE::BSVisit::BSVisitControl::kContinue;
 					auto effect = geo->GetGeometryRuntimeData().properties[State::kEffect].get();
 					if (!effect)
@@ -535,12 +536,17 @@ namespace Mus {
 					}
 					else
 					{
-						if (Shader::TextureLoadManager::GetSingleton().CreateNiTexture(found->textureName, found->normalmapTexture2D, found->normalmapShaderResourceView, normalmap) < 0)
+						if (Shader::TextureLoadManager::GetSingleton().CreateNiTexture(found->textureName, found->texture->normalmapTexture2D, found->texture->normalmapShaderResourceView, normalmap) < 0)
 						{
 							logger::error("{:x}::{}::{} : Failed to create NiTexture", a_actorID, a_actorName, geo->name.c_str());
 							return RE::BSVisit::BSVisitControl::kContinue;
 						}
 						createdTextures.insert(std::make_pair(found->textureName, normalmap));
+						if (Config::GetSingleton().GetLogLevel() <= spdlog::level::level_enum::debug)
+						{
+							TextureLog(found->texture->normalmapTexture2D.Get());
+							TextureLog(found->texture->normalmapShaderResourceView.Get());
+						}
 					}
 
 					if (Config::GetSingleton().GetDebugTexture())
@@ -918,7 +924,11 @@ namespace Mus {
 						if (isPressedHotKey1 || Config::GetSingleton().GetHotKey1() == 0)
 						{
 							RE::Actor* target = nullptr;
-							if (auto crossHair = RE::CrosshairPickData::GetSingleton(); crossHair && crossHair->targetActor)
+							if (auto consoleRef = RE::Console::GetSelectedRef(); consoleRef && Config::GetSingleton().GetUseConsoleRef())
+							{
+								auto target = consoleRef.get();
+							}
+							else if (auto crossHair = RE::CrosshairPickData::GetSingleton(); crossHair && crossHair->targetActor)
 							{
 #ifndef ENABLE_SKYRIM_VR
 								target = skyrim_cast<RE::Actor*>(crossHair->targetActor.get().get());
@@ -958,6 +968,75 @@ namespace Mus {
 						RE::DebugNotification("MDNM : Reload done");
 						logger::info("Reload done");
 						isResetTasks = true;
+					}
+				}
+				else if (keyCode == 29) //ctrl
+				{
+					if (Config::GetSingleton().GetLogLevel() >= 2)
+						continue;
+					if (button->IsDown())
+					{
+						isPressedExportHotkey1 = true;
+					}
+					else if (button->IsUp())
+					{
+						isPressedExportHotkey1 = false;
+					}
+				}
+				else if (keyCode == 88) //F12
+				{
+					if (button->IsUp() && isPressedExportHotkey1)
+					{
+						logger::info("Print textures...");
+						RE::Actor* target = nullptr;
+						if (auto consoleRef = RE::Console::GetSelectedRef(); consoleRef && Config::GetSingleton().GetUseConsoleRef())
+						{
+							target = skyrim_cast<RE::Actor*>(consoleRef.get());
+						}
+						if (auto crossHair = RE::CrosshairPickData::GetSingleton(); !target && crossHair && crossHair->targetActor)
+						{
+#ifndef ENABLE_SKYRIM_VR
+							target = skyrim_cast<RE::Actor*>(crossHair->targetActor.get().get());
+#else
+							for (std::uint32_t i = 0; i < RE::VRControls::VR_DEVICE::kTotal; i++)
+							{
+								target = skyrim_cast<RE::Actor*>(crossHair->targetActor[i].get().get());
+								if (target)
+									break;
+							}
+#endif
+						}
+						if (!target)
+							target = RE::PlayerCharacter::GetSingleton();
+
+						lastNormalMapLock.lock_shared();
+						auto found = lastNormalMap.find(target->formID);
+						auto map = found != lastNormalMap.end() ? found->second : concurrency::concurrent_unordered_map<SlotTexKey, std::string, SlotTexHash>();
+						lastNormalMapLock.unlock_shared();
+
+						for (auto& pair : map)
+						{
+							auto texture = Shader::TextureLoadManager::GetSingleton().GetNiTexture(pair.second);
+							if (!texture)
+								continue;
+
+							TextureInfo info;
+							if (!GetTextureInfo(pair.second, info))
+								continue;
+
+							auto texturePath = stringRemoveEnds(info.texturePath, ".dds");
+							texturePath = texturePath + "_" + SetHex(info.actorID, false) + "_" + std::to_string(info.bipedSlot) + ".dds";;
+
+							if (!stringStartsWith(texturePath, "Textures\\"))
+								texturePath = GetRuntimeTexturesDirectory() + texturePath;
+							else if (stringStartsWith(texturePath, "Data\\"))
+								texturePath = GetRuntimeDataDirectory() + texturePath;
+
+							std::thread([&]() {
+								if (Shader::TextureLoadManager::GetSingleton().PrintTexture(texturePath, texture.Get()))
+									logger::info("Print texture done : {}", texturePath);
+							}).detach();
+						}
 					}
 				}
 			}

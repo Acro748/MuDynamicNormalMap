@@ -6,7 +6,7 @@ message("Using toolchain file ${CMAKE_TOOLCHAIN_FILE}.")
 ########################################################################################################################
 project(
         MuDynamicNormalMap
-        VERSION 1.4.4
+        VERSION 2.0.0
         DESCRIPTION "MuDynamicNormalMap by Acro."
         LANGUAGES CXX
 )
@@ -39,14 +39,12 @@ set(headers
         include/ThreadPool.h
         include/MiniBenchMark.h
         include/ActorVertexHasher.h
-        include/bc7enc_rdo/bc7enc.h
         include/Condition.h
         include/Interface/Interface.h
         include/Interface/InterfaceImpl.h
 )
 
 set(sources
-        include/bc7enc_rdo/bc7enc.cpp
         src/nifUtil.cpp
         src/Config.cpp
         src/PapyrusScripts.cpp
@@ -126,6 +124,7 @@ target_link_libraries(
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/vcpkg_installed/x64-windows-static-md/lib/xxhash.lib>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/vcpkg_installed/x64-windows-static-md/lib/detours.lib>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/vcpkg_installed/x64-windows-static-md/lib/DirectXTex.lib>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/vcpkg_installed/x64-windows-static-md/lib/DirectXTex.lib>
 )
 
 target_precompile_headers(
@@ -145,7 +144,6 @@ install(TARGETS ${PROJECT_NAME}
 set(compute_shader_sources 
    ${CMAKE_CURRENT_SOURCE_DIR}/shader/UpdateNormalMap.hlsl
    ${CMAKE_CURRENT_SOURCE_DIR}/shader/BleedTexture.hlsl
-   ${CMAKE_CURRENT_SOURCE_DIR}/shader/TexturePostProcessing.hlsl
    ${CMAKE_CURRENT_SOURCE_DIR}/shader/MiniBenchmark.hlsl
    ${CMAKE_CURRENT_SOURCE_DIR}/shader/MergeTexture.hlsl
 )

@@ -30,14 +30,13 @@ namespace Mus {
         MultiByteToWideChar(CP_UTF8, 0, str.c_str(), str.length(), &wstr[0], wlen);
         return wstr;
     }
-    inline std::string wstring2string(const std::wstring& wstr)
+    inline std::string wstring2string(const std::wstring& wstr, UINT codePage = CP_UTF8)
     {
         if (wstr.empty())
             return "";
-        int len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), wstr.length(), NULL, 0, NULL, NULL);
+        int len = WideCharToMultiByte(codePage, 0, wstr.c_str(), wstr.length(), NULL, 0, NULL, NULL);
         std::string str(len, '\0');
-        WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), wstr.length(), &str[0], len, NULL, NULL);
-        str[len] = '\0';
+        WideCharToMultiByte(codePage, 0, wstr.c_str(), wstr.length(), &str[0], len, NULL, NULL);
         return str;
     }
 
@@ -236,7 +235,7 @@ namespace Mus {
 
     inline bool IsEqual(float a_value, float b_value)
     {
-        return (a_value - b_value) >= -0.0001f && (a_value - b_value) <= 0.0001f;
+        return (a_value - b_value) >= -floatPrecision && (a_value - b_value) <= floatPrecision;
     }
     inline bool IsEqual(RE::NiPoint3 a_value, RE::NiPoint3 b_value)
     {
@@ -343,7 +342,7 @@ namespace Mus {
     {
         path = lowLetter(path);
         std::filesystem::path filePath = string2wstring(path);
-        return Replace(wstring2string(filePath.make_preferred().wstring()), R"([\\/]+)", "\\");
+        return std::regex_replace(wstring2string(filePath.make_preferred().wstring()), std::regex(R"([\\/]+)"), R"(\)");
     }
 
     inline RE::NiStream* NiStreamCtor(RE::NiStream* stream)
@@ -753,7 +752,7 @@ namespace Mus {
 				funcAverageArgs[funcStr] += args;
 				if (funcAverageCount[funcStr] >= 100)
                 {
-					auto average = funcAverageTime[funcStr] / funcAverageCount[funcStr];
+					auto average = (double)funcAverageTime[funcStr] / funcAverageCount[funcStr];
                     auto unit = "ns";
                     double duration = 0;
                     if (average >= 1000000)
@@ -768,16 +767,16 @@ namespace Mus {
 						tick /= 1000;
                         unit = "us";
 					}
-					logger::info("{} average time: {}{}{}=> {:.6f}%", funcStr, average, unit,
+					logger::info("{} average time: {}{}{}=> {:.6f}%", funcStr, duration, unit,
                                  funcAverageArgs[funcStr] > 0 ? (std::string(" with average count ") + std::to_string(funcAverageArgs[funcStr] / funcAverageCount[funcStr]) + " ") : " ",
-                                 (double)average / tick * 100);
+                                 (double)duration / tick * 100);
                     if (PerformanceCheckConsolePrint)
                     {
                         auto Console = RE::ConsoleLog::GetSingleton();
                         if (Console)
-                            Console->Print("%s average time: %lld%s%s=> %.6f%%", funcStr.c_str(), average, unit,
+                            Console->Print("%s average time: %lld%s%s=> %.6f%%", funcStr.c_str(), duration, unit,
                                            funcAverageArgs[funcStr] > 0 ? (std::string(" with average count ") + std::to_string(funcAverageArgs[funcStr] / funcAverageCount[funcStr]) + " ").c_str() : " ",
-                                           (double)average / tick * 100);
+                                           (double)duration / tick * 100);
                     }
                     funcAverageTime[funcStr] = 0;
                     funcAverageCount[funcStr] = 0;
@@ -853,5 +852,28 @@ namespace Mus {
             }
         }
         return slots;
+    }
+
+    inline void TextureLog(ID3D11Texture2D* texture)
+    {
+        if (!texture)
+            return;
+        D3D11_TEXTURE2D_DESC desc;
+        texture->GetDesc(&desc);
+        logger::info("Texture Desc : Width={} Height={} MipLevels={} ArraySize={} Format={} SampleDesc.Count={} SampleDesc.Quality={} Usage={} BindFlags={} CPUAccessFlags={} MiscFlags={}",
+                     desc.Width, desc.Height, desc.MipLevels, desc.ArraySize, magic_enum::enum_name(desc.Format).data(), desc.SampleDesc.Count, desc.SampleDesc.Quality,
+                     magic_enum::enum_name(desc.Usage).data(), desc.BindFlags, desc.CPUAccessFlags, desc.MiscFlags);
+    }
+
+    inline void TextureLog(ID3D11ShaderResourceView* srv)
+    {
+        if (!srv)
+            return;
+        D3D11_SHADER_RESOURCE_VIEW_DESC desc;
+        srv->GetDesc(&desc);
+        logger::info("SRV Desc : Format={} ViewDimension={} MostDetailedMip={} MipLevels={} FirstArraySlice={} ArraySize={}",
+                     magic_enum::enum_name(desc.Format).data(), magic_enum::enum_name(desc.ViewDimension).data(),
+                     desc.Texture2D.MostDetailedMip, desc.Texture2D.MipLevels,
+                     desc.Texture2DArray.FirstArraySlice, desc.Texture2DArray.ArraySize);
     }
 }

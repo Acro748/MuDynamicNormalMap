@@ -125,7 +125,7 @@ namespace Mus {
             return -1.0f;
         }
 
-		auto shader = Shader::ShaderManager::GetSingleton().GetComputeShader("MiniBenchmark");
+		auto shader = Shader::ShaderManager::GetSingleton().GetComputeShader(Shader::ShaderManager::GetSingleton().GetDevice(), "MiniBenchmark");
         if (!shader)
         {
             logger::error("{} : Invalid shader", __func__);
