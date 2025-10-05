@@ -1,6 +1,8 @@
 #pragma once
 #define NOMINMAX
 
+#define _WIN32_WINNT _WIN32_WINNT_WIN10
+
 #include <RE/Skyrim.h>
 #include <SKSE/SKSE.h>
 #include <REL/Relocation.h>
@@ -48,9 +50,13 @@
 #include <deque>
 #include <direct.h>
 #include <d3dcompiler.h>
+#pragma comment(lib, "d3dcompiler.lib")
 #include <DirectXMath.h>
 #include <DirectXTex.h>
-#pragma comment(lib, "d3dcompiler.lib")
+#include <dxcore_interface.h>
+#include <dxcore.h>
+#pragma comment(lib, "dxcore.lib")
+#include <dxgi1_4.h>
 #include <exception>
 #include <execution>
 #include <filesystem>

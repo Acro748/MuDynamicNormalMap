@@ -194,6 +194,10 @@ namespace Mus {
                 {
                     HotKey2 = GetUIntValue(variableValue);
                 }
+                else if (variableName == "UseConsoleRef")
+                {
+                    UseConsoleRef = GetBoolValue(variableValue);
+                }
                 else if (variableName == "RevertNormalMap")
                 {
                     RevertNormalMap = GetBoolValue(variableValue);
@@ -219,11 +223,11 @@ namespace Mus {
             {
                 if (variableName == "WeldDistance")
                 {
-                    WeldDistance = std::max(GetFloatValue(variableValue), 0.0001f);
+                    WeldDistance = std::max(GetFloatValue(variableValue), floatPrecision);
                 }
                 else if (variableName == "BoundaryWeldDistance")
                 {
-                    BoundaryWeldDistance = std::max(GetFloatValue(variableValue), 0.0001f);
+                    BoundaryWeldDistance = std::max(GetFloatValue(variableValue), floatPrecision);
                 }
                 else if (variableName == "NormalSmoothDegree")
                 {
@@ -299,6 +303,10 @@ namespace Mus {
                 {
                     MergeTextureGPU = GetBoolValue(variableValue);
                 }
+                else if (variableName == "GPUDeviceIndex")
+                {
+                    GPUDeviceIndex = GetIntValue(variableValue);
+                }
                 else if (variableName == "WaitForRendererTickMS")
                 {
                     WaitForRendererTickMS = GetUIntValue(variableValue);
@@ -342,7 +350,7 @@ namespace Mus {
                 }
                 else if (variableName == "TextureCompress")
                 {
-                    TextureCompress = GetUIntValue(variableValue);
+                    TextureCompress = GetIntValue(variableValue);
                 }
             }
             else if (currentSetting == "[RealtimeDetect]")
@@ -496,102 +504,113 @@ namespace Mus {
 
     void InitialSetting()
     {
-        std::uint32_t actorThreads = 2;
-        std::uint32_t memoryManageThreads = 3;
-        std::uint32_t processingThreads = std::thread::hardware_concurrency();
-        if (Mus::Config::GetSingleton().GetAutoTaskQ() > 0)
+        Shader::ShaderManager::GetSingleton().SetSearchSecondGPU(Config::GetSingleton().GetGPUDeviceIndex() != 0);
+        ObjectNormalMapUpdater::GetSingleton().ClearGeometryResourceData();
+
+        bool isSecondGPUEnabled = Config::GetSingleton().GetGPUDeviceIndex() != 0 && Shader::ShaderManager::GetSingleton().IsValidSecondGPU();
+
+        std::uint32_t actorThreadCount = 2;
+        std::uint32_t memoryManageThreadCount = 2;
+        std::uint32_t updateThreadCount = 2;
+        std::uint32_t processingThreadCount = std::thread::hardware_concurrency();
+        if (Config::GetSingleton().GetAutoTaskQ() > 0)
         {
-            //float benchMarkResult = Mus::miniBenchMark();
+            //float benchMarkResult = miniBenchMark();
             //55~high-end, 35~middle-end, 15~low-end
             //logger::info("CPU bench mark score : {}", (std::uint32_t)benchMarkResult);
             //float CPUPerformanceMult = std::max(1.0f, 55.0f / benchMarkResult);
-            float gpuBenchMarkResult = Mus::miniBenchMarkGPU();
-            float GPUPerformanceMult = 1.0f;
-            if (gpuBenchMarkResult < 0.0f) {
-            }
-            else
-            {
-                //500 middle-end
-                logger::info("GPU bench mark score : {}", (std::int32_t)gpuBenchMarkResult);
-                GPUPerformanceMult = std::max(1.0f, 500.0f / gpuBenchMarkResult);
-            }
+            //float gpuBenchMarkResult = miniBenchMarkGPU();
+            //float GPUPerformanceMult = 1.0f;
+            //if (gpuBenchMarkResult > 0.0f) {
+            //    //500 middle-end
+            //    logger::info("GPU bench mark score : {}", (std::int32_t)gpuBenchMarkResult);
+            //    GPUPerformanceMult = 500.0f / gpuBenchMarkResult;
+            //}
 
-            switch (Mus::Config::GetSingleton().GetAutoTaskQ()) {
-            case Mus::Config::AutoTaskQList::Fastest:
-                Mus::Config::GetSingleton().SetTaskQMax(2);
-                Mus::Config::GetSingleton().SetTaskQTickMS(0);
-                Mus::Config::GetSingleton().SetDirectTaskQ(true);
-                Mus::Config::GetSingleton().SetDivideTaskQ(0);
-                Mus::Config::GetSingleton().SetVRAMSaveMode(false);
-                actorThreads = 2;
-                memoryManageThreads = 2;
+            switch (Config::GetSingleton().GetAutoTaskQ()) {
+            case Config::AutoTaskQList::Fastest:
+                Config::GetSingleton().SetTaskQMax(2);
+                taskQTickMS = 0;
+                Config::GetSingleton().SetDirectTaskQ(true);
+                Config::GetSingleton().SetDivideTaskQ(0);
+                Config::GetSingleton().SetVRAMSaveMode(false);
+                actorThreadCount = 2;
+                waitSleepTime = std::chrono::microseconds(100);
                 break;
-            case Mus::Config::AutoTaskQList::Faster:
-                Mus::Config::GetSingleton().SetTaskQMax(1);
-                Mus::Config::GetSingleton().SetTaskQTickMS(0);
-                Mus::Config::GetSingleton().SetDirectTaskQ(false);
-                Mus::Config::GetSingleton().SetDivideTaskQ(0);
-                Mus::Config::GetSingleton().SetVRAMSaveMode(false);
-                actorThreads = 1;
-                memoryManageThreads = 1;
+            case Config::AutoTaskQList::Faster:
+                Config::GetSingleton().SetTaskQMax(1);
+                taskQTickMS = Config::GetSingleton().GetTaskQTickMS()/* * GPUPerformanceMult*/;
+                Config::GetSingleton().SetDirectTaskQ(false);
+                Config::GetSingleton().SetDivideTaskQ(0);
+                Config::GetSingleton().SetVRAMSaveMode(false);
+                actorThreadCount = 2;
+                waitSleepTime = std::chrono::microseconds(500);
                 break;
-            case Mus::Config::AutoTaskQList::Balanced:
-                Mus::Config::GetSingleton().SetTaskQMax(1);
-                Mus::Config::GetSingleton().SetTaskQTickMS(Mus::TaskQTickBase * GPUPerformanceMult);
-                Mus::Config::GetSingleton().SetDirectTaskQ(false);
-                Mus::Config::GetSingleton().SetDivideTaskQ(0);
-                Mus::Config::GetSingleton().SetVRAMSaveMode(true);
-                actorThreads = 1;
-                memoryManageThreads = 1;
+            case Config::AutoTaskQList::Balanced:
+                Config::GetSingleton().SetTaskQMax(1);
+                taskQTickMS = Config::GetSingleton().GetTaskQTickMS()/* * GPUPerformanceMult*/;
+                Config::GetSingleton().SetDirectTaskQ(false);
+                Config::GetSingleton().SetDivideTaskQ(0);
+                Config::GetSingleton().SetVRAMSaveMode(true);
+                actorThreadCount = 1;
+                waitSleepTime = std::chrono::microseconds(1000);
                 break;
-            case Mus::Config::AutoTaskQList::BetterPerformance:
-                Mus::Config::GetSingleton().SetTaskQMax(1);
-                Mus::Config::GetSingleton().SetTaskQTickMS(Mus::TaskQTickBase * GPUPerformanceMult);
-                Mus::Config::GetSingleton().SetDirectTaskQ(false);
-                Mus::Config::GetSingleton().SetDivideTaskQ(2);
-                Mus::Config::GetSingleton().SetVRAMSaveMode(true);
-                actorThreads = 1;
-                memoryManageThreads = 1;
+            case Config::AutoTaskQList::BetterPerformance:
+                Config::GetSingleton().SetTaskQMax(1);
+                taskQTickMS = Config::GetSingleton().GetTaskQTickMS()/* * GPUPerformanceMult*/;
+                Config::GetSingleton().SetDirectTaskQ(false);
+                Config::GetSingleton().SetDivideTaskQ(1);
+                Config::GetSingleton().SetVRAMSaveMode(true);
+                actorThreadCount = 1;
+                waitSleepTime = std::chrono::microseconds(1000);
                 break;
-            case Mus::Config::AutoTaskQList::BestPerformance:
-                Mus::Config::GetSingleton().SetTaskQMax(1);
-                Mus::Config::GetSingleton().SetTaskQTickMS(Mus::TaskQTickBase * GPUPerformanceMult * 2);
-                Mus::Config::GetSingleton().SetDirectTaskQ(false);
-                Mus::Config::GetSingleton().SetDivideTaskQ(2);
-                Mus::Config::GetSingleton().SetVRAMSaveMode(true);
-                actorThreads = 1;
-                memoryManageThreads = 1;
+            case Config::AutoTaskQList::BestPerformance:
+                Config::GetSingleton().SetTaskQMax(1);
+                taskQTickMS = Config::GetSingleton().GetTaskQTickMS()/* * GPUPerformanceMult * 2*/;
+                Config::GetSingleton().SetDirectTaskQ(false);
+                Config::GetSingleton().SetDivideTaskQ(2);
+                Config::GetSingleton().SetVRAMSaveMode(true);
+                actorThreadCount = 1;
+                waitSleepTime = std::chrono::microseconds(1000);
                 break;
             default:
                 break;
             }
         }
 
-        Mus::gpuTask = std::make_unique<Mus::ThreadPool_GPUTaskModule>(0, Mus::Config::GetSingleton().GetDirectTaskQ(), Mus::Config::GetSingleton().GetTaskQMax());
-        Mus::g_frameEventDispatcher.addListener(Mus::gpuTask.get());
+        if (!isSecondGPUEnabled)
+            Config::GetSingleton().SetVRAMSaveMode(false);
 
-        Mus::actorThreads = std::make_unique<Mus::ThreadPool_ParallelModule>(actorThreads);
-        logger::info("set actorThreads {}", actorThreads);
+        gpuTask = std::make_unique<ThreadPool_GPUTaskModule>(0, Config::GetSingleton().GetDirectTaskQ(), taskQTickMS);
+        g_frameEventDispatcher.addListener(gpuTask.get());
 
-        Mus::memoryManageThreads = std::make_unique<Mus::ThreadPool_ParallelModule>(memoryManageThreads);
-        logger::info("set memoryManageThreads {}", memoryManageThreads);
+        if (isSecondGPUEnabled)
+            actorThreadCount = 2;
+        actorThreads = std::make_unique<ThreadPool_ParallelModule>(actorThreadCount);
+        logger::info("set actorThreads {}", actorThreadCount);
 
-        Mus::processingThreads = std::make_unique<Mus::ThreadPool_ParallelModule>(processingThreads);
-        logger::info("set processingThreads {}", processingThreads);
+        memoryManageThreads = std::make_unique<ThreadPool_ParallelModule>(memoryManageThreadCount);
+        logger::info("set memoryManageThreads {}", memoryManageThreadCount);
 
-        Mus::weldDistance = std::max(0.0001f, Mus::Config::GetSingleton().GetWeldDistance());
-        Mus::weldDistanceMult = 1.0f / Mus::weldDistance;
+        updateThreads = nullptr;
+        if (isSecondGPUEnabled)
+            updateThreads = std::make_unique<ThreadPool_ParallelModule>(updateThreadCount);
 
-        Mus::boundaryWeldDistance = std::max(0.0001f, Mus::Config::GetSingleton().GetBoundaryWeldDistance());
-        Mus::boundaryWeldDistanceMult = 1.0f / Mus::boundaryWeldDistance;
+        processingThreads = std::make_unique<ThreadPool_ParallelModule>(processingThreadCount);
+        logger::info("set processingThreads {}", processingThreadCount);
 
-        if (Mus::Config::GetSingleton().GetRealtimeDetectOnBackGround())
+        weldDistance = std::max(floatPrecision, Config::GetSingleton().GetWeldDistance());
+        weldDistanceMult = 1.0f / weldDistance;
+
+        boundaryWeldDistance = std::max(floatPrecision, Config::GetSingleton().GetBoundaryWeldDistance());
+        boundaryWeldDistanceMult = 1.0f / boundaryWeldDistance;
+
+        if (Config::GetSingleton().GetRealtimeDetectOnBackGround())
         {
-            Mus::g_armorAttachEventEventDispatcher.addListener(&Mus::ActorVertexHasher::GetSingleton());
-            Mus::g_facegenNiNodeEventDispatcher.addListener(&Mus::ActorVertexHasher::GetSingleton());
-            Mus::g_actorChangeHeadPartEventDispatcher.addListener(&Mus::ActorVertexHasher::GetSingleton());
-            Mus::ActorVertexHasher::GetSingleton().Init();
+            g_armorAttachEventEventDispatcher.addListener(&ActorVertexHasher::GetSingleton());
+            g_facegenNiNodeEventDispatcher.addListener(&ActorVertexHasher::GetSingleton());
+            g_actorChangeHeadPartEventDispatcher.addListener(&ActorVertexHasher::GetSingleton());
+            ActorVertexHasher::GetSingleton().Init();
         }
     }
 }
-

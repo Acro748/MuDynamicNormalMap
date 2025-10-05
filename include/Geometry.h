@@ -21,22 +21,22 @@ namespace Mus {
 			GeometryInfo info;
 			std::size_t vertexStart = 0;
 			std::size_t vertexEnd = 0;
-			std::size_t vertexCount() { return vertexEnd - vertexStart; }
+			std::size_t vertexCount() const { return vertexEnd - vertexStart; }
 			std::size_t uvStart = 0;
 			std::size_t uvEnd = 0;
-			std::size_t uvCount() { return uvEnd - uvStart; }
+			std::size_t uvCount() const { return uvEnd - uvStart; }
 			std::size_t normalStart = 0;
 			std::size_t normalEnd = 0;
-			std::size_t normalCount() { return normalEnd - normalStart; }
+			std::size_t normalCount() const { return normalEnd - normalStart; }
 			std::size_t tangentStart = 0;
 			std::size_t tangentEnd = 0;
-			std::size_t tangentCount() { return tangentEnd - tangentStart; }
+			std::size_t tangentCount() const { return tangentEnd - tangentStart; }
 			std::size_t bitangentStart = 0;
 			std::size_t bitangentEnd = 0;
-			std::size_t bitangentCount() { return bitangentEnd - bitangentStart; }
+			std::size_t bitangentCount() const { return bitangentEnd - bitangentStart; }
 			std::size_t indicesStart = 0;
 			std::size_t indicesEnd = 0;
-			std::size_t indicesCount() { return indicesEnd - indicesStart; }
+			std::size_t indicesCount() const { return indicesEnd - indicesStart; }
 			std::vector<std::uint8_t> geometryBlockData;
 			std::vector<RE::NiPoint3> dynamicBlockData1; //without expression
 			std::vector<DirectX::XMFLOAT4> dynamicBlockData2; //with expression

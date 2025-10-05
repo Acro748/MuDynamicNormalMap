@@ -18,7 +18,7 @@ namespace Mus {
 				return std::ranges::any_of(AND, [&](auto& OR)
 					{
 						bool isTrue = OR.NOT ? !OR.conditionFunction->Condition(a_actor) : OR.conditionFunction->Condition(a_actor);
-						if (Config::GetSingleton().GetLogLevel() < 2)
+						if (Config::GetSingleton().GetLogLevel() <= spdlog::level::level_enum::debug)
 							Logging(a_actor, OR, isTrue);
 						return isTrue;
 					}

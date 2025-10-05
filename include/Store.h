@@ -30,13 +30,14 @@ namespace Mus {
 	constexpr float TimeTick60 = 1.0f / 60.0f;
 	constexpr float TimeTick60msec = TimeTick60 * 1000;
 
-	constexpr float TaskQTickBase = 20.0f;
+	extern std::clock_t taskQTickMS;
 
 	constexpr float floatPrecision = 1e-6f;
 	extern float weldDistance;
 	extern float weldDistanceMult;
 	extern float boundaryWeldDistance;
 	extern float boundaryWeldDistanceMult;
+	extern std::chrono::microseconds waitSleepTime;
 
 	constexpr std::uint32_t pixelGroup = 2048 * 2048;
 }

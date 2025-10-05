@@ -13,8 +13,11 @@ namespace Mus {
 
 	std::clock_t currentTime = 0;
 
+	std::clock_t taskQTickMS = 100.0f;
+
 	float weldDistance = 0.0001f;
 	float weldDistanceMult = 10000;
 	float boundaryWeldDistance = 0.0001f;
 	float boundaryWeldDistanceMult = 10000;
+	std::chrono::microseconds waitSleepTime = std::chrono::microseconds(1000);
 }

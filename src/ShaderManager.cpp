@@ -4,7 +4,7 @@ namespace Mus {
 	namespace Shader {
 		bool ShaderManager::IsFailedShader(std::string shaderName)
 		{
-			return Failed.find(lowLetter(shaderName)) != Failed.end();
+			return failedList.find(lowLetter(shaderName)) != failedList.end();
 		}
 
 		bool ShaderManager::SaveCompiledShaderFile(Blob& compiledShader, const std::wstring& shaderFile)
@@ -23,9 +23,9 @@ namespace Mus {
 			return true;
 		}
 
-		bool ShaderManager::LoadComputeShader(const char* shaderCode, ID3D11ComputeShader** computeShader, Blob& shaderData)
+		bool ShaderManager::LoadComputeShader(ID3D11Device* device, const char* shaderCode, ID3D11ComputeShader** computeShader, Blob& shaderData)
 		{
-			if (!GetDevice() || !shaderCode || std::strlen(shaderCode) == 0)
+			if (!device || !shaderCode || std::strlen(shaderCode) == 0)
 				return false;
 			Blob errorBlob;
 			HRESULT hr = D3DCompile(shaderCode, std::strlen(shaderCode), nullptr, nullptr, nullptr, "CSMain", "cs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, shaderData.ReleaseAndGetAddressOf(), &errorBlob);
@@ -33,16 +33,16 @@ namespace Mus {
 				logger::error("Failed to compile shader {} : {}", hr, errorBlob ? errorBlob->GetBufferPointer() : "Unknown Error");
 				return false;
 			}
-			hr = GetDevice()->CreateComputeShader(shaderData->GetBufferPointer(), shaderData->GetBufferSize(), nullptr, computeShader);
+			hr = device->CreateComputeShader(shaderData->GetBufferPointer(), shaderData->GetBufferSize(), nullptr, computeShader);
 			if (FAILED(hr)) {
 				logger::error("Failed to compile shader {}", hr);
 				return false;
 			}
 			return true;
 		}
-		bool ShaderManager::LoadComputeShaderFile(const std::wstring& shaderFile, ID3D11ComputeShader** computeShader, Blob& shaderData)
+		bool ShaderManager::LoadComputeShaderFile(ID3D11Device* device, const std::wstring& shaderFile, ID3D11ComputeShader** computeShader, Blob& shaderData)
 		{
-			if (!GetDevice() || shaderFile.empty())
+			if (!device || shaderFile.empty())
 				return false;
 			Blob errorBlob;
 			HRESULT hr = D3DCompileFromFile(shaderFile.c_str(), nullptr, nullptr, "CSMain", "cs_5_0", 0, 0, shaderData.ReleaseAndGetAddressOf(), nullptr);
@@ -51,7 +51,7 @@ namespace Mus {
 				logger::error("Failed to compile shader {} : {}", hr, errorBlob ? errorBlob->GetBufferPointer() : "Unknown Error");
 				return false;
 			}
-			hr = GetDevice()->CreateComputeShader(shaderData->GetBufferPointer(), shaderData->GetBufferSize(), nullptr, computeShader);
+			hr = device->CreateComputeShader(shaderData->GetBufferPointer(), shaderData->GetBufferSize(), nullptr, computeShader);
 			if (FAILED(hr))
 			{
 				logger::error("Failed to create shader {}", hr);
@@ -59,9 +59,9 @@ namespace Mus {
 			}
 			return true;
 		}
-		bool ShaderManager::LoadCompiledComputeShader(const std::wstring& shaderFile, ID3D11ComputeShader** computeShader)
+		bool ShaderManager::LoadCompiledComputeShader(ID3D11Device* device, const std::wstring& shaderFile, ID3D11ComputeShader** computeShader)
 		{
-			if (!GetDevice() || shaderFile.empty())
+			if (!device || shaderFile.empty())
 				return false;
 			std::ifstream file(shaderFile, std::ios::binary);
 			if (!file.is_open()) {
@@ -73,7 +73,7 @@ namespace Mus {
 			std::vector<char> shaderData(fileSize);
 			file.read(shaderData.data(), fileSize);
 			file.close();
-			HRESULT hr = GetDevice()->CreateComputeShader(shaderData.data(), fileSize, nullptr, computeShader);
+			HRESULT hr = device->CreateComputeShader(shaderData.data(), fileSize, nullptr, computeShader);
 			if (FAILED(hr)) {
 				logger::error("Failed to create shader {}", hr);
 				return false;
@@ -81,9 +81,9 @@ namespace Mus {
 			return true;
 		}
 
-		bool ShaderManager::LoadVertexShader(const char* shaderCode, ID3D11VertexShader** vertexShader, Blob& shaderData)
+		bool ShaderManager::LoadVertexShader(ID3D11Device* device, const char* shaderCode, ID3D11VertexShader** vertexShader, Blob& shaderData)
 		{
-			if (!GetDevice() || !shaderCode || std::strlen(shaderCode) == 0)
+			if (!device || !shaderCode || std::strlen(shaderCode) == 0)
 				return false;
 			Blob errorBlob;
 			HRESULT hr = D3DCompile(shaderCode, std::strlen(shaderCode), nullptr, nullptr, nullptr, "VSMain", "vs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, shaderData.ReleaseAndGetAddressOf(), &errorBlob);
@@ -91,16 +91,16 @@ namespace Mus {
 				logger::error("Failed to compile shader {} : {}", hr, errorBlob ? errorBlob->GetBufferPointer() : "Unknown Error");
 				return false;
 			}
-			hr = GetDevice()->CreateVertexShader(shaderData->GetBufferPointer(), shaderData->GetBufferSize(), nullptr, vertexShader);
+			hr = device->CreateVertexShader(shaderData->GetBufferPointer(), shaderData->GetBufferSize(), nullptr, vertexShader);
 			if (FAILED(hr)) {
 				logger::error("Failed to compile shader {}", hr);
 				return false;
 			}
 			return true;
 		}
-		bool ShaderManager::LoadVertexShaderFile(const std::wstring& shaderFile, ID3D11VertexShader** vertexShader, Blob& shaderData)
+		bool ShaderManager::LoadVertexShaderFile(ID3D11Device* device, const std::wstring& shaderFile, ID3D11VertexShader** vertexShader, Blob& shaderData)
 		{
-			if (!GetDevice() || shaderFile.empty())
+			if (!device || shaderFile.empty())
 				return false;
 			Blob errorBlob;
 			HRESULT hr = D3DCompileFromFile(shaderFile.c_str(), nullptr, nullptr, "VSMain", "vs_5_0", 0, 0, shaderData.ReleaseAndGetAddressOf(), nullptr);
@@ -109,7 +109,7 @@ namespace Mus {
 				logger::error("Failed to compile shader {} : {}", hr, errorBlob ? errorBlob->GetBufferPointer() : "Unknown Error");
 				return false;
 			}
-			hr = GetDevice()->CreateVertexShader(shaderData->GetBufferPointer(), shaderData->GetBufferSize(), nullptr, vertexShader);
+			hr = device->CreateVertexShader(shaderData->GetBufferPointer(), shaderData->GetBufferSize(), nullptr, vertexShader);
 			if (FAILED(hr))
 			{
 				logger::error("Failed to create shader {}", hr);
@@ -117,9 +117,9 @@ namespace Mus {
 			}
 			return true;
 		}
-		bool ShaderManager::LoadCompiledVertexShader(const std::wstring& shaderFile, ID3D11VertexShader** vertexShader)
+		bool ShaderManager::LoadCompiledVertexShader(ID3D11Device* device, const std::wstring& shaderFile, ID3D11VertexShader** vertexShader)
 		{
-			if (!GetDevice() || shaderFile.empty())
+			if (!device || shaderFile.empty())
 				return false;
 			std::ifstream file(shaderFile, std::ios::binary);
 			if (!file.is_open()) {
@@ -131,7 +131,7 @@ namespace Mus {
 			std::vector<char> shaderData(fileSize);
 			file.read(shaderData.data(), fileSize);
 			file.close();
-			HRESULT hr = GetDevice()->CreateVertexShader(shaderData.data(), fileSize, nullptr, vertexShader);
+			HRESULT hr = device->CreateVertexShader(shaderData.data(), fileSize, nullptr, vertexShader);
 			if (FAILED(hr)) {
 				logger::error("Failed to create shader {}", hr);
 				return false;
@@ -139,9 +139,9 @@ namespace Mus {
 			return true;
 		}
 
-		bool ShaderManager::LoadPixelShader(const char* shaderCode, ID3D11PixelShader** pixelShader, Blob& shaderData)
+		bool ShaderManager::LoadPixelShader(ID3D11Device* device, const char* shaderCode, ID3D11PixelShader** pixelShader, Blob& shaderData)
 		{
-			if (!GetDevice() || !shaderCode || std::strlen(shaderCode) == 0)
+			if (!device || !shaderCode || std::strlen(shaderCode) == 0)
 				return false;
 			Blob errorBlob;
 			HRESULT hr = D3DCompile(shaderCode, std::strlen(shaderCode), nullptr, nullptr, nullptr, "PSMain", "ps_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, shaderData.ReleaseAndGetAddressOf(), &errorBlob);
@@ -149,16 +149,16 @@ namespace Mus {
 				logger::error("Failed to compile shader {} : {}", hr, errorBlob ? errorBlob->GetBufferPointer() : "Unknown Error");
 				return false;
 			}
-			hr = GetDevice()->CreatePixelShader(shaderData->GetBufferPointer(), shaderData->GetBufferSize(), nullptr, pixelShader);
+			hr = device->CreatePixelShader(shaderData->GetBufferPointer(), shaderData->GetBufferSize(), nullptr, pixelShader);
 			if (FAILED(hr)) {
 				logger::error("Failed to compile shader {}", hr);
 				return false;
 			}
 			return true;
 		}
-		bool ShaderManager::LoadPixelShaderFile(const std::wstring& shaderFile, ID3D11PixelShader** pixelShader, Blob& shaderData)
+		bool ShaderManager::LoadPixelShaderFile(ID3D11Device* device, const std::wstring& shaderFile, ID3D11PixelShader** pixelShader, Blob& shaderData)
 		{
-			if (!GetDevice() || shaderFile.empty())
+			if (!device || shaderFile.empty())
 				return false;
 			Blob errorBlob;
 			HRESULT hr = D3DCompileFromFile(shaderFile.c_str(), nullptr, nullptr, "PSMain", "ps_5_0", 0, 0, shaderData.ReleaseAndGetAddressOf(), nullptr);
@@ -167,7 +167,7 @@ namespace Mus {
 				logger::error("Failed to compile shader {} : {}", hr, errorBlob ? errorBlob->GetBufferPointer() : "Unknown Error");
 				return false;
 			}
-			hr = GetDevice()->CreatePixelShader(shaderData->GetBufferPointer(), shaderData->GetBufferSize(), nullptr, pixelShader);
+			hr = device->CreatePixelShader(shaderData->GetBufferPointer(), shaderData->GetBufferSize(), nullptr, pixelShader);
 			if (FAILED(hr))
 			{
 				logger::error("Failed to create shader {}", hr);
@@ -175,9 +175,9 @@ namespace Mus {
 			}
 			return true;
 		}
-		bool ShaderManager::LoadCompiledPixelShader(const std::wstring& shaderFile, ID3D11PixelShader** pixelShader)
+		bool ShaderManager::LoadCompiledPixelShader(ID3D11Device* device, const std::wstring& shaderFile, ID3D11PixelShader** pixelShader)
 		{
-			if (!GetDevice() || shaderFile.empty())
+			if (!device || shaderFile.empty())
 				return false;
 			std::ifstream file(shaderFile, std::ios::binary);
 			if (!file.is_open()) {
@@ -189,7 +189,7 @@ namespace Mus {
 			std::vector<char> shaderData(fileSize);
 			file.read(shaderData.data(), fileSize);
 			file.close();
-			HRESULT hr = GetDevice()->CreatePixelShader(shaderData.data(), fileSize, nullptr, pixelShader);
+			HRESULT hr = device->CreatePixelShader(shaderData.data(), fileSize, nullptr, pixelShader);
 			if (FAILED(hr)) {
 				logger::error("Failed to create shader {}", hr);
 				return false;
@@ -234,30 +234,30 @@ namespace Mus {
 			return string2wstring(file_);
 		}
 
-		ShaderManager::ComputeShader ShaderManager::CreateComputeShader(std::string shaderName)
+		ShaderManager::ComputeShader ShaderManager::CreateComputeShader(ID3D11Device* device, std::string shaderName)
 		{
 			std::string shaderName_ = lowLetter(shaderName);
-			if (auto found = ComputeShaders.find(shaderName_); found != ComputeShaders.end())
+			if (auto found = computeShaders.find(shaderName_); found != computeShaders.end())
 				return found->second;
-			if (Failed.find(shaderName_) != Failed.end())
+			if (failedList.find(shaderName_) != failedList.end())
 				return nullptr;
 			ComputeShader newShader = nullptr;
 			Blob csBlob = nullptr;
-			if (LoadComputeShaderFile(GetShaderFilePath(shaderName, false, ShaderType::Compute), &newShader, csBlob))
+			if (LoadComputeShaderFile(device, GetShaderFilePath(shaderName, false, ShaderType::Compute), &newShader, csBlob))
 			{
-				ComputeShaders[shaderName_] = newShader;
+				computeShaders[shaderName_] = newShader;
 				logger::info("Compile shader done : {}", shaderName);
 				SaveCompiledShaderFile(csBlob, GetShaderFilePath(shaderName, true, ShaderType::Compute));
-				CSBlobs[shaderName_] = csBlob;
+				csBlobs[shaderName_] = csBlob;
 				return newShader;
 			}
 			logger::warn("Failed to compile shader for {}. so try to load latest compiled shader...", shaderName);
-			if (LoadCompiledComputeShader(GetShaderFilePath(shaderName, true, ShaderType::Compute), &newShader))
+			if (LoadCompiledComputeShader(device, GetShaderFilePath(shaderName, true, ShaderType::Compute), &newShader))
 			{
-				ComputeShaders[shaderName_] = newShader;
+				computeShaders[shaderName_] = newShader;
 				logger::info("Loaded latest compiled shader : {}", shaderName);
 				D3DReadFileToBlob(GetShaderFilePath(shaderName, true, ShaderType::Compute).c_str(), &csBlob);
-				CSBlobs[shaderName_] = csBlob;
+				csBlobs[shaderName_] = csBlob;
 				return newShader;
 			}
 			std::string FailedShaderCompile = "";
@@ -270,33 +270,33 @@ namespace Mus {
 			else
 				FailedShaderCompile = ReplaceNewlineEscapes(FailedShaderCompile);
 			RE::DebugMessageBox(FailedShaderCompile.c_str());
-			Failed.emplace(shaderName);
+			failedList.emplace(shaderName);
 			return nullptr;
 		}
-		ShaderManager::VertexShader ShaderManager::CreateVertexShader(std::string shaderName)
+		ShaderManager::VertexShader ShaderManager::CreateVertexShader(ID3D11Device* device, std::string shaderName)
 		{
 			std::string shaderName_ = lowLetter(shaderName);
-			if (auto found = VertexShaders.find(shaderName_); found != VertexShaders.end())
+			if (auto found = vertexShaders.find(shaderName_); found != vertexShaders.end())
 				return found->second;
-			if (Failed.find(shaderName_) != Failed.end())
+			if (failedList.find(shaderName_) != failedList.end())
 				return nullptr;
 			VertexShader newShader = nullptr;
 			Blob vsBlob = nullptr;
-			if (LoadVertexShaderFile(GetShaderFilePath(shaderName, false, ShaderType::Vertex), &newShader, vsBlob))
+			if (LoadVertexShaderFile(device, GetShaderFilePath(shaderName, false, ShaderType::Vertex), &newShader, vsBlob))
 			{
-				VertexShaders[shaderName_] = newShader;
+				vertexShaders[shaderName_] = newShader;
 				logger::info("Compile shader done : {}", shaderName);
 				SaveCompiledShaderFile(vsBlob, GetShaderFilePath(shaderName, true, ShaderType::Vertex));
-				VSBlobs[shaderName_] = vsBlob;
+				vsBlobs[shaderName_] = vsBlob;
 				return newShader;
 			}
 			logger::warn("Failed to compile shader for {}. so try to load latest compiled shader...", shaderName);
-			if (LoadCompiledVertexShader(GetShaderFilePath(shaderName, true, ShaderType::Vertex), &newShader))
+			if (LoadCompiledVertexShader(device, GetShaderFilePath(shaderName, true, ShaderType::Vertex), &newShader))
 			{
-				VertexShaders[shaderName_] = newShader;
+				vertexShaders[shaderName_] = newShader;
 				logger::info("Loaded latest compiled shader : {}", shaderName);
 				D3DReadFileToBlob(GetShaderFilePath(shaderName, true, ShaderType::Vertex).c_str(), &vsBlob);
-				VSBlobs[shaderName_] = vsBlob;
+				vsBlobs[shaderName_] = vsBlob;
 				return newShader;
 			}
 			std::string FailedShaderCompile = "";
@@ -309,33 +309,33 @@ namespace Mus {
 			else
 				FailedShaderCompile = ReplaceNewlineEscapes(FailedShaderCompile);
 			RE::DebugMessageBox(FailedShaderCompile.c_str());
-			Failed.emplace(shaderName);
+			failedList.emplace(shaderName);
 			return nullptr;
 		}
-		ShaderManager::PixelShader ShaderManager::CreatePixelShader(std::string shaderName)
+		ShaderManager::PixelShader ShaderManager::CreatePixelShader(ID3D11Device* device, std::string shaderName)
 		{
 			std::string shaderName_ = lowLetter(shaderName);
-			if (auto found = PixelShaders.find(shaderName_); found != PixelShaders.end())
+			if (auto found = pixelShaders.find(shaderName_); found != pixelShaders.end())
 				return found->second;
-			if (Failed.find(shaderName_) != Failed.end())
+			if (failedList.find(shaderName_) != failedList.end())
 				return nullptr;
 			PixelShader newShader = nullptr;
 			Blob psBlob = nullptr;
-			if (LoadPixelShaderFile(GetShaderFilePath(shaderName, false, ShaderType::Pixel), &newShader, psBlob))
+			if (LoadPixelShaderFile(device, GetShaderFilePath(shaderName, false, ShaderType::Pixel), &newShader, psBlob))
 			{
-				PixelShaders[shaderName_] = newShader;
+				pixelShaders[shaderName_] = newShader;
 				logger::info("Compile shader done : {}", shaderName);
 				SaveCompiledShaderFile(psBlob, GetShaderFilePath(shaderName, true, ShaderType::Pixel));
-				PSBlobs[shaderName_] = psBlob;
+				psBlobs[shaderName_] = psBlob;
 				return newShader;
 			}
 			logger::warn("Failed to compile shader for {}. so try to load latest compiled shader...", shaderName);
-			if (LoadCompiledPixelShader(GetShaderFilePath(shaderName, true, ShaderType::Pixel), &newShader))
+			if (LoadCompiledPixelShader(device, GetShaderFilePath(shaderName, true, ShaderType::Pixel), &newShader))
 			{
-				PixelShaders[shaderName_] = newShader;
+				pixelShaders[shaderName_] = newShader;
 				logger::info("Loaded latest compiled shader : {}", shaderName);
 				D3DReadFileToBlob(GetShaderFilePath(shaderName, true, ShaderType::Pixel).c_str(), &psBlob);
-				PSBlobs[shaderName_] = psBlob;
+				psBlobs[shaderName_] = psBlob;
 				return newShader;
 			}
 			std::string FailedShaderCompile = "";
@@ -348,82 +348,216 @@ namespace Mus {
 			else
 				FailedShaderCompile = ReplaceNewlineEscapes(FailedShaderCompile);
 			RE::DebugMessageBox(FailedShaderCompile.c_str());
-			Failed.emplace(shaderName);
+			failedList.emplace(shaderName);
 			return nullptr;
 		}
 
-		ShaderManager::ComputeShader ShaderManager::GetComputeShader(std::string shaderName)
+		ShaderManager::ComputeShader ShaderManager::GetComputeShader(ID3D11Device* device, std::string shaderName)
 		{
 			shaderName = lowLetter(shaderName);
-			if (auto found = ComputeShaders.find(shaderName); found != ComputeShaders.end())
+			if (auto found = computeShaders.find(shaderName); found != computeShaders.end())
 				return found->second;
-			return CreateComputeShader(shaderName);
+			return CreateComputeShader(device, shaderName);
 		}
-		ShaderManager::VertexShader ShaderManager::GetVertexShader(std::string shaderName)
+		ShaderManager::VertexShader ShaderManager::GetVertexShader(ID3D11Device* device, std::string shaderName)
 		{
 			shaderName = lowLetter(shaderName);
-			if (auto found = VertexShaders.find(shaderName); found != VertexShaders.end())
+			if (auto found = vertexShaders.find(shaderName); found != vertexShaders.end())
 				return found->second;
-			return CreateVertexShader(shaderName);
+			return CreateVertexShader(device, shaderName);
 		}
-		ShaderManager::PixelShader ShaderManager::GetPixelShader(std::string shaderName)
+		ShaderManager::PixelShader ShaderManager::GetPixelShader(ID3D11Device* device, std::string shaderName)
 		{
 			shaderName = lowLetter(shaderName);
-			if (auto found = PixelShaders.find(shaderName); found != PixelShaders.end())
+			if (auto found = pixelShaders.find(shaderName); found != pixelShaders.end())
 				return found->second;
-			return CreatePixelShader(shaderName);
+			return CreatePixelShader(device, shaderName);
 		}
 
 		ShaderManager::Blob ShaderManager::GetComputeShaderBlob(std::string shaderName)
 		{
 			shaderName = lowLetter(shaderName);
-			if (auto found = CSBlobs.find(shaderName); found != CSBlobs.end())
+			if (auto found = csBlobs.find(shaderName); found != csBlobs.end())
 				return found->second;
 			return nullptr;
 		}
 		ShaderManager::Blob ShaderManager::GetVertexShaderBlob(std::string shaderName)
 		{
 			shaderName = lowLetter(shaderName);
-			if (auto found = VSBlobs.find(shaderName); found != VSBlobs.end())
+			if (auto found = vsBlobs.find(shaderName); found != vsBlobs.end())
 				return found->second;
 			return nullptr;
 		}
 		ShaderManager::Blob ShaderManager::GetPixelShaderBlob(std::string shaderName)
 		{
 			shaderName = lowLetter(shaderName);
-			if (auto found = PSBlobs.find(shaderName); found != PSBlobs.end())
+			if (auto found = psBlobs.find(shaderName); found != psBlobs.end())
 				return found->second;
 			return nullptr;
 		}
 
 		ID3D11DeviceContext* ShaderManager::GetContext()
 		{
-			if (!context)
-				context = reinterpret_cast<ID3D11DeviceContext*>(RE::BSGraphics::Renderer::GetSingleton()->GetRuntimeData().context);
-			return context;
+			if (!context_)
+				context_ = reinterpret_cast<ID3D11DeviceContext*>(RE::BSGraphics::Renderer::GetSingleton()->GetRuntimeData().context);
+			return context_;
 		}
 		ID3D11Device* ShaderManager::GetDevice()
 		{
-			if (!device)
+			if (!device_)
 			{
 				if (GetContext())
 				{
 					ShaderContextLock();
-					GetContext()->GetDevice(&device);
+					GetContext()->GetDevice(&device_);
 					ShaderContextUnlock();
 				}
 			}
-			return device;
+			return device_;
 		}
-		void ShaderManager::Flush()
+		bool ShaderManager::CreateDeviceContextWithSecondGPUImpl()
 		{
-			ShaderContextLock();
-			GetContext()->Flush();
-			ShaderContextUnlock();
+			INT gpuIndex = Config::GetSingleton().GetGPUDeviceIndex();
+			if (gpuIndex == 0)
+			{
+				logger::info("Use main GPU for compute");
+				return false;
+			}
+
+			Microsoft::WRL::ComPtr<IDXCoreAdapterFactory> factory;
+			HRESULT hr = DXCoreCreateAdapterFactory(IID_PPV_ARGS(&factory));
+			if (FAILED(hr))
+			{
+				logger::error("Failed to create IDXCoreAdapterFactory : {}", hr);
+				return false;
+			}
+
+			Microsoft::WRL::ComPtr<IDXCoreAdapterList> gpuList;
+			constexpr GUID gpuFilter = { 0x8c47866b, 0x7583, 0x450d, 0xf0, 0xf0, 0x6b, 0xad, 0xa8, 0x95, 0xaf, 0x4b }; //DXCORE_ADAPTER_ATTRIBUTE_D3D11_GRAPHICS
+			hr = factory->CreateAdapterList(std::uint32_t(1), &gpuFilter, gpuList.GetAddressOf());
+			if (FAILED(hr)) {
+				logger::error("Failed to create DXCoreAdapterList : {}", hr);
+				return false;
+			}
+
+			std::uint32_t gpuCount = gpuList->GetAdapterCount();
+			if (gpuIndex > 0 && gpuIndex > gpuCount)
+			{
+				logger::error("Invalid GPU Index. so use main GPU for compute");
+				return false;
+			}
+
+			Microsoft::WRL::ComPtr<IDXCoreAdapter> gpuDevice;
+			if (gpuIndex < 0)
+			{
+				for (std::uint32_t i = 1; i < gpuCount; i++)
+				{
+					hr = gpuList->GetAdapter(i, gpuDevice.ReleaseAndGetAddressOf());
+					if (SUCCEEDED(hr))
+					{
+						gpuIndex = i;
+						break;
+					}
+				}
+				if (gpuIndex < 0)
+				{
+					logger::error("Invalid GPU Index. so use main GPU for compute");
+					return false;
+				}
+			}
+			else
+			{
+				hr = gpuList->GetAdapter(gpuIndex, gpuDevice.GetAddressOf());
+				if (FAILED(hr))
+				{
+					logger::error("Invalid GPU Index. so use main GPU for compute : {}", hr);
+					return false;
+				}
+			}
+
+			char description[128] = {};
+			gpuDevice->GetProperty(DXCoreAdapterProperty::DriverDescription, sizeof(description), description);
+			logger::info("Selected secondary GPU for compute : {}", description);
+
+			LUID gpuLuid;
+			gpuDevice->GetProperty(DXCoreAdapterProperty::InstanceLuid, sizeof(gpuLuid), &gpuLuid);
+
+			Microsoft::WRL::ComPtr<IDXGIFactory4> dxgiFactory;
+			hr = CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory));
+			if (FAILED(hr)) {
+				logger::error("Failed to create DXGIFactory4 : {}", hr);
+				return false;
+			}
+
+			Microsoft::WRL::ComPtr<IDXGIAdapter> gpu;
+			hr = dxgiFactory->EnumAdapterByLuid(gpuLuid, IID_PPV_ARGS(&gpu));
+			if (FAILED(hr)) {
+				logger::error("Failed to get DXGIAdapter with secondary GPU : {}", hr);
+				return false;
+			}
+
+			D3D_FEATURE_LEVEL featureLevels[] = {
+				D3D_FEATURE_LEVEL_11_0
+			};
+			D3D_FEATURE_LEVEL featureLevelCreated;
+			hr = D3D11CreateDevice(
+				gpu.Get(),
+				D3D_DRIVER_TYPE_UNKNOWN,
+				nullptr,
+				D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+				featureLevels,
+				ARRAYSIZE(featureLevels),
+				D3D11_SDK_VERSION,
+				secondDevice_.ReleaseAndGetAddressOf(),
+				&featureLevelCreated,
+				secondContext_.ReleaseAndGetAddressOf()
+			);
+			if (FAILED(hr)) {
+				logger::error("The GPU device ({}) does not support DirectX 11: {}", description, hr);
+				return false;
+			}
+
+			logger::info("Create D3D11 device and context with secondary GPU : {}({})", description, gpuIndex);
+			return true;
+		}
+		bool ShaderManager::CreateDeviceContextWithSecondGPU()
+		{
+			if (!CreateDeviceContextWithSecondGPUImpl())
+			{
+				secondDevice_.Reset();
+				secondContext_.Reset();
+			}
+			return true;
+		}
+		ID3D11DeviceContext* ShaderManager::GetSecondContext()
+		{
+			if (isSearchSecondGPU)
+			{
+				isSearchSecondGPU = false;
+				CreateDeviceContextWithSecondGPU();
+			}
+			return secondContext_ ? secondContext_.Get() : nullptr;
+		}
+		ID3D11Device* ShaderManager::GetSecondDevice()
+		{
+			if(isSearchSecondGPU)
+			{
+				isSearchSecondGPU = false;
+				CreateDeviceContextWithSecondGPU();
+			}
+			return secondDevice_ ? secondDevice_.Get() : nullptr;
+		}
+		bool ShaderManager::IsValidSecondGPU()
+		{
+			return GetSecondContext() && GetSecondDevice();
 		}
 
 		RE::NiPointer<RE::NiSourceTexture> TextureLoadManager::GetNiSourceTexture(std::string filePath, std::string name)
 		{
+			auto device = ShaderManager::GetSingleton().GetDevice();
+			if (!device)
+				return nullptr;
+
 			D3D11_TEXTURE2D_DESC texDesc;
 			D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
 			Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2d;
@@ -437,7 +571,7 @@ namespace Mus {
 			srvDesc.Format = texDesc.Format;
 			srvDesc.Texture2D.MipLevels = texDesc.MipLevels;
 			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> textureSRV;
-			HRESULT hr = ShaderManager::GetSingleton().GetDevice()->CreateShaderResourceView(texture2d.Get(), &srvDesc, &textureSRV);
+			HRESULT hr = device->CreateShaderResourceView(texture2d.Get(), &srvDesc, &textureSRV);
 			if (FAILED(hr))
 			{
 				logger::error("Failed to create ShaderResourceView for NiTexture ({})", hr);
@@ -531,12 +665,18 @@ namespace Mus {
 				newTexture->rendererTexture = newRendererTexture;
 			}
 			output = newTexture;
-			/*D3D11_TEXTURE2D_DESC desc;
-			dstTex->GetDesc(&desc);
-			D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
-			dstSRV->GetDesc(&srvDesc);
-			logger::info("{} {} {} {}", magic_enum::enum_name(desc.Format).data(), desc.MipLevels, magic_enum::enum_name(srvDesc.Format).data(), srvDesc.Texture2D.MipLevels);*/
 			return result;
+		}
+
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> TextureLoadManager::GetNiTexture(std::string name)
+		{
+			auto found = niTextures.find(name);
+			if (found != niTextures.end())
+			{
+				if (found->second && found->second->rendererTexture)
+					return found->second->rendererTexture->texture;
+			}
+			return nullptr;
 		}
 
 		void TextureLoadManager::ReleaseNiTexture(std::string name)
@@ -554,9 +694,37 @@ namespace Mus {
 						oldTexture->Release();
 					if (oldResource)
 						oldResource->Release();
-					//logger::info("{} : {}", name, found->second->GetRefCount());
 				}
 			}
+		}
+
+		bool TextureLoadManager::PrintTexture(std::string filePath, ID3D11Texture2D* texture)
+		{
+			if (filePath.empty() || !texture)
+				return false;
+
+			auto device = ShaderManager::GetSingleton().GetDevice();
+			auto context = ShaderManager::GetSingleton().GetContext();
+			if (!device || !context)
+				return false;
+
+			DirectX::ScratchImage image;
+			ShaderManager::GetSingleton().ShaderContextLock();
+			HRESULT hr = DirectX::CaptureTexture(device, context, texture, image);
+			ShaderManager::GetSingleton().ShaderContextUnlock();
+			if (FAILED(hr))
+			{
+				logger::error("Failed to capture texture ({})", hr);
+				return false;
+			}
+
+			hr = DirectX::SaveToDDSFile(*image.GetImage(0, 0, 0), DirectX::DDS_FLAGS_NONE, string2wstring(filePath).c_str());
+			if (FAILED(hr))
+			{
+				logger::error("Failed to save texture to file ({})", hr);
+				return false;
+			}
+			return true;
 		}
 		
 		bool TextureLoadManager::GetTexture2D(std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, UINT newWidth, UINT newHeight, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
@@ -564,7 +732,6 @@ namespace Mus {
 			filePath = stringRemoveStarts(filePath, "Data\\");
 			if (!stringStartsWith(filePath, "textures"))
 				filePath = "Textures\\" + filePath;
-			filePath = FixPath(filePath);
 
 			if (!IsExistFileInStream(filePath, ExistType::textures))
 			{
@@ -578,9 +745,8 @@ namespace Mus {
 				logger::error("Failed to load texture file : {}", filePath);
 				return false;
 			}
-			textureData data;
 			Microsoft::WRL::ComPtr<ID3D11Resource> resource;
-			sourceTexture->rendererTexture->resourceView->GetDesc(&data.srvDesc);
+			sourceTexture->rendererTexture->resourceView->GetDesc(&srvDesc);
 			sourceTexture->rendererTexture->resourceView->GetResource(&resource);
 			Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D;
 			HRESULT hr = resource.As(&texture2D);
@@ -589,28 +755,20 @@ namespace Mus {
 				logger::error("Failed to load texture resource ({})", hr);
 				return false;
 			}
-			texture2D->GetDesc(&data.texDesc);
-			data.metaData.newFormat = newFormat;
-			data.metaData.newWidth = newWidth;
-			data.metaData.newHeight = newHeight;
-
+			texture2D->GetDesc(&textureDesc);
 			if (newFormat == DXGI_FORMAT_UNKNOWN && newWidth == 0 && newHeight == 0)
 			{
-				data.texture = texture2D;
+				output = texture2D;
 			}
 			else
 			{
-				ConvertTexture(texture2D, data.metaData.newFormat, data.metaData.newWidth, data.metaData.newHeight, DirectX::TEX_FILTER_FLAGS::TEX_FILTER_FANT, data.texture);
+				ConvertTexture(ShaderManager::GetSingleton().GetDevice(), ShaderManager::GetSingleton().GetContext(), texture2D, newFormat, newWidth, newHeight, DirectX::TEX_FILTER_FLAGS::TEX_FILTER_FANT, output);
 			}
-			if (!data.texture)
+			if (!output)
 			{
 				logger::error("Failed to convert texture : {}", filePath);
 				return false;
 			}
-
-			textureDesc = data.texDesc;
-			srvDesc = data.srvDesc;
-			output = data.texture;
 			return true;
 		}
 		bool TextureLoadManager::GetTexture2D(std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
@@ -633,6 +791,76 @@ namespace Mus {
 			D3D11_SHADER_RESOURCE_VIEW_DESC tmpSRVDesc;
 			return GetTexture2D(filePath, tmpTexDesc, tmpSRVDesc, newFormat, output);
 		}
+
+		bool TextureLoadManager::GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, UINT newWidth, UINT newHeight, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
+		{
+			if (!device)
+				return false;
+			if (!stringEndsWith(filePath, ".dds"))
+				return false;
+			if (!stringStartsWith(filePath, "Textures"))
+				filePath = "Textures\\" + filePath;
+			if (!stringStartsWith(filePath, "Data"))
+				filePath = "Data\\" + filePath;
+			DirectX::ScratchImage image;
+			HRESULT hr = LoadFromDDSFile(string2wstring(filePath).c_str(), DirectX::DDS_FLAGS::DDS_FLAGS_NONE, nullptr, image);
+			if (FAILED(hr)) {
+				logger::error("Failed to get texture from {} file", filePath);
+				return false;
+			}
+			Microsoft::WRL::ComPtr<ID3D11Resource> resource;
+			if (!ConvertD3D11(device, image, resource) || !resource)
+			{
+				logger::error("Failed to get texture from {} file", filePath);
+				return false;
+			}
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D;
+			hr = resource.As(&texture2D);
+			if (FAILED(hr)) {
+				logger::error("Failed to get texture resource from {} file", filePath);
+				return false;
+			}
+			if (newFormat == DXGI_FORMAT_UNKNOWN && newWidth == 0 && newHeight == 0)
+			{
+				output = texture2D;
+			}
+			else
+			{
+				ConvertTexture(device, context, texture2D, newFormat, newWidth, newHeight, DirectX::TEX_FILTER_FLAGS::TEX_FILTER_FANT, output);
+			}
+			if (!output)
+			{
+				logger::error("Failed to convert texture : {}", filePath);
+				return false;
+			}
+			output->GetDesc(&textureDesc);
+			srvDesc.Format = textureDesc.Format;
+			srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+			srvDesc.Texture2D.MostDetailedMip = 0;
+			srvDesc.Texture2D.MipLevels = textureDesc.MipLevels;
+			return true;
+		}
+		bool TextureLoadManager::GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
+		{
+			return GetTextureFromFile(device, context, filePath, textureDesc, srvDesc, newFormat, 0, 0, output);
+		}
+		bool TextureLoadManager::GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
+		{
+			D3D11_TEXTURE2D_DESC tmpTexDesc;
+			return GetTextureFromFile(device, context, filePath, tmpTexDesc, srvDesc, newFormat, output);
+		}
+		bool TextureLoadManager::GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
+		{
+			D3D11_SHADER_RESOURCE_VIEW_DESC tmpSRVDesc;
+			return GetTextureFromFile(device, context, filePath, textureDesc, tmpSRVDesc, newFormat, output);
+		}
+		bool TextureLoadManager::GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
+		{
+			D3D11_TEXTURE2D_DESC tmpTexDesc;
+			D3D11_SHADER_RESOURCE_VIEW_DESC tmpSRVDesc;
+			return GetTextureFromFile(device, context, filePath, tmpTexDesc, tmpSRVDesc, newFormat, output);
+		}
+
 		bool TextureLoadManager::UpdateTexture(std::string filePath)
 		{
 			filePath = stringRemoveStarts(filePath, "Data\\");
@@ -652,9 +880,16 @@ namespace Mus {
 
 			Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
 			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
-			if (!GetTextureFromFile(filePath, texture, srv))
+			D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
+			if (!GetTextureFromFile(ShaderManager::GetSingleton().GetDevice(), ShaderManager::GetSingleton().GetContext(), filePath, srvDesc, DXGI_FORMAT::DXGI_FORMAT_UNKNOWN, texture))
 			{
 				logger::error("Failed to load texture file : {}", filePath);
+				return false;
+			}
+			HRESULT hr = ShaderManager::GetSingleton().GetDevice()->CreateShaderResourceView(texture.Get(), &srvDesc, srv.ReleaseAndGetAddressOf());
+			if (FAILED(hr))
+			{
+				logger::error("Failed to create ShaderResourceView for NiTexture ({})", hr);
 				return false;
 			}
 
@@ -668,59 +903,49 @@ namespace Mus {
 
 			auto oldTexture = sourceTexture->rendererTexture->texture;
 			auto oldResource = sourceTexture->rendererTexture->resourceView;
-			sourceTexture->rendererTexture->texture = texture.Get();
-			sourceTexture->rendererTexture->texture->AddRef();
-			sourceTexture->rendererTexture->resourceView = srv.Get();
-			sourceTexture->rendererTexture->resourceView->AddRef();
-			oldTexture->Release();
-			oldResource->Release();
+			sourceTexture->rendererTexture->texture = texture.Detach();
+			sourceTexture->rendererTexture->resourceView = srv.Detach();
+			if (oldTexture)
+				oldTexture->Release();
+			if (oldResource)
+				oldResource->Release();
 			return true;
 		}
-		bool TextureLoadManager::CopyTexture(Microsoft::WRL::ComPtr<ID3D11Texture2D>& srcTexture, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTexture)
+		bool TextureLoadManager::ConvertTexture(ID3D11Device* device, ID3D11DeviceContext* context, Microsoft::WRL::ComPtr<ID3D11Texture2D> texture, DXGI_FORMAT newFormat, UINT newWidth, UINT newHeight, DirectX::TEX_FILTER_FLAGS resizeFilter, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
 		{
-			if (!srcTexture)
+			if (!texture || !device || !context)
 				return false;
-
-			ID3D11DeviceContext* context = ShaderManager::GetSingleton().GetContext();
-			ID3D11Device* device = ShaderManager::GetSingleton().GetDevice();
-
-			D3D11_TEXTURE2D_DESC textureDesc;
-			srcTexture->GetDesc(&textureDesc);
-
-			HRESULT hr = device->CreateTexture2D(&textureDesc, nullptr, dstTexture.ReleaseAndGetAddressOf());
-			if (FAILED(hr))
-			{
-				logger::error("Failed to copy texture ({})", hr);
-				return false;
-			}
-			ShaderManager::GetSingleton().ShaderContextLock();
-			context->CopyResource(dstTexture.Get(), srcTexture.Get());
-			ShaderManager::GetSingleton().ShaderContextUnlock();
-			return true;
-		}
-		bool TextureLoadManager::ConvertTexture(Microsoft::WRL::ComPtr<ID3D11Texture2D> texture, DXGI_FORMAT newFormat, UINT newWidth, UINT newHeight, DirectX::TEX_FILTER_FLAGS resizeFilter, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
-		{
-			if (!texture)
-				return false;
-
-			ID3D11DeviceContext* context = ShaderManager::GetSingleton().GetContext();
-			ID3D11Device* device = ShaderManager::GetSingleton().GetDevice();
 
 			D3D11_TEXTURE2D_DESC textureDesc;
 			texture->GetDesc(&textureDesc);
 
+			const bool isSecondGPU = Shader::ShaderManager::GetSingleton().IsSecondGPUResource(context);
+			auto ShaderLock = [isSecondGPU]() {
+				if (isSecondGPU)
+					Shader::ShaderManager::GetSingleton().ShaderSecondContextLock();
+				else
+					Shader::ShaderManager::GetSingleton().ShaderContextLock();
+			};
+			auto ShaderUnlock = [&]() {
+				if (isSecondGPU)
+					Shader::ShaderManager::GetSingleton().ShaderSecondContextUnlock();
+				else
+					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+			};
+
 			// decoding texture
 			DirectX::ScratchImage image;
-			ShaderManager::GetSingleton().ShaderContextLock();
+			ShaderLock();
 			HRESULT hr = DirectX::CaptureTexture(device, context, texture.Get(), image);
-			ShaderManager::GetSingleton().ShaderContextUnlock();
+			ShaderUnlock();
 			if (FAILED(hr))
 			{
 				logger::error("Failed to decoding texture ({})", hr);
 				return false;
 			}
 
-			Microsoft::WRL::ComPtr<ID3D11Resource> tmpTexture;
+			Microsoft::WRL::ComPtr<ID3D11Resource> tmpResource;
+			bool convertResult = false;
 			if (newFormat != DXGI_FORMAT_UNKNOWN && textureDesc.Format != newFormat)
 			{
 				// convert format
@@ -745,11 +970,11 @@ namespace Mus {
 						logger::error("Failed to resize texture ({})", hr);
 						return false;
 					}
-					ConvertD3D11(resize, tmpTexture);
+					convertResult = ConvertD3D11(device, resize, tmpResource);
 				}
 				else
 				{
-					ConvertD3D11(convertedImage, tmpTexture);
+					convertResult = ConvertD3D11(device, convertedImage, tmpResource);
 				}
 			}
 			else
@@ -763,32 +988,35 @@ namespace Mus {
 						logger::error("Failed to resize texture ({})", hr);
 						return false;
 					}
-					ConvertD3D11(resize, tmpTexture);
+					convertResult = ConvertD3D11(device, resize, tmpResource);
 				}
 				else
 				{
-					ConvertD3D11(image, tmpTexture);
+					convertResult = ConvertD3D11(device, image, tmpResource);
 				}
 			}
-			if (!tmpTexture)
+			if (!convertResult || !tmpResource)
 			{
 				logger::error("Failed to convert texture to d3d11 resource");
 				return false;
 			}
-			
-			output.Reset();
-			hr = tmpTexture.As(&output);
+
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> tmpTexture;
+			hr = tmpResource.As(&tmpTexture);
 			if (FAILED(hr))
 			{
 				logger::error("Failed to convert texture to d3d11 resource ({})", hr);
 				return false;
 			}
+			output = tmpTexture;
 			return true;
 		}
-		bool TextureLoadManager::ConvertD3D11(DirectX::ScratchImage& image, Microsoft::WRL::ComPtr<ID3D11Resource>& output)
+		bool TextureLoadManager::ConvertD3D11(ID3D11Device* device, DirectX::ScratchImage& image, Microsoft::WRL::ComPtr<ID3D11Resource>& output)
 		{
 			// convert texture to d3d11 texture
-			HRESULT hr = DirectX::CreateTexture(ShaderManager::GetSingleton().GetDevice(), image.GetImages(), image.GetImageCount(), image.GetMetadata(), output.ReleaseAndGetAddressOf());
+			if (!device)
+				return false;
+			HRESULT hr = DirectX::CreateTexture(device, image.GetImages(), image.GetImageCount(), image.GetMetadata(), output.ReleaseAndGetAddressOf());
 			if (FAILED(hr))
 			{
 				logger::error("Failed to convert texture to d3d11 ({})", hr);
@@ -796,20 +1024,34 @@ namespace Mus {
 			}
 			return true;
 		}
-		bool TextureLoadManager::CompressTexture(Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTexture)
+		bool TextureLoadManager::CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTexture)
 		{
 			auto formatType = IsCompressFormat(newFormat);
 			if (formatType < 0)
 				return false;
 
-			ID3D11DeviceContext* context = ShaderManager::GetSingleton().GetContext();
-			ID3D11Device* device = ShaderManager::GetSingleton().GetDevice();
+			if (!srcTexture || !device || !context)
+				return false;
+
+			bool isSecondGPU = ShaderManager::GetSingleton().IsSecondGPUResource(context);
+			auto ShaderLock = [isSecondGPU]() {
+				if (isSecondGPU)
+					ShaderManager::GetSingleton().ShaderSecondContextLock();
+				else
+					ShaderManager::GetSingleton().ShaderContextLock();
+			};
+			auto ShaderUnlock = [isSecondGPU]() {
+				if (isSecondGPU)
+					ShaderManager::GetSingleton().ShaderSecondContextUnlock();
+				else
+					ShaderManager::GetSingleton().ShaderContextUnlock();
+				};
 
 			// decoding texture
 			DirectX::ScratchImage image;
-			ShaderManager::GetSingleton().ShaderContextLock();
+			ShaderLock();
 			HRESULT hr = DirectX::CaptureTexture(device, context, srcTexture.Get(), image);
-			ShaderManager::GetSingleton().ShaderContextUnlock();
+			ShaderUnlock();
 			if (FAILED(hr))
 			{
 				logger::error("Failed to decoding texture ({})", hr);
@@ -835,9 +1077,9 @@ namespace Mus {
 				else
 					flags = DirectX::TEX_COMPRESS_DEFAULT;
 
-				ShaderManager::GetSingleton().ShaderContextLock();
+				ShaderLock();
 				hr = DirectX::Compress(device, image.GetImages(), image.GetImageCount(), image.GetMetadata(), newFormat, flags, DirectX::TEX_THRESHOLD_DEFAULT, compressedImage);
-				ShaderManager::GetSingleton().ShaderContextUnlock();
+				ShaderUnlock();
 				if (FAILED(hr))
 				{
 					logger::error("Failed to compress texture to {} ({})", magic_enum::enum_name(newFormat).data(), hr);
@@ -845,155 +1087,22 @@ namespace Mus {
 				}
 			}
 
-			Microsoft::WRL::ComPtr<ID3D11Resource> tmpTexture;
-			ConvertD3D11(compressedImage, tmpTexture);
-			if (!tmpTexture)
+			Microsoft::WRL::ComPtr<ID3D11Resource> tmpResource;
+			if (!ConvertD3D11(device, compressedImage, tmpResource) || !tmpResource)
 			{
 				logger::error("Failed to convert texture to d3d11 resource");
 				return false;
 			}
 
-			dstTexture.Reset();
-			hr = tmpTexture.As(&dstTexture);
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> tmpTexture;
+			hr = tmpResource.As(&tmpTexture);
 			if (FAILED(hr))
 			{
-				logger::error("Failed to convert texture to d3d11 resource ({})", hr);
+				logger::error("Failed to get compress texture from the resource({})", hr);
 				return false;
 			}
+			dstTexture = tmpTexture;
 			return true;
 		}
-		bool TextureLoadManager::GetTextureFromFile(std::string filePath, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texture, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv)
-		{
-			if (!stringStartsWith(filePath, "Data"))
-				filePath = "Data\\" + filePath; 
-			if (!stringEndsWith(filePath, ".dds"))
-				return false;
-			DirectX::ScratchImage image;
-			HRESULT hr = LoadFromDDSFile(string2wstring(filePath).c_str(), DirectX::DDS_FLAGS::DDS_FLAGS_NONE, nullptr, image);
-			if (FAILED(hr)) {
-				logger::error("Failed to get texture from {} file", filePath);
-				return false;
-			}
-			Microsoft::WRL::ComPtr<ID3D11Resource> resource;
-			if (!ConvertD3D11(image, resource))
-			{
-				logger::error("Failed to get texture from {} file", filePath);
-				return false;
-			}
-			texture.Reset();
-			hr = resource.As(&texture);
-			if (FAILED(hr))
-			{
-				logger::error("Failed to convert texture to d3d11 resource ({})", hr);
-				return false;
-			}
-
-			D3D11_TEXTURE2D_DESC textureDesc;
-			texture->GetDesc(&textureDesc);
-			D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
-			srvDesc.Format = textureDesc.Format;
-			srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-			srvDesc.Texture2D.MostDetailedMip = 0;
-			srvDesc.Texture2D.MipLevels = textureDesc.MipLevels;
-
-			ID3D11Device* device = ShaderManager::GetSingleton().GetDevice();
-			hr = device->CreateShaderResourceView(texture.Get(), &srvDesc, srv.ReleaseAndGetAddressOf());
-			if (FAILED(hr))
-			{
-				logger::error("Failed to create ShaderResourceView : {} / ({})", filePath, hr);
-				return false;
-			}
-			return true;
-		}
-	}
-
-	//https://www.codespeedy.com/hsv-to-rgb-in-cpp/
-	RGBA HSVA::HSVAtoRGBA(HSVA hsva)
-	{
-		RGBA color = RGBA();
-		if (hsva.hue > 360 || hsva.hue < 0 || hsva.saturation > 100 || hsva.saturation < 0 || hsva.value > 100 || hsva.value < 0)
-		{
-			color.r = 1;
-			color.g = 1;
-			color.b = 1;
-			color.a = 1;
-			return color;
-		}
-		float s = hsva.saturation / 100;
-		float v = hsva.value / 100;
-		float C = s * v;
-		float X = C * (1 - abs(fmod(hsva.hue / 60.0, 2) - 1));
-		float m = v - C;
-		float r, g, b;
-		if (hsva.hue >= 0 && hsva.hue < 60) {
-			r = C, g = X, b = 0;
-		}
-		else if (hsva.hue >= 60 && hsva.hue < 120) {
-			r = X, g = C, b = 0;
-		}
-		else if (hsva.hue >= 120 && hsva.hue < 180) {
-			r = 0, g = C, b = X;
-		}
-		else if (hsva.hue >= 180 && hsva.hue < 240) {
-			r = 0, g = X, b = C;
-		}
-		else if (hsva.hue >= 240 && hsva.hue < 300) {
-			r = X, g = 0, b = C;
-		}
-		else {
-			r = C, g = 0, b = X;
-		}
-
-		color.r = (r + m);
-		color.g = (g + m);
-		color.b = (b + m);
-		color.a = hsva.alpha * 0.01f;
-		return color;
-	}
-	HSVA HSVA::RGBAtoHSVA(RGBA rgba)
-	{
-		HSVA hsv = HSVA();
-		float r = rgba.r;
-		float g = rgba.g;
-		float b = rgba.b;
-		float h = 0.0f;
-		float s = 0.0f;
-		float v = 0.0f;
-		float cmax = std::max(std::max(r, g), b);
-		float cmin = std::min(std::min(r, g), b);
-		float delta = cmax - cmin;
-
-		if (delta > 0) {
-			if (cmax == r) {
-				h = 60 * (fmod(((g - b) / delta), 6));
-			}
-			else if (cmax == g) {
-				h = 60 * (((b - r) / delta) + 2);
-			}
-			else if (cmax == b) {
-				h = 60 * (((r - g) / delta) + 4);
-			}
-			if (cmax > 0) {
-				s = delta / cmax * 100;
-			}
-			else {
-				s = 0;
-			}
-			v = cmax * 100;
-		}
-		else {
-			h = 0;
-			s = 0;
-			v = cmax * 100;
-		}
-		if (h < 0) {
-			h = 360 + h;
-		}
-
-		hsv.hue = h;
-		hsv.saturation = s;
-		hsv.value = v;
-		hsv.alpha = rgba.a * 100.0f;
-		return hsv;
 	}
 }

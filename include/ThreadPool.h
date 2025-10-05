@@ -41,6 +41,7 @@ namespace Mus {
     };
     extern std::unique_ptr<ThreadPool_ParallelModule> actorThreads;
     extern std::unique_ptr<ThreadPool_ParallelModule> memoryManageThreads;
+    extern std::unique_ptr<ThreadPool_ParallelModule> updateThreads;
     extern std::unique_ptr<ThreadPool_ParallelModule> processingThreads;
 
     class ThreadPool_GPUTaskModule

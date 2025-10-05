@@ -3,6 +3,7 @@
 namespace Mus {
     std::unique_ptr<ThreadPool_ParallelModule> actorThreads;
     std::unique_ptr<ThreadPool_ParallelModule> memoryManageThreads;
+    std::unique_ptr<ThreadPool_ParallelModule> updateThreads;
     std::unique_ptr<ThreadPool_ParallelModule> processingThreads;
 
     ThreadPool_ParallelModule::ThreadPool_ParallelModule(std::uint32_t threadSize)
