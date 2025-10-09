@@ -513,6 +513,7 @@ namespace Mus {
         std::uint32_t memoryManageThreadCount = 2;
         std::uint32_t updateThreadCount = 2;
         std::uint32_t processingThreadCount = std::thread::hardware_concurrency();
+        isNoSplitGPU = false;
         if (Config::GetSingleton().GetAutoTaskQ() > 0)
         {
             //float benchMarkResult = miniBenchMark();
@@ -535,6 +536,7 @@ namespace Mus {
                 Config::GetSingleton().SetDivideTaskQ(0);
                 Config::GetSingleton().SetVRAMSaveMode(false);
                 actorThreadCount = 2;
+                isNoSplitGPU = true;
                 waitSleepTime = std::chrono::microseconds(100);
                 break;
             case Config::AutoTaskQList::Faster:
@@ -544,6 +546,7 @@ namespace Mus {
                 Config::GetSingleton().SetDivideTaskQ(0);
                 Config::GetSingleton().SetVRAMSaveMode(false);
                 actorThreadCount = 2;
+                isNoSplitGPU = true;
                 waitSleepTime = std::chrono::microseconds(500);
                 break;
             case Config::AutoTaskQList::Balanced:
@@ -553,6 +556,7 @@ namespace Mus {
                 Config::GetSingleton().SetDivideTaskQ(0);
                 Config::GetSingleton().SetVRAMSaveMode(true);
                 actorThreadCount = 1;
+                isNoSplitGPU = false;
                 waitSleepTime = std::chrono::microseconds(1000);
                 break;
             case Config::AutoTaskQList::BetterPerformance:
@@ -562,6 +566,7 @@ namespace Mus {
                 Config::GetSingleton().SetDivideTaskQ(1);
                 Config::GetSingleton().SetVRAMSaveMode(true);
                 actorThreadCount = 1;
+                isNoSplitGPU = false;
                 waitSleepTime = std::chrono::microseconds(1000);
                 break;
             case Config::AutoTaskQList::BestPerformance:
@@ -571,6 +576,7 @@ namespace Mus {
                 Config::GetSingleton().SetDivideTaskQ(2);
                 Config::GetSingleton().SetVRAMSaveMode(true);
                 actorThreadCount = 1;
+                isNoSplitGPU = false;
                 waitSleepTime = std::chrono::microseconds(1000);
                 break;
             default:
@@ -592,9 +598,7 @@ namespace Mus {
         memoryManageThreads = std::make_unique<ThreadPool_ParallelModule>(memoryManageThreadCount);
         logger::info("set memoryManageThreads {}", memoryManageThreadCount);
 
-        updateThreads = nullptr;
-        if (isSecondGPUEnabled)
-            updateThreads = std::make_unique<ThreadPool_ParallelModule>(updateThreadCount);
+        updateThreads = std::make_unique<ThreadPool_ParallelModule>(updateThreadCount);
 
         processingThreads = std::make_unique<ThreadPool_ParallelModule>(processingThreadCount);
         logger::info("set processingThreads {}", processingThreadCount);

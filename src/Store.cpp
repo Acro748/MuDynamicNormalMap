@@ -14,6 +14,7 @@ namespace Mus {
 	std::clock_t currentTime = 0;
 
 	std::clock_t taskQTickMS = 100.0f;
+	bool isNoSplitGPU = false;
 
 	float weldDistance = 0.0001f;
 	float weldDistanceMult = 10000;
