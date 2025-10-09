@@ -679,7 +679,7 @@ namespace Mus {
 
 				const auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
 					return geosInfo.geometry == update.first;
-												});
+				});
 				if (found == a_data->geometries.end())
 				{
 					logger::error("{}::{:x} : Geometry {} not found in data", _func_, a_actorID, update.second.geometryName);
@@ -874,7 +874,7 @@ namespace Mus {
 				};
 
 				const std::uint32_t totalTris = objInfo.indicesCount() / 3;
-				if (isSecondGPU)
+				if (isSecondGPU || isNoSplitGPU)
 				{
 					const std::uint32_t dispatch = (totalTris + 64 - 1) / 64;
 					D3D11_SUBRESOURCE_DATA cbInitData = {};
@@ -985,8 +985,6 @@ namespace Mus {
 					return;
 				}
 
-				CopySubresourceRegion(device, context, newResourceData->dstTexture2D.Get(), newResourceData->dstWriteTexture2D.Get(), 0, 0);
-
 				dstShaderResourceViewDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 				dstShaderResourceViewDesc.Texture2D.MostDetailedMip = 0;
 				dstShaderResourceViewDesc.Texture2D.MipLevels = Config::GetSingleton().GetUseMipMap() ? -1 : 1;
@@ -1016,6 +1014,11 @@ namespace Mus {
 		}
 		for (auto& updateTask : updateTasks) {
 			updateTask.get();
+		}
+		WaitForGPU(device, context).Wait();
+
+		for (auto& resourceData : resourceDatas) {
+			CopySubresourceRegion(device, context, resourceData->dstTexture2D.Get(), resourceData->dstWriteTexture2D.Get(), 0, 0);
 		}
 		WaitForGPU(device, context).Wait();
 
@@ -1560,7 +1563,7 @@ namespace Mus {
 			logger::debug("{}::{} : Bleed texture -> set margin {}", _func_, resourceData->textureName, margin);
 		}
 
-		if (isSecondGPU)
+		if (isSecondGPU || isNoSplitGPU)
 		{
 			const DirectX::XMUINT2 dispatch = { (width + 8 - 1) / 8, (height + 8 - 1) / 8 };
 			for (std::uint32_t mi = 0; mi < margin; mi++)
@@ -1965,7 +1968,7 @@ namespace Mus {
 		if (Config::GetSingleton().GetMergeTime1())
 			PerformanceLog(std::string(_func_) + "::" + resourceData->textureName, true, false);
 
-		if (isSecondGPU)
+		if (isSecondGPU || isNoSplitGPU)
 		{
 			const DirectX::XMUINT2 dispatch = { (width + 8 - 1) / 8, (height + 8 - 1) / 8 };
 
@@ -2095,20 +2098,34 @@ namespace Mus {
 		if (!device || !context || !dstTexture || !srcTexture)
 			return false;
 
-		if (Shader::ShaderManager::GetSingleton().IsSecondGPUResource(context))
-		{
-			Shader::ShaderManager::GetSingleton().ShaderSecondContextLock();
-			context->CopySubresourceRegion(dstTexture, dstMipMapLevel, 0, 0, 0, srcTexture, srcMipMapLevel, NULL);
-			Shader::ShaderManager::GetSingleton().ShaderSecondContextUnlock();
-			return true;
-		}
-
 		D3D11_TEXTURE2D_DESC dstDesc, srcDesc;
 		dstTexture->GetDesc(&dstDesc);
 		srcTexture->GetDesc(&srcDesc);
 
 		if (dstDesc.Width != srcDesc.Width || dstDesc.Height != srcDesc.Height)
 			return false;
+
+		const bool isSecondGPU = Shader::ShaderManager::GetSingleton().IsSecondGPUResource(context);
+		auto ShaderLock = [isSecondGPU]() {
+			if (isSecondGPU)
+				Shader::ShaderManager::GetSingleton().ShaderSecondContextLock();
+			else
+				Shader::ShaderManager::GetSingleton().ShaderContextLock();
+		};
+		auto ShaderUnlock = [isSecondGPU]() {
+			if (isSecondGPU)
+				Shader::ShaderManager::GetSingleton().ShaderSecondContextUnlock();
+			else
+				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+		};
+
+		if (isSecondGPU || isNoSplitGPU)
+		{
+			ShaderLock();
+			context->CopySubresourceRegion(dstTexture, dstMipMapLevel, 0, 0, 0, srcTexture, srcMipMapLevel, NULL);
+			ShaderUnlock();
+			return true;
+		}
 
 		const UINT width = dstDesc.Width;
 		const UINT height = dstDesc.Height;
@@ -2131,19 +2148,19 @@ namespace Mus {
 				gpuTasks.push_back(gpuTask->submitAsync([&, box, subX, subY]() {
 					if (Config::GetSingleton().GetTextureCopyTime())
 						GPUPerformanceLog(device, context, std::string("CopySubresourceRegion") + "::" + std::to_string(dstDesc.Width) + "::" + std::to_string(dstDesc.Width)
-									  + "::" + std::to_string(subX) + "|" + std::to_string(subY), false, false);
+										  + "::" + std::to_string(subX) + "|" + std::to_string(subY), false, false);
 
-					Shader::ShaderManager::GetSingleton().ShaderContextLock();
+					ShaderLock();
 					context->CopySubresourceRegion(
 						dstTexture, dstMipMapLevel,
 						box.left, box.top, 0,
 						srcTexture, srcMipMapLevel,
 						&box);
-					Shader::ShaderManager::GetSingleton().ShaderContextUnlock(); 
+					ShaderUnlock();
 
 					if (Config::GetSingleton().GetTextureCopyTime())
 						GPUPerformanceLog(device, context, std::string("CopySubresourceRegion") + "::" + std::to_string(dstDesc.Width) + "::" + std::to_string(dstDesc.Width)
-									  + "::" + std::to_string(subX) + "|" + std::to_string(subY), true, false);
+										  + "::" + std::to_string(subX) + "|" + std::to_string(subY), true, false);
 				}));
 			}
 		}
@@ -2350,7 +2367,7 @@ namespace Mus {
 				PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, true, false);
 			};
 
-		if (isSecondGPU)
+		if (isSecondGPU || isNoSplitGPU)
 		{
 			compressTaskFunc();
 		}

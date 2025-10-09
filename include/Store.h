@@ -31,6 +31,7 @@ namespace Mus {
 	constexpr float TimeTick60msec = TimeTick60 * 1000;
 
 	extern std::clock_t taskQTickMS;
+	extern bool isNoSplitGPU;
 
 	constexpr float floatPrecision = 1e-6f;
 	extern float weldDistance;
