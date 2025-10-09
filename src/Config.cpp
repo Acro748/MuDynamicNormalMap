@@ -544,8 +544,8 @@ namespace Mus {
                 taskQTickMS = Config::GetSingleton().GetTaskQTickMS()/* * GPUPerformanceMult*/;
                 Config::GetSingleton().SetDirectTaskQ(false);
                 Config::GetSingleton().SetDivideTaskQ(0);
-                Config::GetSingleton().SetVRAMSaveMode(false);
-                actorThreadCount = 2;
+                Config::GetSingleton().SetVRAMSaveMode(true);
+                actorThreadCount = 1;
                 isNoSplitGPU = true;
                 waitSleepTime = std::chrono::microseconds(500);
                 break;
