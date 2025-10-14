@@ -241,4 +241,49 @@ namespace Mus::nif {
         RE::NiPoint3 tempRot = GetEulerAngles(a_angles);
         return SetEulerAngles(tempRot.x, -tempRot.y, -tempRot.z);
     }
+
+    bSlot GetBipedSlot(RE::BSGeometry* a_geo, bool isDynamicAsHead)
+    {
+        bSlot slot = RE::BIPED_OBJECT::kBody;
+        if (!a_geo)
+            return slot;
+        bool isDynamicTriShape = a_geo->AsDynamicTriShape() ? true : false;
+        if (isDynamicAsHead && isDynamicTriShape)
+        {
+            slot = RE::BIPED_OBJECT::kHead;
+        }
+        else
+        {
+            auto skinInstance = a_geo->GetGeometryRuntimeData().skinInstance.get();
+            auto dismember = netimmerse_cast<RE::BSDismemberSkinInstance*>(skinInstance);
+            if (dismember)
+            {
+                std::int32_t pslot = -1;
+                for (std::int32_t p = 0; p < dismember->GetRuntimeData().numPartitions; p++)
+                {
+                    pslot = dismember->GetRuntimeData().partitions[p].slot;
+                    if (pslot < 30 || pslot >= RE::BIPED_OBJECT::kEditorTotal + 30)
+                    {
+                        if (isDynamicTriShape) { //maybe head
+                            slot = RE::BIPED_OBJECT::kHead;
+                        }
+                        else if (pslot == 0) //BP_TORSO
+                        {
+                            slot = RE::BIPED_OBJECT::kBody;
+                        }
+                        else //unknown slot
+                            continue;
+                    }
+                    else
+                        slot = pslot - 30;
+                    break;
+                }
+            }
+            else //maybe it's just skinInstance in headpart or wrong mesh
+            {
+                slot = isDynamicTriShape ? RE::BIPED_OBJECT::kHead : RE::BIPED_OBJECT::kBody;
+            }
+        }
+        return slot;
+    }
 }

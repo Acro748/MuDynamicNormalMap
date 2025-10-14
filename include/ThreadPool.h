@@ -31,11 +31,7 @@ namespace Mus {
         std::queue<std::function<void()>> tasks;
         std::mutex queueMutex;
         std::condition_variable cv;
-
         std::atomic<bool> stop;
-
-        std::clock_t lastTickTime = 0;
-        int tasksProcessed = 0;
 
         void workerLoop();
     };
@@ -49,7 +45,7 @@ namespace Mus {
     {
     public:
         ThreadPool_GPUTaskModule() = delete;
-        ThreadPool_GPUTaskModule(std::uint8_t a_taskQTick, bool a_directTaskQ, std::uint8_t a_taskQMax);
+        ThreadPool_GPUTaskModule(std::uint32_t a_threadSize, std::clock_t a_taskQTick, bool a_directTaskQ);
         ~ThreadPool_GPUTaskModule();
 
         template<typename F, typename... Args>
@@ -60,34 +56,12 @@ namespace Mus {
             auto task = std::make_shared<std::packaged_task<RetType()>>(
                 std::bind(std::forward<F>(f), std::forward<Args>(args)...)
             );
-            bool isCurrentTask = false;
             std::future<RetType> res = task->get_future();
             {
                 std::unique_lock lock(queueMutex);
-                if (directTaskQ && taskQMaxCount > currentTasks.size())
-                {
-                    if (tasks.empty())
-                    {
-                        currentTasks.emplace([task]() { (*task)(); });
-                    }
-                    else
-                    {
-                        tasks.emplace([task]() { (*task)(); });
-                        currentTasks.push(std::move(tasks.front()));
-                        tasks.pop();
-                    }
-                    isCurrentTask = true;
-                }
-                else
-                {
-                    tasks.emplace([task]() { (*task)(); });
-                }
+                tasks.emplace([task]() { (*task)(); });
             }
-            if (isCurrentTask)
-            {
-                cv.notify_one();
-                lastTickTime = std::clock();
-            }
+            cv.notify_one();
             return res;
         }
 
@@ -98,20 +72,18 @@ namespace Mus {
     private:
         std::vector<std::thread> workers;
         std::queue<std::function<void()>> tasks;
-        std::queue<std::function<void()>> currentTasks;
         std::mutex queueMutex;
         std::condition_variable cv;
-
         std::atomic<bool> stop;
 
-        std::clock_t lastTickTime = 0;
-
-        const unsigned long priorityCoreMask = 0;
         const std::clock_t taskQTick = 0;
-        const std::uint8_t taskQMaxCount = 1;
         const bool directTaskQ = false;
 
-        void workerLoop();
+        std::vector<std::clock_t> lastTickTime;
+        std::vector<bool> runTask;
+        std::vector<bool> running;
+
+        void workerLoop(std::uint32_t threadNum);
     };
     extern std::unique_ptr<ThreadPool_GPUTaskModule> gpuTask;
 }

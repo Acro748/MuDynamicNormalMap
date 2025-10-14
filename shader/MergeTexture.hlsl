@@ -22,7 +22,7 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
     float2 uv = (float2(coord) + 0.5f) / float2(texWidth, texHeight);
     float4 srcColor1 = srcTexture1.SampleLevel(samplerState, uv, 0);
     float4 srcColor2 = srcTexture2.SampleLevel(samplerState, uv, 0);
-    if (srcColor1.a < 1.0f && srcColor2.a < 1.0f)
+    if (srcColor1.a == 0.0f && srcColor2.a == 0.0f)
         return;
 
     float4 dstColor = float4(lerp(srcColor1.rgb, srcColor2.rgb, srcColor2.a), 1.0f);

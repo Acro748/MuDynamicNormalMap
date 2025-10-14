@@ -30,17 +30,14 @@ namespace Mus {
 		};
 
 		struct NormalMapResult {
+			bool existResource = false;
+			std::uint64_t hash = 0;
 			bSlot slot;
 			RE::BSGeometry* geometry = nullptr; //for ptr compare only 
 			std::string geoName = "";
 			std::string texturePath = "";
 			std::string textureName = "";
 			std::uint32_t vertexCount = 0;
-			struct TextureResource {
-				Microsoft::WRL::ComPtr<ID3D11Texture2D> normalmapTexture2D = nullptr;
-				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> normalmapShaderResourceView = nullptr;
-			};
-			typedef std::shared_ptr<TextureResource> TextureResourcePtr;
 			TextureResourcePtr texture;
 		};
 		typedef concurrency::concurrent_vector<NormalMapResult> UpdateResult;
@@ -141,12 +138,8 @@ namespace Mus {
 
 			struct BleedTextureData {
 				std::vector<Microsoft::WRL::ComPtr<ID3D11Buffer>> constBuffers;
-				Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D_1 = nullptr;
-				Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D_2 = nullptr;
-				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv1 = nullptr;
-				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv2 = nullptr;
-				Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav1 = nullptr;
-				Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav2 = nullptr;
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D = nullptr;
+				std::vector<Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView>> uavs;
 			};
 			BleedTextureData bleedTextureData;
 
@@ -178,24 +171,23 @@ namespace Mus {
 		DirectX::XMVECTOR SlerpVector(const DirectX::XMVECTOR& a, const DirectX::XMVECTOR& b, const float& t);
 		bool ComputeBarycentric(const float& px, const float& py, const DirectX::XMINT2& a, const DirectX::XMINT2& b, const DirectX::XMINT2& c, DirectX::XMFLOAT3& out);
 		bool CreateStructuredBuffer(ID3D11Device* device, const void* data, UINT size, UINT stride, Microsoft::WRL::ComPtr<ID3D11Buffer>& bufferOut, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvOut);
-		bool IsValidPixel(const std::uint32_t a_pixel);
 
-		void BleedTexture(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& result, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries);
-		bool BleedTexture(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, std::int32_t margin, ID3D11Texture2D* texInOut);
-		bool BleedTextureGPU(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, std::int32_t margin, ID3D11ShaderResourceView* srvInOut, ID3D11Texture2D* texInOut);
+		bool BleedTexture(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries);
+		bool BleedTexture(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, ID3D11Texture2D* texInOut);
+		bool BleedTextureGPU(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, ID3D11ShaderResourceView* srvInOut, ID3D11Texture2D* texInOut);
 
-		void MergeTexture(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& result, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries);
+		bool MergeTexture(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries);
 		bool MergeTexture(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, ID3D11Texture2D* dstTex, ID3D11Texture2D* srcTex);
 		bool MergeTextureGPU(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, ID3D11ShaderResourceView* dstSrv, ID3D11Texture2D* dstTex,ID3D11ShaderResourceView* srcSrv, ID3D11Texture2D* srcTex);
 
-		void GenerateMipMap(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& result, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries);
+		bool GenerateMipMap(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries);
 
 		bool CopySubresourceRegion(ID3D11Device* device, ID3D11DeviceContext* context, ID3D11Texture2D* dstTexture, ID3D11Texture2D* srcTexture, UINT dstMipMapLevel, UINT srcMipMapLevel);
 		
-		void CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& result, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries);
+		bool CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries);
 		bool CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut);
 	
-		void CopyResourceToMain(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& result, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries);
+		void CopyResourceToMain(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries);
 		bool CopyResourceSecondToMain(TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut);
 		
 		void GPUPerformanceLog(ID3D11Device* device, ID3D11DeviceContext* context, std::string funcStr, bool isEnd, bool isAverage = true, std::uint32_t args = 0);
@@ -257,5 +249,7 @@ namespace Mus {
 
 		std::shared_mutex ResourceDataMapLock;
 		concurrency::concurrent_vector<TextureResourceDataPtr> ResourceDataMap;
+
+		std::uint64_t GetHash(UpdateTextureSet updateSet, std::uint64_t geoHash);
 	};
 }

@@ -165,6 +165,8 @@ using EventResult = RE::BSEventNotifyControl;
 #include "Hook.h"
 #include "ThreadPool.h"
 
+#include "NormalMapStore.h"
+
 #include "ShaderManager.h"
 
 #include "ObjectNormalMapUpdater.h"

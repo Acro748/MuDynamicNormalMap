@@ -39,6 +39,7 @@ set(headers
         include/ThreadPool.h
         include/MiniBenchMark.h
         include/ActorVertexHasher.h
+        include/NormalMapStore.h
         include/Condition.h
         include/Interface/Interface.h
         include/Interface/InterfaceImpl.h
@@ -56,6 +57,7 @@ set(sources
         src/Geometry.cpp
         src/InputManager.cpp
         src/ActorVertexHasher.cpp
+        src/NormalMapStore.cpp
         src/Condition.cpp
         src/ThreadPool.cpp
         src/Main.cpp
@@ -79,6 +81,7 @@ find_package(Directxtk CONFIG REQUIRED)
 find_package(DirectXTex CONFIG REQUIRED)
 find_package(detours)
 find_package(xxhash CONFIG REQUIRED)
+find_package(lz4 CONFIG REQUIRED)
 
 add_commonlibsse_plugin(${PROJECT_NAME} SOURCES ${headers} ${sources})
 add_library("${PROJECT_NAME}::${PROJECT_NAME}" ALIAS "${PROJECT_NAME}")
@@ -121,6 +124,7 @@ target_link_libraries(
     PRIVATE
         magic_enum::magic_enum
         JsonCpp::JsonCpp
+        lz4::lz4
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/vcpkg_installed/x64-windows-static-md/lib/xxhash.lib>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/vcpkg_installed/x64-windows-static-md/lib/detours.lib>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/vcpkg_installed/x64-windows-static-md/lib/DirectXTex.lib>

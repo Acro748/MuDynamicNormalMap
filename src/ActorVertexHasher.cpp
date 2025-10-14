@@ -17,7 +17,7 @@ namespace Mus {
 			return;
 		if (isDetecting.load())
 			return;
-		if (currentTime - lastTickTime < Config::GetSingleton().GetDetectTickMS())
+		if (lastTickTime + Config::GetSingleton().GetDetectTickMS() > currentTime)
 			return;
 		CheckingActorHash();
 		lastTickTime = currentTime;
@@ -30,14 +30,14 @@ namespace Mus {
 		RE::Actor* actor = skyrim_cast<RE::Actor*>(e.facegenNiNode->GetUserData());
 		if (!actor)
 			return;
-		BlockActors[actor->formID] = true;
+		SetBlocked(actor->formID, true);
 	}
 
 	void ActorVertexHasher::onEvent(const ActorChangeHeadPartEvent& e)
 	{
 		if (!e.actor)
 			return;
-		BlockActors[e.actor->formID] = true;
+		SetBlocked(e.actor->formID, true);
 	}
 
 	void ActorVertexHasher::onEvent(const ArmorAttachEvent& e)
@@ -46,128 +46,116 @@ namespace Mus {
 			return;
 		if (!e.actor)
 			return;
-		BlockActors[e.actor->formID] = true;
+		SetBlocked(e.actor->formID, true);
 	}
 
 	EventResult ActorVertexHasher::ProcessEvent(const SKSE::NiNodeUpdateEvent* evn, RE::BSTEventSource<SKSE::NiNodeUpdateEvent>*)
 	{
 		if (!evn || !evn->reference)
 			return EventResult::kContinue;
-		BlockActors[evn->reference->formID] = true;
+		SetBlocked(evn->reference->formID, true);
 		return EventResult::kContinue;
 	}
 
-	bool ActorVertexHasher::Register(RE::Actor* a_actor, bSlot bipedSlot)
+	bool ActorVertexHasher::Register(RE::Actor* a_actor, RE::BSGeometry* a_geo)
 	{
 		if (!Config::GetSingleton().GetRealtimeDetect())
 			return true;
-		if (bipedSlot == RE::BIPED_OBJECT::kHead && Config::GetSingleton().GetRealtimeDetectHead() == 0)
-			return true;
-		if (!a_actor || !a_actor->loadedData || !a_actor->loadedData->data3D)
+		if (!a_geo || a_geo->name.empty())
 			return false;
-		ActorHashLock.lock_shared();
-		if (ActorHash.find(a_actor->formID) == ActorHash.end())
+		if (IsInvalidActor(a_actor))
+			return false;
+		actorHashLock.lock_shared();
+		if (actorHash.find(a_actor->formID) == actorHash.end())
 		{
 			auto condition = ConditionManager::GetSingleton().GetCondition(a_actor);
-			ActorHash[a_actor->formID].IsDynamicTriShapeAsHead = condition.DynamicTriShapeAsHead;
+			actorHash[a_actor->formID].IsDynamicTriShapeAsHead = condition.DynamicTriShapeAsHead;
 		}
-		auto found = ActorHash[a_actor->formID].hash.find(bipedSlot);
-		if (found == ActorHash[a_actor->formID].hash.end())
+		auto found = actorHash[a_actor->formID].hash.find(a_geo);
+		if (found == actorHash[a_actor->formID].hash.end())
 		{
-			ActorHash[a_actor->formID].hash.insert(std::make_pair(bipedSlot, std::make_shared<Hash>()));
-			logger::debug("{:x} {} {}: registered for ActorVertexHasher", a_actor->formID, a_actor->GetName(), bipedSlot);
+			actorHash[a_actor->formID].hash.insert(std::make_pair(a_geo, std::make_shared<Hash>(a_geo)));
+			logger::debug("{:x} {} {}: registered for ActorVertexHasher", a_actor->formID, a_actor->GetName(), a_geo->name.empty());
 		}
-		ActorHashLock.unlock_shared();
-		return true;
-	}
-	bool ActorVertexHasher::InitialHash(RE::Actor* a_actor, bSlot bipedSlot)
-	{
-		if (!Config::GetSingleton().GetRealtimeDetect())
-			return true;
-		if (bipedSlot == RE::BIPED_OBJECT::kHead && Config::GetSingleton().GetRealtimeDetectHead() == 0)
-			return true;
-		if (!a_actor || !a_actor->loadedData || !a_actor->loadedData->data3D)
-			return false;
-		ActorHashLock.lock_shared();
-		if (ActorHash.find(a_actor->formID) != ActorHash.end())
-		{
-			auto found = ActorHash[a_actor->formID].hash.find(bipedSlot);
-			if (found != ActorHash[a_actor->formID].hash.end())
-			{
-				found->second->hashValue = 0;
-				logger::debug("{:x} {} {}: initialized hash for ActorVertexHasher", a_actor->formID, a_actor->GetName(), bipedSlot);
-			}
-		}
-		ActorHashLock.unlock_shared();
+		actorHashLock.unlock_shared();
 		return true;
 	}
 
 	void ActorVertexHasher::CheckingActorHash()
 	{
-		if (ActorHash.size() == 0)
+		if (actorHash.size() == 0)
 			return;
 		auto p = RE::PlayerCharacter::GetSingleton();
 		if (!p || !p->loadedData || !p->loadedData->data3D)
 			return;
+
+		const std::string funcName = __func__;
 		auto playerPosition = p->loadedData->data3D->world.translate;
+
+		auto actorHashFunc = [&, funcName, playerPosition](std::pair<RE::FormID, GeometryHashData> map) {
+			RE::NiPointer<RE::Actor> actor = RE::NiPointer(GetFormByID<RE::Actor*>(map.first));
+			if (!actor || !actor->loadedData || !actor->loadedData->data3D)
+			{
+				actorHashLock.lock();
+				actorHash.unsafe_erase(map.first);
+				actorHashLock.unlock();
+				return;
+			}
+			if (Config::GetSingleton().GetActorVertexHasherTime2())
+				PerformanceLog(funcName + "::" + GetHexStr(map.first), false, true);
+
+			if (IsBlocked(actor->formID))
+				return;
+			if (!IsPlayer(actor->formID) && (Config::GetSingleton().GetDetectDistance() > floatPrecision && playerPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) > Config::GetSingleton().GetDetectDistance()))
+				return;
+			if (!GetHash(actor.get(), map.second.hash))
+				return;
+
+			bSlotbit bipedSlot = 0;
+			for (auto& hash : map.second.hash)
+			{
+				if (hash.second->GetHash() != hash.second->GetOldHash())
+				{
+					bSlot slot = nif::GetBipedSlot(hash.first, map.second.IsDynamicTriShapeAsHead);
+					bipedSlot |= 1 << slot;
+					logger::trace("{:x} {} {} : found different hash {:x}", actor->formID, actor->GetName(), slot, hash.second->GetHash());
+				}
+			}
+			if (bipedSlot > 0)
+			{
+				logger::debug("{:x} {} : detected changed slot {:x}", actor->formID, actor->GetName(), bipedSlot);
+				TaskManager::GetSingleton().QUpdateNormalMap(actor.get(), bipedSlot);
+			}
+
+			if (Config::GetSingleton().GetActorVertexHasherTime2())
+				PerformanceLog(funcName + "::" + GetHexStr(map.first), true, true);
+		};
 
 		if (Config::GetSingleton().GetRealtimeDetectOnBackGround())
 		{
-			if (!BackGroundHasher)
-				BackGroundHasher = std::make_unique<ThreadPool_ParallelModule>(1);
+			if (Config::GetSingleton().GetActorVertexHasherTime1())
+				PerformanceLog(funcName, false, true);
 
-			BlockActors.clear();
+			if (!backGroundHasher)
+				backGroundHasher = std::make_unique<ThreadPool_ParallelModule>(1);
 
-			BackGroundHasher->submitAsync([&]() {
+			blockActorsLock.lock();
+			blockActors.clear();
+			blockActorsLock.unlock();
+
+			backGroundHasher->submitAsync([&, actorHashFunc, funcName]() {
 				isDetecting.store(true);
 
-				if (Config::GetSingleton().GetActorVertexHasherTime1())
-					PerformanceLog(std::string(__func__), false, true);
+				actorHashLock.lock_shared();
+				auto ActorHash_ = actorHash;
+				actorHashLock.unlock_shared();
 
-				ActorHashLock.lock_shared();
-				auto ActorHash_ = ActorHash;
-				ActorHashLock.unlock_shared();
 				for (auto& map : ActorHash_) {
-					RE::NiPointer<RE::Actor> actor = RE::NiPointer(GetFormByID<RE::Actor*>(map.first));
-					if (!actor || !actor->loadedData || !actor->loadedData->data3D)
-					{
-						ActorHashLock.lock();
-						ActorHash.unsafe_erase(map.first);
-						ActorHashLock.unlock();
-						continue;
-					}
-
-					if (BlockActors[actor->formID])
-						continue;
-					if (!isPlayer(actor->formID) && (Config::GetSingleton().GetDetectDistance() > floatPrecision && playerPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) > Config::GetSingleton().GetDetectDistance()))
-						continue;
-					if (!GetHash(actor.get(), map.second))
-						continue;
-
-					std::uint32_t bipedSlot = 0;
-					for (auto& hashmap : map.second.hash)
-					{
-						std::size_t hash = hashmap.second->GetNewHash();
-						hashmap.second->Reset();
-						if (hashmap.second->hashValue != 0 && hash != 0)
-						{
-							if (hashmap.second->hashValue != hash)
-							{
-								bipedSlot |= 1 << hashmap.first;
-								logger::trace("{:x} {} {} : found different hash {:x}", actor->formID, actor->GetName(), hashmap.first, hash);
-							}
-						}
-						hashmap.second->hashValue = hash;
-					}
-					if (bipedSlot > 0)
-					{
-						logger::debug("{:x} {} : detected changed slot {:x}", actor->formID, actor->GetName(), bipedSlot);
-						TaskManager::GetSingleton().QUpdateNormalMap(actor.get(), bipedSlot);
-					}
+					actorHashFunc(map);
 				}
 				
 				if (Config::GetSingleton().GetActorVertexHasherTime1())
-					PerformanceLog(std::string(__func__), true, true, ActorHash_.size());
+					PerformanceLog(funcName, true, true, ActorHash_.size());
 
 				isDetecting.store(false);
 				logger::trace("Check hashes done {}", ActorHash_.size());
@@ -178,43 +166,11 @@ namespace Mus {
 			if (Config::GetSingleton().GetActorVertexHasherTime1())
 				PerformanceLog(std::string(__func__), false, true);
 
-			ActorHashLock.lock_shared();
-			auto ActorHash_ = ActorHash;
-			ActorHashLock.unlock_shared();
+			actorHashLock.lock_shared();
+			auto ActorHash_ = actorHash;
+			actorHashLock.unlock_shared();
 			concurrency::parallel_for_each(ActorHash_.begin(), ActorHash_.end(), [&](auto& map) {
-				RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
-				if (!actor || !actor->loadedData || !actor->loadedData->data3D)
-				{
-					ActorHashLock.lock();
-					ActorHash.unsafe_erase(map.first);
-					ActorHashLock.unlock();
-					return;
-				}
-				if (!isPlayer(actor->formID) && (Config::GetSingleton().GetDetectDistance() > floatPrecision && playerPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) > Config::GetSingleton().GetDetectDistance()))
-					return;
-				if (!GetHash(actor, map.second))
-					return;
-
-				std::uint32_t bipedSlot = 0;
-				for (auto& hashmap : map.second.hash)
-				{
-					std::size_t hash = hashmap.second->GetNewHash();
-					hashmap.second->Reset();
-					if (hashmap.second->hashValue != 0 && hash != 0)
-					{
-						if (hashmap.second->hashValue != hash)
-						{
-							bipedSlot |= 1 << hashmap.first;
-							logger::trace("{:x} {} {} : found different hash {:x}", actor->formID, actor->GetName(), hashmap.first, hash);
-						}
-					}
-					hashmap.second->hashValue = hash;
-				}
-				if (bipedSlot > 0)
-				{
-					logger::debug("{:x} {} : detected changed slot {:x}", actor->formID, actor->GetName(), bipedSlot);
-					TaskManager::GetSingleton().QUpdateNormalMap(actor, bipedSlot);
-				}
+				actorHashFunc(map);
 			});
 			logger::trace("Check hashes done {}", ActorHash_.size());
 
@@ -223,131 +179,85 @@ namespace Mus {
 		}
 	}
 
-	bool ActorVertexHasher::GetHash(RE::Actor* a_actor, GeometryHash hashMap)
+	bool ActorVertexHasher::GetHash(RE::Actor* a_actor, GeometryHash& data)
 	{
-		if (!a_actor || !a_actor->loadedData || !a_actor->loadedData->data3D)
+		if (IsInvalidActor(a_actor))
 			return false;
-		if (BlockActors[a_actor->formID])
+		if (IsBlocked(a_actor->formID))
 			return false;
 
 		if (Config::GetSingleton().GetActorVertexHasherTime2())
 			PerformanceLog(std::string(__func__), false, false);
 
+		std::unordered_set<RE::BSGeometry*> existGeometries;
+		auto data_ = data;
 		auto root = a_actor->loadedData->data3D;
 		RE::BSVisit::TraverseScenegraphGeometries(root.get(), [&](RE::BSGeometry* geo) -> RE::BSVisit::BSVisitControl {
 			using State = RE::BSGeometry::States;
 			using Feature = RE::BSShaderMaterial::Feature;
-			if (BlockActors[a_actor->formID])
+			if (IsBlocked(a_actor->formID))
 				return RE::BSVisit::BSVisitControl::kStop;
 			if (!geo || geo->name.empty())
 				return RE::BSVisit::BSVisitControl::kContinue;
-			const RE::BSTriShape* triShape = geo->AsTriShape();
-			if (!triShape)
+			auto found = data_.find(geo);
+			if (found == data.end())
 				return RE::BSVisit::BSVisitControl::kContinue;
-			if (IsContainString(geo->name.c_str(), "[Ovl") || IsContainString(geo->name.c_str(), "[SOvl") || IsContainString(geo->name.c_str(), "overlay")) //without overlay
-				return RE::BSVisit::BSVisitControl::kContinue;
-			if (!geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
-				return RE::BSVisit::BSVisitControl::kContinue;
-			auto effect = geo->GetGeometryRuntimeData().properties[State::kEffect].get();
-			if (!effect)
-				return RE::BSVisit::BSVisitControl::kContinue;
-			auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
-			if (!lightingShader || !lightingShader->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
-				return RE::BSVisit::BSVisitControl::kContinue;
-			if (auto property = geo->GetGeometryRuntimeData().properties[State::kProperty].get(); property)
-			{
-				if (auto alphaProperty = netimmerse_cast<RE::NiAlphaProperty*>(property); alphaProperty)
-					return RE::BSVisit::BSVisitControl::kContinue;
-			}
-			RE::BSLightingShaderMaterialBase* material = skyrim_cast<RE::BSLightingShaderMaterialBase*>(lightingShader->material);
-			if (!material || !material->normalTexture || !material->textureSet)
-				return RE::BSVisit::BSVisitControl::kContinue;
-			std::string texturePath = lowLetter(GetTexturePath(material->textureSet.get(), RE::BSTextureSet::Texture::kNormal));
-			if (texturePath.empty())
-				return RE::BSVisit::BSVisitControl::kContinue;
-			if (!geo->GetGeometryRuntimeData().skinInstance)
-				return RE::BSVisit::BSVisitControl::kContinue;
-
-			bSlot slot = 0;
-			bool isDynamicTriShape = geo->AsDynamicTriShape() ? true : false;
-			if (hashMap.IsDynamicTriShapeAsHead && isDynamicTriShape)
-			{
-				slot = RE::BIPED_OBJECT::kHead;
-			}
-			else
-			{
-				auto skinInstance = geo->GetGeometryRuntimeData().skinInstance.get();
-				auto dismember = netimmerse_cast<RE::BSDismemberSkinInstance*>(skinInstance);
-				if (dismember)
-				{
-					std::int32_t pslot = -1;
-					for (std::int32_t p = 0; p < dismember->GetRuntimeData().numPartitions; p++)
-					{
-						pslot = dismember->GetRuntimeData().partitions[p].slot;
-						if (pslot < 30 || pslot >= RE::BIPED_OBJECT::kEditorTotal + 30)
-						{
-							if (isDynamicTriShape) { //maybe head
-								slot = RE::BIPED_OBJECT::kHead;
-							}
-							else if (pslot == 0) //BP_TORSO
-							{
-								slot = RE::BIPED_OBJECT::kBody;
-							}
-							else //unknown slot
-								continue;
-						}
-						else
-							slot = pslot - 30;
-						if (hashMap.hash.find(slot) != hashMap.hash.end())
-							break;
-					}
-				}
-				else //maybe it's just skinInstance in headpart or wrong mesh
-				{
-					slot = isDynamicTriShape ? RE::BIPED_OBJECT::kHead : RE::BIPED_OBJECT::kBody;
-				}
-			}
-
-			auto found = hashMap.hash.find(slot);
-			if (found == hashMap.hash.end())
-				return RE::BSVisit::BSVisitControl::kContinue;
-
-			std::uint32_t vertexCount = triShape->GetTrishapeRuntimeData().vertexCount;
-			const RE::NiPointer<RE::NiSkinPartition> skinPartition = GetSkinPartition(geo);
-			if (!skinPartition)
-				return RE::BSVisit::BSVisitControl::kContinue;
-			vertexCount = vertexCount > 0 ? vertexCount : skinPartition->vertexCount;
-
-			if (const RE::BSDynamicTriShape* dynamicTriShape = geo->AsDynamicTriShape(); dynamicTriShape)
-			{
-				if (Config::GetSingleton().GetRealtimeDetectHead() == 1)
-				{
-					const auto morphData = GeometryData::GetMorphExtraData(geo);
-					if (morphData)
-					{
-						found->second->Update(morphData->vertexData, sizeof(RE::NiPoint3) * vertexCount);
-					}
-				}
-				else if (Config::GetSingleton().GetRealtimeDetectHead() == 2)
-				{
-					found->second->Update(dynamicTriShape->GetDynamicTrishapeRuntimeData().dynamicData, sizeof(DirectX::XMVECTOR) * vertexCount);
-				}
-			}
-			else
-			{
-				auto desc = geo->GetGeometryRuntimeData().vertexDesc;
-				if (!desc.HasFlag(RE::BSGraphics::Vertex::VF_VERTEX) || !desc.HasFlag(RE::BSGraphics::Vertex::VF_UV))
-					return RE::BSVisit::BSVisitControl::kContinue;
-				found->second->Update(skinPartition->partitions[0].buffData->rawVertexData, sizeof(std::uint8_t) * vertexCount * desc.GetSize());
-			}
+			if (found->second->Update(geo))
+				existGeometries.insert(geo);
 			return RE::BSVisit::BSVisitControl::kContinue;
 		});
+
+		for (auto& d : data_) {
+			if (existGeometries.find(d.first) != existGeometries.end())
+				continue;
+			data.unsafe_erase(d.first);
+		}
 
 		if (Config::GetSingleton().GetActorVertexHasherTime2())
 			PerformanceLog(std::string(__func__), true, false);
 
-		if (BlockActors[a_actor->formID])
+		if (IsBlocked(a_actor->formID))
 			return false;
+		return true;
+	}
+
+	bool ActorVertexHasher::Hash::Update(RE::BSGeometry* a_geo)
+	{
+		if (!a_geo)
+			return false;
+		const RE::BSTriShape* triShape = a_geo->AsTriShape();
+		if (!triShape)
+			return false;
+		std::uint32_t vertexCount = triShape->GetTrishapeRuntimeData().vertexCount;
+		const RE::NiPointer<RE::NiSkinPartition> skinPartition = GetSkinPartition(a_geo);
+		if (!skinPartition)
+			return false;
+		vertexCount = vertexCount > 0 ? vertexCount : skinPartition->vertexCount;
+
+		Reset();
+		if (const RE::BSDynamicTriShape* dynamicTriShape = a_geo->AsDynamicTriShape(); dynamicTriShape)
+		{
+			if (Config::GetSingleton().GetRealtimeDetectHead() == 1)
+			{
+				const auto morphData = GeometryData::GetMorphExtraData(a_geo);
+				if (morphData)
+				{
+					Update(morphData->vertexData, sizeof(RE::NiPoint3) * vertexCount);
+				}
+			}
+			else if (Config::GetSingleton().GetRealtimeDetectHead() == 2)
+			{
+				Update(dynamicTriShape->GetDynamicTrishapeRuntimeData().dynamicData, sizeof(DirectX::XMVECTOR) * vertexCount);
+			}
+		}
+		else
+		{
+			auto desc = a_geo->GetGeometryRuntimeData().vertexDesc;
+			if (!desc.HasFlag(RE::BSGraphics::Vertex::VF_VERTEX) || !desc.HasFlag(RE::BSGraphics::Vertex::VF_UV))
+				return false;
+			Update(skinPartition->partitions[0].buffData->rawVertexData, sizeof(std::uint8_t) * vertexCount * desc.GetSize());
+		}
+		GetNewHash();
 		return true;
 	}
 }
