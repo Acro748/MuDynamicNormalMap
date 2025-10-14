@@ -238,7 +238,7 @@ namespace Mus {
 			for (const auto& update : updateSet_) {
 				const auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
 					return geosInfo.geometry == update.first;
-												});
+				});
 				if (found == a_data->geometries.end())
 				{
 					logger::error("{}::{:x} : Geometry {} not found in data", _func_, a_actorID, update.second.geometryName);
@@ -246,10 +246,12 @@ namespace Mus {
 				}
 
 				found->hash = GetHash(update.second, found->hash);
-
-				if (auto textureResource = NormalMapStore::GetSingleton().GetResource(found->hash); textureResource)
+				TextureResourcePtr textureResource = nullptr;
+				bool diskCache = false;
+				NormalMapStore::GetSingleton().GetResource(found->hash, textureResource, diskCache);
+				if (textureResource)
 				{
-					logger::info("{}::{:x}::{} : Found exist resource", _func_, a_actorID, update.second.geometryName);
+					logger::info("{}::{:x}::{} : Found exist resource {}", _func_, a_actorID, update.second.geometryName, found->hash);
 
 					NormalMapResult newNormalMapResult;
 					newNormalMapResult.slot = update.second.slot;
@@ -261,6 +263,7 @@ namespace Mus {
 					newNormalMapResult.texture = std::make_shared<TextureResource>(*textureResource);
 					newNormalMapResult.hash = found->hash;
 					newNormalMapResult.existResource = true;
+					newNormalMapResult.diskCache = diskCache;
 					results.push_back(newNormalMapResult);
 
 					TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
@@ -271,11 +274,32 @@ namespace Mus {
 				}
 			}
 
+			for (auto& result : results) {
+				auto resultFound = std::find_if(results.begin(), results.end(), [&](NormalMapResult& r) {
+					return result.geometry != r.geometry && result.textureName == r.textureName && result.diskCache != r.diskCache;
+				});
+				if (resultFound == results.end())
+					continue;
+
+				logger::info("{}::{:x}::{} : Use resource in GPU instead of disk cache", _func_, a_actorID, 
+							 (!result.diskCache ? resultFound->geoName : result.geoName), (!result.diskCache ? result.hash : resultFound->hash));
+				if (!result.diskCache)
+				{
+					resultFound->diskCache = false;
+					resultFound->texture = result.texture;
+				}
+				else
+				{
+					result.diskCache = false;
+					result.texture = resultFound->texture;
+				}
+			}
+
 			updateSet_ = a_updateSet;
 			for (const auto& update : updateSet_) {
 				const auto pairResultFound = std::find_if(results.begin(), results.end(), [&](const NormalMapResult& results) {
 					return update.first != results.geometry && update.second.textureName == results.textureName;
-														  });
+				});
 				if (pairResultFound == results.end())
 					continue;
 
@@ -751,7 +775,7 @@ namespace Mus {
 			for (const auto& update : updateSet_) {
 				const auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
 					return geosInfo.geometry == update.first;
-												});
+				});
 				if (found == a_data->geometries.end())
 				{
 					logger::error("{}::{:x} : Geometry {} not found in data", _func_, a_actorID, update.second.geometryName);
@@ -759,10 +783,12 @@ namespace Mus {
 				}
 
 				found->hash = GetHash(update.second, found->hash);
-
-				if (auto textureResource = NormalMapStore::GetSingleton().GetResource(found->hash); textureResource)
+				TextureResourcePtr textureResource = nullptr;
+				bool diskCache = false;
+				NormalMapStore::GetSingleton().GetResource(found->hash, textureResource, diskCache);
+				if (textureResource)
 				{
-					logger::info("{}::{:x}::{} : Found exist resource", _func_, a_actorID, update.second.geometryName);
+					logger::info("{}::{:x}::{} : Found exist resource {}", _func_, a_actorID, update.second.geometryName, found->hash);
 
 					NormalMapResult newNormalMapResult;
 					newNormalMapResult.slot = update.second.slot;
@@ -774,6 +800,7 @@ namespace Mus {
 					newNormalMapResult.texture = std::make_shared<TextureResource>(*textureResource);
 					newNormalMapResult.hash = found->hash;
 					newNormalMapResult.existResource = true;
+					newNormalMapResult.diskCache = diskCache;
 					results.push_back(newNormalMapResult);
 
 					TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
@@ -784,17 +811,58 @@ namespace Mus {
 				}
 			}
 
+			for (auto& result : results) {
+				auto resultFound = std::find_if(results.begin(), results.end(), [&](NormalMapResult& r) {
+					return result.geometry != r.geometry && result.textureName == r.textureName && result.diskCache != r.diskCache;
+				});
+				if (resultFound == results.end())
+					continue;
+
+				logger::info("{}::{:x}::{} : Use resource in GPU instead of disk cache", _func_, a_actorID,
+							 (!result.diskCache ? resultFound->geoName : result.geoName), (!result.diskCache ? result.hash : resultFound->hash));
+				if (!result.diskCache)
+				{
+					resultFound->diskCache = false;
+					resultFound->texture = result.texture;
+				}
+				else
+				{
+					result.diskCache = false;
+					result.texture = resultFound->texture;
+				}
+			}
+
 			updateSet_ = a_updateSet;
 			for (const auto& update : updateSet_) {
+				const auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
+					return geosInfo.geometry == update.first;
+				});
+				if (found == a_data->geometries.end())
+				{
+					logger::error("{}::{:x} : Geometry {} not found in data", _func_, a_actorID, update.second.geometryName);
+					return results;
+				}
+
 				const auto pairResultFound = std::find_if(results.begin(), results.end(), [&](const NormalMapResult& results) {
 					return update.first != results.geometry && update.second.textureName == results.textureName;
 				});
 				if (pairResultFound == results.end())
 					continue;
 
-				logger::info("{}::{:x}::{} : Found exist resource", _func_, a_actorID, update.second.geometryName);
+				logger::info("{}::{:x}::{} : Found exist resource {}", _func_, a_actorID, update.second.geometryName, pairResultFound->hash);
 
-				results.push_back(*pairResultFound);
+				NormalMapResult newNormalMapResult;
+				newNormalMapResult.slot = update.second.slot;
+				newNormalMapResult.geometry = update.first;
+				newNormalMapResult.vertexCount = found->objInfo.vertexCount();
+				newNormalMapResult.geoName = update.second.geometryName;
+				newNormalMapResult.texturePath = update.second.srcTexturePath.empty() ? update.second.detailTexturePath : update.second.srcTexturePath;
+				newNormalMapResult.textureName = update.second.textureName;
+				newNormalMapResult.texture = std::make_shared<TextureResource>(*pairResultFound->texture);
+				newNormalMapResult.hash = found->hash;
+				newNormalMapResult.existResource = true;
+
+				results.push_back(newNormalMapResult);
 
 				TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
 				newResourceData->textureName = update.second.textureName;
@@ -2771,7 +2839,7 @@ namespace Mus {
 	{
 		if (!device || !context || !query)
 			return;
-		if (isSecondGPU && secondGPUNoWait)
+		if (isSecondGPU && secondGPUNoWait && !Config::GetSingleton().GetSecondaryGPUWaitForGPU())
 			return;
 		HRESULT hr;
 		while (true) {

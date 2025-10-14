@@ -16,7 +16,7 @@ namespace Mus{
 		void Init();
 
 		void AddResource(std::uint64_t a_hash, TextureResourcePtr a_resource);
-		TextureResourcePtr GetResource(std::uint64_t a_hash);
+		bool GetResource(std::uint64_t a_hash, TextureResourcePtr& a_resource, bool& isDiskCache);
 		void ClearMemory();
 
 		void CreateDiskCache(std::uint64_t a_hash, TextureResourcePtr a_resource);

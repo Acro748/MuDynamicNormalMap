@@ -31,6 +31,7 @@ namespace Mus {
 
 		struct NormalMapResult {
 			bool existResource = false;
+			bool diskCache = false;
 			std::uint64_t hash = 0;
 			bSlot slot;
 			RE::BSGeometry* geometry = nullptr; //for ptr compare only 

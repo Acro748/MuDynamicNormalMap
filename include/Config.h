@@ -186,6 +186,9 @@ namespace Mus {
         [[nodiscard]] inline auto GetGPUDeviceIndex() const noexcept {
             return GPUDeviceIndex;
         }
+        [[nodiscard]] inline auto GetSecondaryGPUWaitForGPU() const noexcept {
+            return SecondaryGPUWaitForGPU;
+        }
         [[nodiscard]] inline auto GetWaitForRendererTickMS() const noexcept {
             return WaitForRendererTickMS;
         }
@@ -333,6 +336,7 @@ namespace Mus {
         std::uint32_t TextureMarginIgnoreSize = 64;
         bool MergeTextureGPU = true;
         std::int32_t GPUDeviceIndex = -1;
+        bool SecondaryGPUWaitForGPU = false;
         std::clock_t WaitForRendererTickMS = 1000; //1sec
         float UpdateDistance = 4096.0f * 4096.0f;
         bool UpdateDistanceVramSave = false;
@@ -345,7 +349,7 @@ namespace Mus {
         std::uint8_t DivideTaskQ = 1;
         bool VRAMSaveMode = false;
         std::int8_t TextureCompress = 0; //-1 auto compress, 0 no compress, 1 dxt5, 2 bc7
-        bool DiskCache = false;
+        bool DiskCache = true;
         std::string DiskCacheFolder = "Data\\SKSE\\Plugins\\MuDynamicNormalMap\\DiskCache";
         std::uint32_t DiskCacheLimitMB = 500;
         bool ClearDiskCache = true;

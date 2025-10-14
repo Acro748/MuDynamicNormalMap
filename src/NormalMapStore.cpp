@@ -49,7 +49,10 @@ namespace Mus {
 		for (auto& garbage : garbages) {
 			map.unsafe_erase(garbage);
 		}
+		std::size_t mapSize = map.size();
 		lock.unlock();
+
+		logger::debug("Removed {} Ram cache / Current remain {} Ram cache", garbages.size(), mapSize);
 	}
 
 	void NormalMapStore::AddResource(std::uint64_t a_hash, TextureResourcePtr a_resource)
@@ -64,9 +67,10 @@ namespace Mus {
 			CheckDiskCacheCapacity();
 		}
 	}
-	TextureResourcePtr NormalMapStore::GetResource(std::uint64_t a_hash)
+	bool NormalMapStore::GetResource(std::uint64_t a_hash, TextureResourcePtr& a_resource, bool& isDiskCache)
 	{
 		TextureResourcePtr resource = nullptr;
+		isDiskCache = false;
 		lock.lock_shared();
 		auto found = map.find(a_hash);
 		if (found != map.end())
@@ -77,6 +81,7 @@ namespace Mus {
 		if (!resource) {
 			resource = GetDiskCache(a_hash);
 			if (resource) {
+				isDiskCache = true;
 				lock.lock_shared();
 				map[a_hash] = resource;
 				lock.unlock_shared();
@@ -85,7 +90,8 @@ namespace Mus {
 		}
 		if (resource)
 			UpdateAccessTime(a_hash);
-		return resource;
+		a_resource = resource;
+		return a_resource ? true : false;
 	}
 
 	void NormalMapStore::CreateDiskCache(std::uint64_t a_hash, TextureResourcePtr a_resource)

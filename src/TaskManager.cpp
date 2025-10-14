@@ -1042,10 +1042,8 @@ namespace Mus {
 							else if (stringStartsWith(texturePath, "Data\\"))
 								texturePath = GetRuntimeDataDirectory() + texturePath;
 
-							std::thread([&]() {
-								if (Shader::TextureLoadManager::GetSingleton().PrintTexture(texturePath, texture.Get()))
-									logger::info("Print texture done : {}", texturePath);
-							}).detach();
+							if (Shader::TextureLoadManager::GetSingleton().PrintTexture(texturePath, texture.Get()))
+								logger::info("Print texture done : {}", texturePath);
 						}
 					}
 				}
