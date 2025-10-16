@@ -1,4 +1,5 @@
 #include "ObjectNormalMapUpdater.h"
+#include "bc7enc.h"
 
 namespace Mus {
 	void ObjectNormalMapUpdater::onEvent(const FrameEvent& e)
@@ -105,6 +106,191 @@ namespace Mus {
 		if (Config::GetSingleton().GetMergeTextureGPU())
 		{
 			Shader::ShaderManager::GetSingleton().GetComputeShader(GetDevice(), MergeTextureShaderName.data());
+		}
+	}
+
+	void ObjectNormalMapUpdater::LoadCacheResource(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet& a_updateSet, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results)
+	{
+		//hash update with geo hash + texture hash
+		for (auto& update : a_updateSet) {
+			const auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
+				return geosInfo.geometry == update.first;
+											});
+			if (found == a_data->geometries.end())
+			{
+				logger::error("{}::{:x} : Geometry {} not found in data", __func__, a_actorID, update.second.geometryName);
+				a_updateSet.unsafe_erase(update.first);
+				continue;
+			}
+			found->hash = GetHash(update.second, found->hash);
+		}
+
+		//find texture from cache
+		std::vector<std::pair<RE::BSGeometry*, UpdateTextureSet>> sortUpdateSet(a_updateSet.begin(), a_updateSet.end());
+		std::sort(sortUpdateSet.begin(), sortUpdateSet.end(), [&](std::pair<RE::BSGeometry*, UpdateTextureSet>& a, std::pair<RE::BSGeometry*, UpdateTextureSet>& b) {
+			const auto aIt = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
+				return geosInfo.geometry == a.first;
+			});
+			if (aIt == a_data->geometries.end())
+				return a.first < b.first;
+			const auto bIt = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
+				return geosInfo.geometry == b.first;
+			});
+			if (bIt == a_data->geometries.end())
+				return a.first < b.first;
+			return aIt->objInfo.vertexCount() > bIt->objInfo.vertexCount();
+		});
+		std::unordered_set<std::uint64_t> pairedHashesAll;
+		for (const auto& update : sortUpdateSet) {
+			const auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
+				return geosInfo.geometry == update.first;
+			});
+			if (found == a_data->geometries.end())
+			{
+				logger::error("{}::{:x} : Geometry {} not found in data", __func__, a_actorID, update.second.geometryName);
+				continue;
+			}
+			if (pairedHashesAll.find(found->hash) != pairedHashesAll.end())
+				continue;
+
+			TextureResourcePtr textureResource = nullptr;
+			bool diskCache = false;
+			NormalMapStore::GetSingleton().GetResource(found->hash, textureResource, diskCache);
+			if (textureResource)
+			{
+				std::unordered_set<std::uint64_t> pairedHashes;
+				if (!std::ranges::all_of(a_updateSet, [&](auto& updateAlt) {
+					if (update.first == updateAlt.first)
+						return true;
+					if (update.second.textureName != updateAlt.second.textureName)
+						return true;
+					const auto foundAlt = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
+						return geosInfo.geometry == updateAlt.first;
+					});
+					if (foundAlt == a_data->geometries.end())
+					{
+						logger::error("{}::{:x} : Geometry {} not found in data", __func__, a_actorID, update.second.geometryName);
+						return true;
+					}
+					pairedHashes.insert(found->hash);
+					pairedHashes.insert(foundAlt->hash);
+					return NormalMapStore::GetSingleton().IsPairHashes(found->hash, foundAlt->hash);
+				}))
+				{
+					NormalMapStore::GetSingleton().InitHashPair(found->hash);
+					logger::info("{}::{:x}::{} : Found exist resource from {} ({:x}), but lack of components. so skip", __func__, a_actorID, 
+								 update.second.geometryName, (diskCache ? "disk cache" : "GPU"), found->hash);
+					continue;
+				}
+
+				logger::info("{}::{:x}::{} : Found exist resource from {} ({:x})", __func__, a_actorID, update.second.geometryName, (diskCache ? "disk cache" : "GPU"), found->hash);
+				NormalMapResult newNormalMapResult;
+				newNormalMapResult.slot = update.second.slot;
+				newNormalMapResult.geometry = update.first;
+				newNormalMapResult.vertexCount = found->objInfo.vertexCount();
+				newNormalMapResult.geoName = update.second.geometryName;
+				newNormalMapResult.texturePath = update.second.srcTexturePath.empty() ? update.second.detailTexturePath : update.second.srcTexturePath;
+				newNormalMapResult.textureName = update.second.textureName;
+				newNormalMapResult.texture = textureResource;
+				newNormalMapResult.hash = found->hash;
+				newNormalMapResult.existResource = true;
+				newNormalMapResult.diskCache = diskCache;
+				results.push_back(newNormalMapResult);
+
+				TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
+				newResourceData->textureName = update.second.textureName;
+				resourceDatas.push_back(newResourceData);
+
+				a_updateSet.unsafe_erase(update.first);
+
+				pairedHashesAll.insert(pairedHashes.begin(), pairedHashes.end());
+			}
+		}
+
+		//shere resource and use GPU resource instead of disk cache if multiple cache is loaded on the same texture name
+		for (auto& result : results) {
+			if (!result.existResource)
+				continue;
+			auto resultFound = std::find_if(results.begin(), results.end(), [&](NormalMapResult& r) {
+				return result.geometry != r.geometry && result.textureName == r.textureName && result.existResource == r.existResource;
+											});
+			if (resultFound == results.end())
+				continue;
+
+			NormalMapResult* srcResult = nullptr;
+			NormalMapResult* dstResult = nullptr;
+			if (result.diskCache == resultFound->diskCache)
+			{
+				if (result.vertexCount >= resultFound->vertexCount)
+				{
+					srcResult = &result;
+					dstResult = &*resultFound;
+				}
+				else
+				{
+					srcResult = &*resultFound;
+					dstResult = &result;
+				}
+			}
+			else
+			{
+				if (!result.diskCache)
+				{
+					srcResult = &result;
+					dstResult = &*resultFound;
+				}
+				else
+				{
+					srcResult = &*resultFound;
+					dstResult = &result;
+				}
+			}
+			dstResult->diskCache = srcResult->diskCache;
+			dstResult->texture = srcResult->texture;
+			logger::info("{}::{:x}::{} : Use share resource {:x}", __func__, a_actorID, dstResult->geoName, srcResult->hash);
+		}
+
+		//share resource if textureName is the same
+		auto updateSet_ = a_updateSet;
+		for (auto& update : updateSet_) {
+			const auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
+				return geosInfo.geometry == update.first;
+											});
+			if (found == a_data->geometries.end())
+			{
+				continue;
+			}
+
+			if (std::find_if(results.begin(), results.end(), [&](NormalMapResult& result) { return update.first == result.geometry; }) != results.end())
+				continue;
+
+			const auto resultFound = std::find_if(results.begin(), results.end(), [&](NormalMapResult& result) {
+				return update.first != result.geometry && update.second.textureName == result.textureName && result.existResource;
+			});
+			if (resultFound == results.end())
+				continue;
+
+			logger::info("{}::{:x}::{} : Use share resource {:x}", __func__, a_actorID, update.second.geometryName, resultFound->hash);
+
+			NormalMapResult newNormalMapResult;
+			newNormalMapResult.slot = update.second.slot;
+			newNormalMapResult.geometry = update.first;
+			newNormalMapResult.vertexCount = found->objInfo.vertexCount();
+			newNormalMapResult.geoName = update.second.geometryName;
+			newNormalMapResult.texturePath = update.second.srcTexturePath.empty() ? update.second.detailTexturePath : update.second.srcTexturePath;
+			newNormalMapResult.textureName = update.second.textureName;
+			newNormalMapResult.texture = resultFound->texture;
+			newNormalMapResult.hash = found->hash;
+			newNormalMapResult.existResource = true;
+			newNormalMapResult.diskCache = resultFound->diskCache;
+			results.push_back(newNormalMapResult);
+
+			TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
+			newResourceData->textureName = update.second.textureName;
+			resourceDatas.push_back(newResourceData);
+
+			mergedTextureGeometries.insert(update.first);
+			a_updateSet.unsafe_erase(update.first);
 		}
 	}
 
@@ -233,89 +419,7 @@ namespace Mus {
 
 		std::unordered_set<RE::BSGeometry*> mergedTextureGeometries;
 		concurrency::concurrent_vector<TextureResourceDataPtr> resourceDatas;
-		{
-			auto updateSet_ = a_updateSet;
-			for (const auto& update : updateSet_) {
-				const auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
-					return geosInfo.geometry == update.first;
-				});
-				if (found == a_data->geometries.end())
-				{
-					logger::error("{}::{:x} : Geometry {} not found in data", _func_, a_actorID, update.second.geometryName);
-					continue;
-				}
-
-				found->hash = GetHash(update.second, found->hash);
-				TextureResourcePtr textureResource = nullptr;
-				bool diskCache = false;
-				NormalMapStore::GetSingleton().GetResource(found->hash, textureResource, diskCache);
-				if (textureResource)
-				{
-					logger::info("{}::{:x}::{} : Found exist resource {}", _func_, a_actorID, update.second.geometryName, found->hash);
-
-					NormalMapResult newNormalMapResult;
-					newNormalMapResult.slot = update.second.slot;
-					newNormalMapResult.geometry = update.first;
-					newNormalMapResult.vertexCount = found->objInfo.vertexCount();
-					newNormalMapResult.geoName = update.second.geometryName;
-					newNormalMapResult.texturePath = update.second.srcTexturePath.empty() ? update.second.detailTexturePath : update.second.srcTexturePath;
-					newNormalMapResult.textureName = update.second.textureName;
-					newNormalMapResult.texture = std::make_shared<TextureResource>(*textureResource);
-					newNormalMapResult.hash = found->hash;
-					newNormalMapResult.existResource = true;
-					newNormalMapResult.diskCache = diskCache;
-					results.push_back(newNormalMapResult);
-
-					TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
-					newResourceData->textureName = update.second.textureName;
-					resourceDatas.push_back(newResourceData);
-
-					a_updateSet.unsafe_erase(update.first);
-				}
-			}
-
-			for (auto& result : results) {
-				auto resultFound = std::find_if(results.begin(), results.end(), [&](NormalMapResult& r) {
-					return result.geometry != r.geometry && result.textureName == r.textureName && result.diskCache != r.diskCache;
-				});
-				if (resultFound == results.end())
-					continue;
-
-				logger::info("{}::{:x}::{} : Use resource in GPU instead of disk cache", _func_, a_actorID, 
-							 (!result.diskCache ? resultFound->geoName : result.geoName), (!result.diskCache ? result.hash : resultFound->hash));
-				if (!result.diskCache)
-				{
-					resultFound->diskCache = false;
-					resultFound->texture = result.texture;
-				}
-				else
-				{
-					result.diskCache = false;
-					result.texture = resultFound->texture;
-				}
-			}
-
-			updateSet_ = a_updateSet;
-			for (const auto& update : updateSet_) {
-				const auto pairResultFound = std::find_if(results.begin(), results.end(), [&](const NormalMapResult& results) {
-					return update.first != results.geometry && update.second.textureName == results.textureName;
-				});
-				if (pairResultFound == results.end())
-					continue;
-
-				logger::info("{}::{:x}::{} : Found exist resource", _func_, a_actorID, update.second.geometryName);
-
-				results.push_back(*pairResultFound);
-
-				TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
-				newResourceData->textureName = update.second.textureName;
-				resourceDatas.push_back(newResourceData);
-
-				a_updateSet.unsafe_erase(update.first);
-
-				mergedTextureGeometries.insert(update.first);
-			}
-		}
+		LoadCacheResource(a_actorID, a_data, a_updateSet, mergedTextureGeometries, resourceDatas, results);
 
 		std::mutex resultLock;
 		for (const auto& update : a_updateSet)
@@ -333,6 +437,7 @@ namespace Mus {
 			}
 			GeometryData::ObjectInfo& objInfo = found->objInfo;
 			TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
+			newResourceData->geometry = update.first;
 			newResourceData->textureName = update.second.textureName;
 
 			D3D11_TEXTURE2D_DESC srcStagingDesc = {}, detailStagingDesc = {}, overlayStagingDesc = {}, maskStagingDesc = {}, dstStagingDesc = {}, dstDesc = {};
@@ -770,109 +875,7 @@ namespace Mus {
 
 		std::unordered_set<RE::BSGeometry*> mergedTextureGeometries;
 		concurrency::concurrent_vector<TextureResourceDataPtr> resourceDatas;
-		{
-			auto updateSet_ = a_updateSet;
-			for (const auto& update : updateSet_) {
-				const auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
-					return geosInfo.geometry == update.first;
-				});
-				if (found == a_data->geometries.end())
-				{
-					logger::error("{}::{:x} : Geometry {} not found in data", _func_, a_actorID, update.second.geometryName);
-					continue;
-				}
-
-				found->hash = GetHash(update.second, found->hash);
-				TextureResourcePtr textureResource = nullptr;
-				bool diskCache = false;
-				NormalMapStore::GetSingleton().GetResource(found->hash, textureResource, diskCache);
-				if (textureResource)
-				{
-					logger::info("{}::{:x}::{} : Found exist resource {}", _func_, a_actorID, update.second.geometryName, found->hash);
-
-					NormalMapResult newNormalMapResult;
-					newNormalMapResult.slot = update.second.slot;
-					newNormalMapResult.geometry = update.first;
-					newNormalMapResult.vertexCount = found->objInfo.vertexCount();
-					newNormalMapResult.geoName = update.second.geometryName;
-					newNormalMapResult.texturePath = update.second.srcTexturePath.empty() ? update.second.detailTexturePath : update.second.srcTexturePath;
-					newNormalMapResult.textureName = update.second.textureName;
-					newNormalMapResult.texture = std::make_shared<TextureResource>(*textureResource);
-					newNormalMapResult.hash = found->hash;
-					newNormalMapResult.existResource = true;
-					newNormalMapResult.diskCache = diskCache;
-					results.push_back(newNormalMapResult);
-
-					TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
-					newResourceData->textureName = update.second.textureName;
-					resourceDatas.push_back(newResourceData);
-
-					a_updateSet.unsafe_erase(update.first);
-				}
-			}
-
-			for (auto& result : results) {
-				auto resultFound = std::find_if(results.begin(), results.end(), [&](NormalMapResult& r) {
-					return result.geometry != r.geometry && result.textureName == r.textureName && result.diskCache != r.diskCache;
-				});
-				if (resultFound == results.end())
-					continue;
-
-				logger::info("{}::{:x}::{} : Use resource in GPU instead of disk cache", _func_, a_actorID,
-							 (!result.diskCache ? resultFound->geoName : result.geoName), (!result.diskCache ? result.hash : resultFound->hash));
-				if (!result.diskCache)
-				{
-					resultFound->diskCache = false;
-					resultFound->texture = result.texture;
-				}
-				else
-				{
-					result.diskCache = false;
-					result.texture = resultFound->texture;
-				}
-			}
-
-			updateSet_ = a_updateSet;
-			for (const auto& update : updateSet_) {
-				const auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
-					return geosInfo.geometry == update.first;
-				});
-				if (found == a_data->geometries.end())
-				{
-					logger::error("{}::{:x} : Geometry {} not found in data", _func_, a_actorID, update.second.geometryName);
-					return results;
-				}
-
-				const auto pairResultFound = std::find_if(results.begin(), results.end(), [&](const NormalMapResult& results) {
-					return update.first != results.geometry && update.second.textureName == results.textureName;
-				});
-				if (pairResultFound == results.end())
-					continue;
-
-				logger::info("{}::{:x}::{} : Found exist resource {}", _func_, a_actorID, update.second.geometryName, pairResultFound->hash);
-
-				NormalMapResult newNormalMapResult;
-				newNormalMapResult.slot = update.second.slot;
-				newNormalMapResult.geometry = update.first;
-				newNormalMapResult.vertexCount = found->objInfo.vertexCount();
-				newNormalMapResult.geoName = update.second.geometryName;
-				newNormalMapResult.texturePath = update.second.srcTexturePath.empty() ? update.second.detailTexturePath : update.second.srcTexturePath;
-				newNormalMapResult.textureName = update.second.textureName;
-				newNormalMapResult.texture = std::make_shared<TextureResource>(*pairResultFound->texture);
-				newNormalMapResult.hash = found->hash;
-				newNormalMapResult.existResource = true;
-
-				results.push_back(newNormalMapResult);
-
-				TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
-				newResourceData->textureName = update.second.textureName;
-				resourceDatas.push_back(newResourceData);
-
-				a_updateSet.unsafe_erase(update.first);
-
-				mergedTextureGeometries.insert(update.first);
-			}
-		}
+		LoadCacheResource(a_actorID, a_data, a_updateSet, mergedTextureGeometries, resourceDatas, results);
 
 		std::mutex resultLock;
 		std::vector<std::future<void>> updateTasks;
@@ -892,6 +895,7 @@ namespace Mus {
 				}
 				const GeometryData::ObjectInfo& objInfo = found->objInfo;
 				TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
+				newResourceData->geometry = update.first;
 				newResourceData->textureName = update.second.textureName;
 
 				D3D11_TEXTURE2D_DESC srcDesc = {}, detailDesc = {}, overlayDesc = {}, maskDesc = {}, dstDesc = {}, dstWriteDesc = {};
@@ -945,7 +949,11 @@ namespace Mus {
 				dstWriteDesc.MiscFlags = 0;
 				dstWriteDesc.MipLevels = 1;
 				dstWriteDesc.CPUAccessFlags = 0;
-				hr = device->CreateTexture2D(&dstWriteDesc, nullptr, &newResourceData->dstWriteTexture2D);
+				D3D11_SUBRESOURCE_DATA initDstWrite = {};
+				std::vector<uint32_t> initDstWriteData((std::size_t)dstWriteDesc.Width * dstWriteDesc.Height, 0);
+				initDstWrite.pSysMem = initDstWriteData.data();
+				initDstWrite.SysMemPitch = (std::size_t)dstWriteDesc.Width * sizeof(std::uint32_t);
+				hr = device->CreateTexture2D(&dstWriteDesc, &initDstWrite, &newResourceData->dstWriteTexture2D);
 				if (FAILED(hr))
 				{
 					logger::error("{}::{:x}::{} : Failed to create dst texture 2d ({})", _func_, a_actorID, update.second.geometryName, hr);
@@ -1513,8 +1521,8 @@ namespace Mus {
 			const UINT radius = mipLevel / 2 + 1;
 
 			std::vector<std::future<void>> processes;
-			const std::size_t subX = std::max((std::size_t)1, std::min(std::size_t(width), processingThreads->GetThreads() * 16));
-			const std::size_t subY = std::max((std::size_t)1, std::min(std::size_t(height), processingThreads->GetThreads() * 16));
+			const std::size_t subX = std::max((std::size_t)1, std::min(std::size_t(width), processingThreads->GetThreads() * 8));
+			const std::size_t subY = std::max((std::size_t)1, std::min(std::size_t(height), processingThreads->GetThreads() * 8));
 			const std::size_t unitX = (std::size_t(width) + subX - 1) / subX;
 			const std::size_t unitY = (std::size_t(height) + subY - 1) / subY;
 
@@ -1543,7 +1551,7 @@ namespace Mus {
 					processes.push_back(processingThreads->submitAsync([&, beginX, endX, beginY, endY]() {
 						for (UINT y = beginY; y < endY; y++) {
 							std::uint8_t* rowData = pData + y * mappedResource.RowPitch;
-							for (UINT x = beginX; x < endX; ++x)
+							for (UINT x = beginX; x < endX; x++)
 							{
 								std::uint32_t* pixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
 								RGBA color;
@@ -1953,45 +1961,42 @@ namespace Mus {
 			return false;
 
 		bool merged = false;
-		for (std::uint32_t dst = 0; dst < results.size(); dst++)
+		auto results_ = results;
+		std::sort(results_.begin(), results_.end(), [](NormalMapResult& a, NormalMapResult& b){
+			return a.vertexCount > b.vertexCount;
+		});
+		for (auto& dst : results_)
 		{
-			if (mergedTextureGeometries.find(results[dst].geometry) != mergedTextureGeometries.end())
+			if (mergedTextureGeometries.find(dst.geometry) != mergedTextureGeometries.end())
 				continue;
-			for (std::uint32_t src = 0; src < results.size(); src++)
+
+			for (auto& src : results)
 			{
-				if (results[src].geometry == results[dst].geometry)
+				if (src.geometry == dst.geometry)
 					continue;
-				if (results[src].textureName != results[dst].textureName)
+				if (mergedTextureGeometries.find(src.geometry) != mergedTextureGeometries.end())
+					continue;
+				if (src.textureName != dst.textureName)
+					continue;
+				if (src.vertexCount > dst.vertexCount)
 					continue;
 
-				if (results[dst].existResource || results[src].existResource)
-				{
-					if (results[dst].existResource)
-					{
-						results[src].texture = results[dst].texture;
-					}
-					else
-					{
-						results[dst].texture = results[src].texture;
-					}
-					mergedTextureGeometries.insert(results[src].geometry);
-					continue;
-				}
-
-				logger::info("{} : Merge texture {} into {}...", results[src].textureName, results[src].geoName, results[dst].geoName);
+				auto resourceIt = std::find_if(resourceDatas.begin(), resourceDatas.end(), [&](TextureResourceDataPtr& resource) { return resource->geometry == src.geometry; });
+				logger::info("{} : Merge texture {} into {}...", src.textureName, src.geoName, dst.geoName);
 				bool mergeResult = false;
 				if (Config::GetSingleton().GetMergeTextureGPU())
-					mergeResult = MergeTextureGPU(device, context, resourceDatas[src],
-												  results[dst].texture->normalmapShaderResourceView.Get(), results[dst].texture->normalmapTexture2D.Get(),
-												  results[src].texture->normalmapShaderResourceView.Get(), results[src].texture->normalmapTexture2D.Get());
+					mergeResult = MergeTextureGPU(device, context, *resourceIt,
+												  dst.texture->normalmapShaderResourceView.Get(), dst.texture->normalmapTexture2D.Get(),
+												  src.texture->normalmapShaderResourceView.Get(), src.texture->normalmapTexture2D.Get());
 				else
-					mergeResult = MergeTexture(device, context, resourceDatas[src], 
-											   results[dst].texture->normalmapTexture2D.Get(), results[src].texture->normalmapTexture2D.Get());
+					mergeResult = MergeTexture(device, context, *resourceIt,
+											   dst.texture->normalmapTexture2D.Get(), src.texture->normalmapTexture2D.Get());
 				if (mergeResult)
 				{
-					results[src].texture = results[dst].texture;
-					mergedTextureGeometries.insert(results[src].geometry);
+					src.texture = dst.texture;
+					mergedTextureGeometries.insert(src.geometry);
 					merged = true;
+					NormalMapStore::GetSingleton().AddHashPair(dst.hash, src.hash);
 				}
 			}
 		}
@@ -2029,7 +2034,7 @@ namespace Mus {
 		dstStagingDesc.Usage = D3D11_USAGE_STAGING;
 		dstStagingDesc.BindFlags = 0;
 		dstStagingDesc.MiscFlags = 0;
-		dstStagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+		dstStagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ | D3D11_CPU_ACCESS_WRITE;
 		dstStagingDesc.MipLevels = 1;
 		dstStagingDesc.ArraySize = 1;
 		dstStagingDesc.SampleDesc.Count = 1;
@@ -2059,15 +2064,15 @@ namespace Mus {
 
 		D3D11_MAPPED_SUBRESOURCE dstMappedResource, srcMappedResource;
 		ShaderLock();
-		hr = context->Map(resourceData->mergeTextureData.dstTexture2D.Get(), 0, D3D11_MAP_WRITE, 0, &dstMappedResource);
+		hr = context->Map(resourceData->mergeTextureData.dstTexture2D.Get(), 0, D3D11_MAP_READ_WRITE, 0, &dstMappedResource);
 		hr = context->Map(resourceData->mergeTextureData.srcTexture2D.Get(), 0, D3D11_MAP_READ, 0, &srcMappedResource);
 		ShaderUnlock();
 
 		std::uint8_t* dst_pData = reinterpret_cast<std::uint8_t*>(dstMappedResource.pData);
 		std::uint8_t* src_pData = reinterpret_cast<std::uint8_t*>(srcMappedResource.pData);
 		std::vector<std::future<void>> processes;
-		const std::size_t subX = std::max((std::size_t)1, std::min(std::size_t(dstStagingDesc.Width), processingThreads->GetThreads() * 8));
-		const std::size_t subY = std::max((std::size_t)1, std::min(std::size_t(dstStagingDesc.Height), processingThreads->GetThreads() * 8));
+		const std::size_t subX = std::max((std::size_t)1, std::min(std::size_t(dstStagingDesc.Width), processingThreads->GetThreads() * 4));
+		const std::size_t subY = std::max((std::size_t)1, std::min(std::size_t(dstStagingDesc.Height), processingThreads->GetThreads() * 4));
 		const std::size_t unitX = (std::size_t(dstStagingDesc.Width) + subX - 1) / subX;
 		const std::size_t unitY = (std::size_t(dstStagingDesc.Height) + subY - 1) / subY;
 		for (std::size_t px = 0; px < subX; px++) {
@@ -2092,7 +2097,7 @@ namespace Mus {
 							if (dstPixelColor.a < 1.0f && srcPixelColor.a < 1.0f)
 								continue;
 
-							RGBA dstColor = RGBA::lerp(srcPixelColor, srcPixelColor, srcPixelColor.a);
+							RGBA dstColor = RGBA::lerp(srcPixelColor, dstPixelColor, dstPixelColor.a);
 							*dstPixel = dstColor.GetReverse() | 0xFF000000;
 						}
 					}
@@ -2492,8 +2497,11 @@ namespace Mus {
 					ResourceDataMap.push_back(resourceDatas[i]);
 					ResourceDataMapLock.unlock_shared();
 
-					NormalMapStore::GetSingleton().AddResource(results[i].hash, results[i].texture);
+					if (mergedTextureGeometries.find(results[i].geometry) != mergedTextureGeometries.end())
+						continue;
+
 					logger::info("{} : normalmap created", results[i].textureName, results[i].geoName);
+					NormalMapStore::GetSingleton().AddResource(results[i].hash, results[i].texture);
 				}
 			}
 		}
@@ -2622,50 +2630,36 @@ namespace Mus {
 			return false;
 
 		const bool isSecondGPU = Shader::ShaderManager::GetSingleton().IsSecondGPUResource(context);
-		DXGI_FORMAT format = DXGI_FORMAT_BC7_UNORM;
+		bool isGPUCompress = false;
 		if (Config::GetSingleton().GetTextureCompress() == -1)
 		{
-			if (isSecondGPU)
-				format = DXGI_FORMAT_BC7_UNORM;
-			else
-				return false;
+			isGPUCompress = isSecondGPU;
 		}
 		else
 		{
-			if (Config::GetSingleton().GetTextureCompress() == 1)
-				format = DXGI_FORMAT_BC3_UNORM;
-			else if (Config::GetSingleton().GetTextureCompress() == 2)
-				format = DXGI_FORMAT_BC7_UNORM;
-			else
-				return false;
+			isGPUCompress = Config::GetSingleton().GetTextureCompress() == 2;
 		}
 
-		logger::info("{}::{} : Compress texture... {}", __func__, resourceData->textureName, magic_enum::enum_name(format).data());
-
+		logger::info("{}::{} : Compress texture...", __func__, resourceData->textureName);
 		resourceData->textureCompressData.srcOldTexture2D = texInOut;
 		resourceData->textureCompressData.srcOldShaderResourceView = srvInOut;
 
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTexture = nullptr;
 		bool isCompressed = false;
-		auto compressTaskFunc = [&]() {
+
+		if (isGPUCompress)
+		{
 			if (Config::GetSingleton().GetCompressTime())
 				PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, false, false);
 
-			isCompressed = Shader::TextureLoadManager::GetSingleton().CompressTexture(device, context, resourceData->textureCompressData.srcOldTexture2D, format, dstTexture);
+			isCompressed = Shader::TextureLoadManager::GetSingleton().CompressTexture(device, context, dstTexture, resourceData->textureCompressData.srcOldTexture2D, DXGI_FORMAT_BC7_UNORM);
 
 			if (Config::GetSingleton().GetCompressTime())
 				PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, true, false);
-			};
-
-		if (isSecondGPU || isNoSplitGPU)
-		{
-			compressTaskFunc();
 		}
 		else
 		{
-			gpuTask->submitAsync([compressTaskFunc]() {
-				compressTaskFunc();
-			}).get();
+			isCompressed = CompressTextureBC7(device, context, resourceData, dstTexture, resourceData->textureCompressData.srcOldTexture2D);
 		}
 
 		if (!isCompressed || !dstTexture)
@@ -2689,6 +2683,157 @@ namespace Mus {
 
 		logger::debug("{}::{} : Compress texture done", __func__, resourceData->textureName);
 		return isCompressed;
+	}
+	bool ObjectNormalMapUpdater::CompressTextureBC7(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTexture, Microsoft::WRL::ComPtr<ID3D11Texture2D>& srcTexture)
+	{
+		if (!device || !context || !srcTexture)
+			return false;
+
+		const bool isSecondGPU = Shader::ShaderManager::GetSingleton().IsSecondGPUResource(context);
+		const auto ShaderLock = [isSecondGPU]() {
+			if (isSecondGPU)
+				Shader::ShaderManager::GetSingleton().ShaderSecondContextLock();
+			else
+				Shader::ShaderManager::GetSingleton().ShaderContextLock();
+			};
+		const auto ShaderUnlock = [isSecondGPU]() {
+			if (isSecondGPU)
+				Shader::ShaderManager::GetSingleton().ShaderSecondContextUnlock();
+			else
+				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+			};
+
+		if (Config::GetSingleton().GetCompressTime())
+			PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, false, false);
+
+		D3D11_TEXTURE2D_DESC srcDesc;
+		srcTexture->GetDesc(&srcDesc);
+
+		if (srcDesc.Format != DXGI_FORMAT_R8G8B8A8_UNORM)
+			return false;
+
+		D3D11_TEXTURE2D_DESC stagingDesc = srcDesc;
+		stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+		stagingDesc.Usage = D3D11_USAGE_STAGING;
+		stagingDesc.ArraySize = 1;
+		stagingDesc.BindFlags = 0;
+		stagingDesc.MiscFlags = 0;
+		stagingDesc.SampleDesc.Count = 1;
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> stagingTexture;
+		HRESULT hr = device->CreateTexture2D(&stagingDesc, nullptr, &stagingTexture);
+		if (FAILED(hr))
+		{
+			logger::error("Failed to create staging texture");
+			return false;
+		}
+
+		for (UINT mipLevel = 0; mipLevel < srcDesc.MipLevels; mipLevel++) {
+			CopySubresourceRegion(device, context, stagingTexture.Get(), resourceData->textureCompressData.srcOldTexture2D.Get(), mipLevel, mipLevel);
+		}
+
+		std::vector<D3D11_SUBRESOURCE_DATA> initData(srcDesc.MipLevels);
+		std::vector<std::vector<std::uint8_t>> bc7Buffers(srcDesc.MipLevels);
+
+		bc7enc_compress_block_init();
+
+		bc7enc_compress_block_params params;
+		bc7enc_compress_block_params_init(&params);
+		bc7enc_compress_block_params_init_linear_weights(&params);
+		params.m_mode_mask = 1 << 6;
+		params.m_max_partitions = 1;
+		params.m_uber_level = 0;
+
+		for (UINT mipLevel = 0; mipLevel < srcDesc.MipLevels; mipLevel++)
+		{
+			UINT width = std::max(1u, srcDesc.Width >> mipLevel);
+			UINT height = std::max(1u, srcDesc.Height >> mipLevel);
+			UINT bc7Width = (width + 4 - 1) / 4;
+			UINT bc7Height = (height + 4 - 1) / 4;
+			bc7Buffers[mipLevel].resize((std::size_t)bc7Width * bc7Height * 16);
+
+			D3D11_MAPPED_SUBRESOURCE mapped;
+			ShaderLock();
+			hr = context->Map(stagingTexture.Get(), mipLevel, D3D11_MAP_READ, 0, &mapped);
+			ShaderUnlock();
+			if (FAILED(hr))
+			{
+				logger::error("Failed to map staging texture at level {}", mipLevel);
+				return false;
+			}
+
+			std::uint8_t* srcData = reinterpret_cast<uint8_t*>(mapped.pData);
+			std::vector<std::future<void>> processes;
+			const std::size_t subX = std::max((std::size_t)1, std::min(std::size_t(bc7Width), processingThreads->GetThreads() * 4));
+			const std::size_t subY = std::max((std::size_t)1, std::min(std::size_t(bc7Height), processingThreads->GetThreads() * 4));
+			const std::size_t unitX = (std::size_t(bc7Width) + subX - 1) / subX;
+			const std::size_t unitY = (std::size_t(bc7Height) + subY - 1) / subY;
+			for (UINT sby = 0; sby < subY; sby++) {
+				for (UINT sbx = 0; sbx < subX; sbx++)
+				{
+					const std::size_t beginX = sbx * unitX;
+					const std::size_t endX = std::min(beginX + unitX, std::size_t(bc7Width));
+					const std::size_t beginY = sby * unitY;
+					const std::size_t endY = std::min(beginY + unitY, std::size_t(bc7Height));
+					processes.push_back(processingThreads->submitAsync([&, beginX, endX, beginY, endY]() {
+						for (UINT by = beginY; by < endY; by++) {
+							for (UINT bx = beginX; bx < endX; bx++) {
+								const std::size_t currentBlockIndex = (std::size_t)by * bc7Width + bx;
+								std::vector<std::uint8_t> block(64);
+								for (UINT y = 0; y < 4; y++) {
+									for (UINT x = 0; x < 4; x++) {
+										UINT px = bx * 4 + x;
+										UINT py = by * 4 + y;
+										UINT clampedPx = std::min(px, width - 1);
+										UINT clampedPy = std::min(py, height - 1);
+
+										std::uint32_t* dstPixel = reinterpret_cast<std::uint32_t*>(srcData + clampedPy * mapped.RowPitch + clampedPx * 4);
+										RGBA rgba;
+										rgba.SetReverse(*dstPixel);
+										std::uint8_t* dst = block.data() + (y * 4 + x) * 4;
+										dst[0] = rgba.R();
+										dst[1] = rgba.G();
+										dst[2] = rgba.B();
+										dst[3] = rgba.A();
+									}
+								}
+								std::uint8_t* outputPtr = bc7Buffers[mipLevel].data() + currentBlockIndex * 16;
+								bc7enc_compress_block(outputPtr, block.data(), &params);
+							}
+						}
+					}));
+				}
+			}
+			for (auto& process : processes) {
+				process.get();
+			}
+			ShaderLock();
+			context->Unmap(stagingTexture.Get(), mipLevel);
+			ShaderUnlock();
+
+			initData[mipLevel].pSysMem = bc7Buffers[mipLevel].data();
+			initData[mipLevel].SysMemPitch = bc7Width * 16;
+			initData[mipLevel].SysMemSlicePitch = 0;
+		}
+
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> tmpDstTexture;
+		D3D11_TEXTURE2D_DESC dstDesc = srcDesc;
+		dstDesc.Format = DXGI_FORMAT_BC7_UNORM;
+		dstDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+		dstDesc.Usage = D3D11_USAGE_DEFAULT;
+		dstDesc.MiscFlags = 0;
+		dstDesc.CPUAccessFlags = 0;
+		hr = device->CreateTexture2D(&dstDesc, initData.data(), &tmpDstTexture);
+		if (FAILED(hr))
+		{
+			logger::error("Failed to create BC7 compressed texture ({})", hr);
+			return false;
+		}
+
+		dstTexture = tmpDstTexture;
+
+		if (Config::GetSingleton().GetCompressTime())
+			PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, true, false);
+		return true;
 	}
 
 	void ObjectNormalMapUpdater::GPUPerformanceLog(ID3D11Device* device, ID3D11DeviceContext* context, std::string funcStr, bool isEnd, bool isAverage, std::uint32_t args)

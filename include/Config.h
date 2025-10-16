@@ -348,7 +348,7 @@ namespace Mus {
         bool DirectTaskQ = false;
         std::uint8_t DivideTaskQ = 1;
         bool VRAMSaveMode = false;
-        std::int8_t TextureCompress = 0; //-1 auto compress, 0 no compress, 1 dxt5, 2 bc7
+        std::int8_t TextureCompress = 0; //-1 auto compress, 0 no compress, 1 cpu bc7, 2 gpu bc7
         bool DiskCache = true;
         std::string DiskCacheFolder = "Data\\SKSE\\Plugins\\MuDynamicNormalMap\\DiskCache";
         std::uint32_t DiskCacheLimitMB = 500;

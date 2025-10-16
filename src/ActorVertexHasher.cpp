@@ -75,7 +75,7 @@ namespace Mus {
 		if (found == actorHash[a_actor->formID].hash.end())
 		{
 			actorHash[a_actor->formID].hash.insert(std::make_pair(a_geo, std::make_shared<Hash>(a_geo)));
-			logger::debug("{:x} {} {}: registered for ActorVertexHasher", a_actor->formID, a_actor->GetName(), a_geo->name.empty());
+			logger::debug("{:x} {} {}: registered for ActorVertexHasher", a_actor->formID, a_actor->GetName(), a_geo->name.c_str());
 		}
 		actorHashLock.unlock_shared();
 		return true;

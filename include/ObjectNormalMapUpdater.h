@@ -73,6 +73,7 @@ namespace Mus {
 		bool LoadTextureCPU(ID3D11Device* device, ID3D11DeviceContext* context, const std::string& filePath, D3D11_TEXTURE2D_DESC& texDesc, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
 
 		struct TextureResourceData {
+			RE::BSGeometry* geometry;
 			std::string textureName;
 			std::clock_t time = -1;
 
@@ -168,6 +169,7 @@ namespace Mus {
 		typedef std::shared_ptr<TextureResourceData> TextureResourceDataPtr;
 
 		bool IsDetailNormalMap(const std::string& a_normalMapPath);
+		void LoadCacheResource(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet& a_updateSet, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results);
 
 		DirectX::XMVECTOR SlerpVector(const DirectX::XMVECTOR& a, const DirectX::XMVECTOR& b, const float& t);
 		bool ComputeBarycentric(const float& px, const float& py, const DirectX::XMINT2& a, const DirectX::XMINT2& b, const DirectX::XMINT2& c, DirectX::XMFLOAT3& out);
@@ -187,7 +189,8 @@ namespace Mus {
 		
 		bool CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries);
 		bool CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut);
-	
+		bool CompressTextureBC7(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTexture, Microsoft::WRL::ComPtr<ID3D11Texture2D>& srcTexture);
+
 		void CopyResourceToMain(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries);
 		bool CopyResourceSecondToMain(TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut);
 		

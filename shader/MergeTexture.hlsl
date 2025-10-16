@@ -23,7 +23,10 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
     float4 srcColor1 = srcTexture1.SampleLevel(samplerState, uv, 0);
     float4 srcColor2 = srcTexture2.SampleLevel(samplerState, uv, 0);
     if (srcColor1.a == 0.0f && srcColor2.a == 0.0f)
+    {
+        dstTexture[coord] = float4(0.0f, 0.0f, 0.0f, 0.0f);
         return;
+    }
 
     float4 dstColor = float4(lerp(srcColor1.rgb, srcColor2.rgb, srcColor2.a), 1.0f);
     dstTexture[coord] = dstColor;

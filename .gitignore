@@ -540,4 +540,3 @@ contrib/Distribution/**/*.pex
 /contrib/Distribution/PluginReleaseVR/*.zip
 /contrib/Distribution/PluginRelease
 /contrib/Distribution/PluginReleaseVR
-/include/bc7enc_rdo

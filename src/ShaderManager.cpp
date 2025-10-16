@@ -1024,7 +1024,7 @@ namespace Mus {
 			}
 			return true;
 		}
-		bool TextureLoadManager::CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTexture)
+		bool TextureLoadManager::CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTexture, Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture, DXGI_FORMAT newFormat)
 		{
 			auto formatType = IsCompressFormat(newFormat);
 			if (formatType < 0)

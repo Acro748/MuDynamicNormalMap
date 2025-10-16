@@ -77,7 +77,7 @@ namespace Mus {
 			resource = found->second;
 		lock.unlock_shared();
 		if (resource)
-			logger::debug("Found exist resource {}", a_hash);
+			logger::debug("Found exist resource {:x}", a_hash);
 		if (!resource) {
 			resource = GetDiskCache(a_hash);
 			if (resource) {
@@ -85,13 +85,58 @@ namespace Mus {
 				lock.lock_shared();
 				map[a_hash] = resource;
 				lock.unlock_shared();
-				logger::debug("Found disk cache resource {}", a_hash);
+				logger::debug("Found disk cache resource {:x}", a_hash);
 			}
 		}
 		if (resource)
 			UpdateAccessTime(a_hash);
 		a_resource = resource;
 		return a_resource ? true : false;
+	}
+
+	void NormalMapStore::AddHashPair(std::uint64_t a_hash, std::uint64_t b_hash)
+	{
+		hashPairsLock.lock();
+		auto found = std::find_if(hashPairs.begin(), hashPairs.end(), [&](HashPair& pair) {
+			return pair.find(a_hash) != pair.end() || pair.find(b_hash) != pair.end();
+		});
+		if (found != hashPairs.end() && (found->find(a_hash) == found->end() || found->find(b_hash) == found->end()))
+		{
+			found->insert(a_hash);
+			found->insert(b_hash);
+			logger::debug("Add hash pair {:x} - {:x}", a_hash, b_hash);
+		}
+		else
+		{
+			HashPair newPair;
+			newPair.insert(a_hash);
+			newPair.insert(b_hash);
+			hashPairs.push_back(newPair);
+			logger::debug("Create and add hash pair {:x} - {:x}", a_hash, b_hash);
+		}
+		hashPairsLock.unlock();
+	}
+	bool NormalMapStore::IsPairHashes(std::uint64_t a_hash, std::uint64_t b_hash)
+	{
+		hashPairsLock.lock_shared();
+		bool isPair = std::find_if(hashPairs.begin(), hashPairs.end(), [&](HashPair& pair) {
+			return pair.find(a_hash) != pair.end() && pair.find(b_hash) != pair.end();
+		}) != hashPairs.end();
+		hashPairsLock.unlock_shared();
+		logger::debug("Is pair hashes : {:x} - {:x} => {}", a_hash, b_hash, isPair ? "O" : "X");
+		return isPair;
+	}
+	void NormalMapStore::InitHashPair(std::uint64_t a_hash)
+	{
+		hashPairsLock.lock();
+		auto found = std::find_if(hashPairs.begin(), hashPairs.end(), [&](HashPair& pair) {
+			return pair.find(a_hash) != pair.end();
+		});
+		if (found != hashPairs.end()) {
+			found->clear();
+			found->insert(a_hash);
+		}
+		hashPairsLock.unlock();
 	}
 
 	void NormalMapStore::CreateDiskCache(std::uint64_t a_hash, TextureResourcePtr a_resource)
@@ -118,7 +163,7 @@ namespace Mus {
 		auto hr = device->CreateTexture2D(&desc, nullptr, &cacheTexture);
 		if (FAILED(hr))
 		{
-			logger::error("Failed to create disk cache");
+			logger::error("Failed to create disk cache {:x}", a_hash);
 			return;
 		}
 
@@ -126,10 +171,7 @@ namespace Mus {
 		context->CopyResource(cacheTexture.Get(), a_resource->normalmapTexture2D.Get());
 		Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 
-		diskCacheLock.lock();
-		diskCacheInfo.unsafe_erase(a_hash);
-		diskCacheLock.unlock();
-
+		RemoveDiskCache(a_hash);
 		for (UINT mipLevel = 0; mipLevel < desc.MipLevels; mipLevel++) {
 			const UINT height = std::max(desc.Height >> mipLevel, 1u);
 			std::size_t blockHeight = 0;
@@ -176,12 +218,9 @@ namespace Mus {
 			std::filesystem::path filePath = GetCacheFileName(a_hash, mipLevel);
 			std::filesystem::create_directory(filePath.parent_path());
 
-			std::error_code ec;
-			std::filesystem::remove(filePath, ec);
-
 			std::ofstream ofs(filePath, std::ios::binary);
 			if (!ofs) {
-				logger::error("Unable to write {} file", filePath.string());
+				logger::error("Unable to write {} file {:x}", filePath.string(), a_hash);
 				return;
 			}
 			ofs.exceptions(std::ios::failbit | std::ios::badbit);
@@ -195,7 +234,7 @@ namespace Mus {
 				AddDiskCacheSize(GetFileSize(filePath));
 			}
 			catch (...) {
-				logger::error("Unable to write {} file", filePath.string());
+				logger::error("Unable to write {} file {:x}", filePath.string(), a_hash);
 				return;
 			}
 		}
@@ -204,14 +243,14 @@ namespace Mus {
 		diskCacheLock.lock_shared();
 		diskCacheInfo[a_hash] = info;
 		diskCacheLock.unlock_shared();
-		logger::info("Created disk cache {}", a_hash);
+		logger::info("Created disk cache {:x}", a_hash);
 		if (Config::GetSingleton().GetClearDiskCache())
 			return;
 
 		std::filesystem::path infoPath = GetCacheFileName(a_hash, -1);
 		std::ofstream ofs(infoPath, std::ios::binary);
 		if (!ofs) {
-			logger::error("Unable to write {} file", infoPath.string());
+			logger::error("Unable to write {} file {:x}", infoPath.string(), a_hash);
 			return;
 		}
 		ofs.exceptions(std::ios::failbit | std::ios::badbit);
@@ -242,10 +281,10 @@ namespace Mus {
 			AddDiskCacheSize(GetFileSize(infoPath));
 		}
 		catch (...) {
-			logger::error("Unable to write {} file", infoPath.string());
+			logger::error("Unable to write {} file {:x}", infoPath.string(), a_hash);
 			return;
 		}
-		logger::info("Created disk cache info {}", a_hash);
+		logger::info("Created disk cache info {:x}", a_hash);
 	}
 	TextureResourcePtr NormalMapStore::GetDiskCache(std::uint64_t a_hash)
 	{
@@ -272,13 +311,13 @@ namespace Mus {
 			std::filesystem::path infoPath = GetCacheFileName(a_hash, -1);
 			if (!std::filesystem::exists(infoPath))
 			{
-				logger::error("Disk cache does not exists {}", a_hash);
+				logger::error("Disk cache does not exists {:x}", a_hash);
 				return nullptr;
 			}
 			std::ifstream ifs(infoPath, std::ios::binary);
 			if (!ifs)
 			{
-				logger::error("Unable to read disk cache {}", a_hash);
+				logger::error("Unable to read disk cache {:x}", a_hash);
 				return nullptr;
 			}
 			ifs.exceptions(std::ios::failbit | std::ios::badbit);
@@ -309,13 +348,13 @@ namespace Mus {
 				ifs.read(reinterpret_cast<char*>(&info.srvDesc.Texture2D.MostDetailedMip), sizeof(info.srvDesc.Texture2D.MostDetailedMip));
 			}
 			catch (...) {
-				logger::error("Unable to read disk cache {}", a_hash);
+				logger::error("Unable to read disk cache {:x}", a_hash);
 				return nullptr;
 			}
 			diskCacheLock.lock_shared();
 			diskCacheInfo[a_hash] = info;
 			diskCacheLock.unlock_shared();
-			logger::info("Found disk cache {}", a_hash);
+			logger::info("Found disk cache {:x}", a_hash);
 		}
 
 		std::vector<D3D11_SUBRESOURCE_DATA> initDatas(info.mipLevels);
@@ -326,12 +365,12 @@ namespace Mus {
 			std::ifstream ifs(filePath, std::ios::binary);
 			if (!std::filesystem::exists(filePath))
 			{
-				logger::error("{} file does not exists {}", filePath.string(), a_hash);
+				logger::error("{} file does not exists {:x}", filePath.string(), a_hash);
 				return nullptr;
 			}
 			if (!ifs)
 			{
-				logger::error("Unable to read {} file", filePath.string());
+				logger::error("Unable to read {} file {:x}", filePath.string(), a_hash);
 				return nullptr;
 			}
 			ifs.exceptions(std::ios::failbit | std::ios::badbit);
@@ -347,7 +386,7 @@ namespace Mus {
 				ifs.read(compressed.data(), compressedSize);
 			}
 			catch (...) {
-				logger::error("Unable to read {} file", filePath.string());
+				logger::error("Unable to read {} file {:x}", filePath.string(), a_hash);
 				return nullptr;
 			}
 
@@ -359,7 +398,7 @@ namespace Mus {
 			);
 
 			if (result < 0) {
-				logger::error("Failed to decompress {} file", filePath.string());
+				logger::error("Failed to decompress {} file {:x}", filePath.string(), a_hash);
 				return nullptr;
 			}
 
@@ -371,12 +410,12 @@ namespace Mus {
 		TextureResourcePtr result = std::make_shared<TextureResource>();
 		auto hr = Shader::ShaderManager::GetSingleton().GetDevice()->CreateTexture2D(&info.texDesc, initDatas.data(), &result->normalmapTexture2D);
 		if (FAILED(hr)) {
-			logger::error("Failed to create dst texture : {}", hr);
+			logger::error("Failed to create dst texture {:x} : {}", a_hash, hr);
 			return nullptr;
 		}
 		hr = Shader::ShaderManager::GetSingleton().GetDevice()->CreateShaderResourceView(result->normalmapTexture2D.Get(), &info.srvDesc, &result->normalmapShaderResourceView);
 		if (FAILED(hr)) {
-			logger::error("Failed to create dst shader resource view : {}", hr);
+			logger::error("Failed to create dst shader resource view {:x} : {}", a_hash, hr);
 			return nullptr;
 		}
 		return result;
@@ -412,7 +451,7 @@ namespace Mus {
 		diskCacheLock.lock();
 		diskCacheInfo.unsafe_erase(a_hash);
 		diskCacheLock.unlock();
-		logger::info("Removed old disk cache {}", a_hash);
+		logger::info("Removed old disk cache {:x}", a_hash);
 	}
 	void NormalMapStore::ClearDiskCache()
 	{
@@ -452,8 +491,8 @@ namespace Mus {
 	std::string NormalMapStore::GetCacheFileName(std::uint64_t a_hash, std::int32_t a_mipLevel)
 	{
 		if (a_mipLevel < 0)
-			return GetCacheFileFolder() + std::to_string(a_hash) + diskCacheExtension;
-		return GetCacheFileFolder() + std::to_string(a_hash) + "_" + std::to_string(a_mipLevel) + diskCacheExtension;
+			return GetCacheFileFolder() + GetHexStr(a_hash) + diskCacheExtension;
+		return GetCacheFileFolder() + GetHexStr(a_hash) + "_" + std::to_string(a_mipLevel) + diskCacheExtension;
 	}
 
 	std::uint32_t NormalMapStore::GetRefCount(ID3D11Texture2D* texture)

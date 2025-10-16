@@ -23,6 +23,9 @@ configure_file(
 )
 
 set(headers
+        extern/bc7enc_rdo/bc7enc.h
+        include/Interface/Interface.h
+        include/Interface/InterfaceImpl.h
         include/Utility.hpp
         include/nifUtil.h
         include/Config.h
@@ -41,11 +44,10 @@ set(headers
         include/ActorVertexHasher.h
         include/NormalMapStore.h
         include/Condition.h
-        include/Interface/Interface.h
-        include/Interface/InterfaceImpl.h
 )
 
 set(sources
+        extern/bc7enc_rdo/bc7enc.cpp
         src/nifUtil.cpp
         src/Config.cpp
         src/PapyrusScripts.cpp
@@ -82,6 +84,7 @@ find_package(DirectXTex CONFIG REQUIRED)
 find_package(detours)
 find_package(xxhash CONFIG REQUIRED)
 find_package(lz4 CONFIG REQUIRED)
+find_package(bc7enc)
 
 add_commonlibsse_plugin(${PROJECT_NAME} SOURCES ${headers} ${sources})
 add_library("${PROJECT_NAME}::${PROJECT_NAME}" ALIAS "${PROJECT_NAME}")
@@ -108,13 +111,9 @@ target_include_directories(
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/shader>
         $<INSTALL_INTERFACE:src>
         ${DETOURS_INCLUDE_DIRS}
-)
-
-target_include_directories(
-    ${PROJECT_NAME}
-    PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/ExtraRE/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/extern/bc7enc_rdo>
 )
 
 target_link_libraries(

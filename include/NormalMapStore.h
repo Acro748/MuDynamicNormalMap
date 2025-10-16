@@ -19,6 +19,10 @@ namespace Mus{
 		bool GetResource(std::uint64_t a_hash, TextureResourcePtr& a_resource, bool& isDiskCache);
 		void ClearMemory();
 
+		void AddHashPair(std::uint64_t a_hash, std::uint64_t b_hash);
+		bool IsPairHashes(std::uint64_t a_hash, std::uint64_t b_hash);
+		void InitHashPair(std::uint64_t a_hash);
+
 		void CreateDiskCache(std::uint64_t a_hash, TextureResourcePtr a_resource);
 		TextureResourcePtr GetDiskCache(std::uint64_t a_hash);
 		void RemoveDiskCache(std::uint64_t a_hash);
@@ -84,5 +88,9 @@ namespace Mus{
 			logger::debug("Current Disk Cache Capacity : {}MB", GetSizeAsMB(currentDiskCacheSize));
 		}
 		void RemoveOldDiskCache();
+
+		std::shared_mutex hashPairsLock;
+		typedef concurrency::concurrent_unordered_set<std::uint64_t> HashPair;
+		concurrency::concurrent_vector<HashPair> hashPairs;
 	};
 }
