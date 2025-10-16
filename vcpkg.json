@@ -17,7 +17,8 @@
         "detours",
         "xxhash",
         "directxtk",
-        "directxtex"
+        "directxtex",
+        "lz4"
       ]
     }
   },

@@ -139,9 +139,9 @@ namespace Mus {
 				std::uint8_t* block = &geo.objInfo.geometryBlockData[i * vertexSize];
 				const std::uint32_t vi = beforeVertexCount + i;
 				const std::uint32_t ui = beforeUVCount + i;
-				const std::uint32_t ni = beforeNormalCount + i;
+				/*const std::uint32_t ni = beforeNormalCount + i;
 				const std::uint32_t ti = beforeTangentCount + i;
-				const std::uint32_t bi = beforeBitangentCount + i;
+				const std::uint32_t bi = beforeBitangentCount + i;*/
 
 				if (!geo.objInfo.dynamicBlockData1.empty())
 				{
@@ -218,6 +218,13 @@ namespace Mus {
 			geo.objInfo.bitangentEnd = bitangents.size();
 			geo.objInfo.indicesStart = beforeIndices;
 			geo.objInfo.indicesEnd = indices.size();
+
+			XXH64_state_t* state = XXH64_createState();
+			XXH64_reset(state, 0);
+			XXH64_update(state, vertices.data() + geo.objInfo.vertexStart, geo.objInfo.vertexCount() * sizeof(DirectX::XMFLOAT3));
+			XXH64_update(state, uvs.data() + geo.objInfo.uvStart, geo.objInfo.uvCount() * sizeof(DirectX::XMFLOAT2));
+			geo.hash = XXH64_digest(state);
+			XXH64_freeState(state);
 
 			logger::info("{}::{} : get geometry data => vertices {} / uvs {} / tris {}", __func__, geo.objInfo.info.name.c_str(),
 						 geo.objInfo.vertexCount(), geo.objInfo.uvCount(), geo.objInfo.indicesCount() / 3);

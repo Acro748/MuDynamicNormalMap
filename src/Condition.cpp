@@ -290,7 +290,7 @@ namespace Mus {
 			RE::TESFaction* faction = skyrim_cast<RE::TESFaction*>(form);
 			if (!faction)
 				return false;
-			return actor->IsInFaction(faction) && actor->GetFactionRank(faction, isPlayer(actor->formID)) >= rank;
+			return actor->IsInFaction(faction) && actor->GetFactionRank(faction, IsPlayer(actor->formID)) >= rank;
 		}
 
 		void HasHeadPart::Initial(ConditionManager::ConditionItem& item)

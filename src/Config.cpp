@@ -276,10 +276,6 @@ namespace Mus {
 				{
                     TextureHeight = GetUIntValue(variableValue);
 				}
-				else if (variableName == "TextureMargin")
-				{
-                    TextureMargin = GetIntValue(variableValue);
-				}
 				else if (variableName == "TangentZCorrection")
 				{
                     TangentZCorrection = GetBoolValue(variableValue);
@@ -299,6 +295,10 @@ namespace Mus {
                 {
                     TextureMarginGPU = GetBoolValue(variableValue);
                 }
+                else if (variableName == "TextureMarginIgnoreSize")
+                {
+                    TextureMarginIgnoreSize = GetUIntValue(variableValue);
+                }
                 else if (variableName == "MergeTextureGPU")
                 {
                     MergeTextureGPU = GetBoolValue(variableValue);
@@ -306,6 +306,10 @@ namespace Mus {
                 else if (variableName == "GPUDeviceIndex")
                 {
                     GPUDeviceIndex = GetIntValue(variableValue);
+                }
+                else if (variableName == "SecondaryGPUWaitForGPU")
+                {
+                    SecondaryGPUWaitForGPU = GetBoolValue(variableValue);
                 }
                 else if (variableName == "WaitForRendererTickMS")
                 {
@@ -351,6 +355,22 @@ namespace Mus {
                 else if (variableName == "TextureCompress")
                 {
                     TextureCompress = GetIntValue(variableValue);
+                }
+                else if (variableName == "DiskCache")
+                {
+                    DiskCache = GetBoolValue(variableValue);
+                }
+                else if (variableName == "DiskCacheFolder")
+                {
+                    DiskCacheFolder = FixPath(variableValue);
+                }
+                else if (variableName == "DiskCacheLimitMB")
+                {
+                    DiskCacheLimitMB = GetUIntValue(variableValue);
+                }
+                else if (variableName == "ClearDiskCache")
+                {
+                    ClearDiskCache = GetBoolValue(variableValue);
                 }
             }
             else if (currentSetting == "[RealtimeDetect]")
@@ -584,10 +604,10 @@ namespace Mus {
             }
         }
 
-        if (!isSecondGPUEnabled)
+        if (isSecondGPUEnabled)
             Config::GetSingleton().SetVRAMSaveMode(false);
 
-        gpuTask = std::make_unique<ThreadPool_GPUTaskModule>(0, Config::GetSingleton().GetDirectTaskQ(), taskQTickMS);
+        gpuTask = std::make_unique<ThreadPool_GPUTaskModule>(Config::GetSingleton().GetTaskQMax(), taskQTickMS, Config::GetSingleton().GetDirectTaskQ());
         g_frameEventDispatcher.addListener(gpuTask.get());
 
         if (isSecondGPUEnabled)

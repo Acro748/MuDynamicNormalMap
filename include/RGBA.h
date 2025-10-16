@@ -188,6 +188,18 @@ namespace Mus {
 		DirectX::XMFLOAT4 GetFloat4() const {
 			return DirectX::XMFLOAT4(r, g, b, a);
 		}
+		std::uint8_t A() const {
+			return (std::uint8_t)(a * 255);
+		}
+		std::uint8_t R() const {
+			return (std::uint8_t)(r * 255);
+		}
+		std::uint8_t G() const {
+			return (std::uint8_t)(g * 255);
+		}
+		std::uint8_t B() const {
+			return (std::uint8_t)(b * 255);
+		}
 
 		RGBA& operator=(const RGBA& a_rhs) {
 			r = a_rhs.r;

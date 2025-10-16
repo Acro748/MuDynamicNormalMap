@@ -72,7 +72,7 @@ bool ComputeBarycentric(float2 p, float2 a, float2 b, float2 c, out float3 bary)
 [numthreads(64, 1, 1)]
 void CSMain(uint3 threadID : SV_DispatchThreadID)
 {
-    const uint index = indicesStart+ threadID.x * 3;
+    const uint index = indicesStart + threadID.x * 3;
     if (index + 2 >= indicesEnd)
         return;
 

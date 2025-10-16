@@ -8,6 +8,7 @@ namespace Mus {
 	constexpr REL::VariantID ArmorAttachFunction(15535, 15712, 0x001DB9E0);
 
 	EventDispatcherImpl<FrameEvent>  g_frameEventDispatcher;
+	EventDispatcherImpl<QuitGameEvent>  g_quitGameEventDispatcher;
 	EventDispatcherImpl<FacegenNiNodeEvent> g_facegenNiNodeEventDispatcher;
 	EventDispatcherImpl<ActorChangeHeadPartEvent> g_actorChangeHeadPartEventDispatcher;
 	EventDispatcherImpl<ArmorAttachEvent> g_armorAttachEventEventDispatcher;
@@ -94,32 +95,40 @@ namespace Mus {
 	{
 		NullSubOrig();
 
-		auto p = RE::PlayerCharacter::GetSingleton();
-		if (!p)
-			return;
-		if (auto currentCell = p->GetParentCell(); currentCell)
-		{
-			if (PlayerCurrentCell != 0)
-			{
-				if (PlayerCurrentCell != currentCell->formID)
-				{
-					PlayerCellChangeEvent ce;
-					ce.IsExterior = currentCell->IsExteriorCell();
-					ce.IsChangedInOut = IsPlayerExterior != ce.IsExterior;
-					g_playerCellChangeEventDispatcher.dispatch(ce);
-				}
-			}
-			PlayerCurrentCell = currentCell->formID;
-			IsPlayerExterior = currentCell->IsExteriorCell();
-		}
-
-		FrameEvent e;
 		auto main = RE::Main::GetSingleton();
-		e.gamePaused = main ? main->freezeTime : false;
-		const auto menu = RE::UI::GetSingleton();
-		IsGamePaused.store(((e.gamePaused || (menu && menu->numPausesGame > 0)) && !IsRaceSexMenu.load()) || IsMainMenu.load());
-		currentTime = std::clock();
-		g_frameEventDispatcher.dispatch(e);
+		if (main->quitGame)
+		{
+			QuitGameEvent e;
+			g_quitGameEventDispatcher.dispatch(e);
+		}
+		else
+		{
+			auto p = RE::PlayerCharacter::GetSingleton();
+			if (!p)
+				return;
+			if (auto currentCell = p->GetParentCell(); currentCell)
+			{
+				if (PlayerCurrentCell != 0)
+				{
+					if (PlayerCurrentCell != currentCell->formID)
+					{
+						PlayerCellChangeEvent ce;
+						ce.IsExterior = currentCell->IsExteriorCell();
+						ce.IsChangedInOut = IsPlayerExterior != ce.IsExterior;
+						g_playerCellChangeEventDispatcher.dispatch(ce);
+					}
+				}
+				PlayerCurrentCell = currentCell->formID;
+				IsPlayerExterior = currentCell->IsExteriorCell();
+			}
+
+			FrameEvent e;
+			e.gamePaused = main ? main->freezeTime : false;
+			const auto menu = RE::UI::GetSingleton();
+			IsGamePaused.store(((e.gamePaused || (menu && menu->numPausesGame > 0)) && !IsRaceSexMenu.load()) || IsMainMenu.load());
+			currentTime = std::clock();
+			g_frameEventDispatcher.dispatch(e);
+		}
 	}
 	void hookEngineTrampoline(SKSE::Trampoline& trampoline)
 	{

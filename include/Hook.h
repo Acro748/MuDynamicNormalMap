@@ -62,6 +62,10 @@ namespace Mus {
 		bool gamePaused;
 	};
 
+	struct QuitGameEvent
+	{
+	};
+
 	struct FacegenNiNodeEvent
 	{
 		RE::NiNode* root;
@@ -93,6 +97,7 @@ namespace Mus {
 	};
 
 	extern EventDispatcherImpl<FrameEvent>  g_frameEventDispatcher;
+	extern EventDispatcherImpl<QuitGameEvent>  g_quitGameEventDispatcher;
 	extern EventDispatcherImpl<FacegenNiNodeEvent> g_facegenNiNodeEventDispatcher;
 	extern EventDispatcherImpl<ActorChangeHeadPartEvent> g_actorChangeHeadPartEventDispatcher;
 	extern EventDispatcherImpl<ArmorAttachEvent> g_armorAttachEventEventDispatcher;

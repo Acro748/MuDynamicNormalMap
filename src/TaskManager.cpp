@@ -37,13 +37,12 @@ namespace Mus {
 		std::string name = actor->GetName();
 		RegisterDelayTask(Config::GetSingleton().GetUpdateDelayTick(), [this, id, name]() {
 			RE::Actor* actor = GetFormByID<RE::Actor*>(id);
-			if (!actor || !actor->loadedData || !actor->loadedData->data3D)
+			if (IsInvalidActor(actor))
 			{
 				logger::error("{:x} {} : invalid reference. so skip", id, name);
 				return;
 			}
 			QUpdateNormalMap(actor, BipedObjectSlot::kHead);
-			ActorVertexHasher::GetSingleton().InitialHash(actor, RE::BIPED_OBJECT::kHead);
 		});
 	}
 	void TaskManager::onEvent(const ActorChangeHeadPartEvent& e)
@@ -55,13 +54,12 @@ namespace Mus {
 		std::string name = e.actor->GetName();
 		RegisterDelayTask(Config::GetSingleton().GetUpdateDelayTick(), [this, id, name]() {
 			RE::Actor* actor = GetFormByID<RE::Actor*>(id);
-			if (!actor || !actor->loadedData || !actor->loadedData->data3D)
+			if (IsInvalidActor(actor))
 			{
 				logger::error("{:x} {} : invalid reference. so skip", id, name);
 				return;
 			}
 			QUpdateNormalMap(actor, BipedObjectSlot::kHead);
-			ActorVertexHasher::GetSingleton().InitialHash(actor, RE::BIPED_OBJECT::kHead);
 		});
 	}
 	void TaskManager::onEvent(const ArmorAttachEvent& e)
@@ -75,13 +73,12 @@ namespace Mus {
 		std::string name = e.actor->GetName();
 		RegisterDelayTask(Config::GetSingleton().GetUpdateDelayTick(), [this, id, name, e]() {
 			RE::Actor* actor = GetFormByID<RE::Actor*>(id);
-			if (!actor || !actor->loadedData || !actor->loadedData->data3D)
+			if (IsInvalidActor(actor))
 			{
 				logger::error("{:x} {} : invalid reference. so skip", id, name);
 				return;
 			}
 			QUpdateNormalMap(actor, 1 << e.bipedSlot);
-			ActorVertexHasher::GetSingleton().InitialHash(actor, e.bipedSlot);
 		});
 	}
 	void TaskManager::onEvent(const PlayerCellChangeEvent& e)
@@ -96,7 +93,7 @@ namespace Mus {
 			for (auto& map : lastNormalMap_)
 			{
 				RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
-				if (!actor || !actor->loadedData || !actor->loadedData->data3D)
+				if (IsInvalidActor(actor))
 				{
 					if (isUpdating[map.first])
 					{
@@ -127,20 +124,20 @@ namespace Mus {
 		bool isUpdated = false;
 
 		auto p = RE::PlayerCharacter::GetSingleton();
-		if (!p || !p->loadedData || !p->loadedData->data3D)
+		if (IsInvalidActor(p))
 			return;
 		auto playerPosition = p->loadedData->data3D->world.translate;
 
 		concurrency::concurrent_vector<RE::FormID> garbages;
 		concurrency::parallel_for_each(isActiveActors.begin(), isActiveActors.end(), [&](auto& map) {
 			RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
-			if (!actor || !actor->loadedData || !actor->loadedData->data3D)
+			if (IsInvalidActor(actor))
 			{
 				garbages.push_back(map.first);
 				return;
 			}
 			bool isInRange = false;
-			if (isPlayer(actor->formID) || Config::GetSingleton().GetUpdateDistance() <= floatPrecision)
+			if (IsPlayer(actor->formID) || Config::GetSingleton().GetUpdateDistance() <= floatPrecision)
 			{
 				map.second = true;
 				isInRange = true;
@@ -235,7 +232,7 @@ namespace Mus {
 	std::unordered_set<RE::BSGeometry*> TaskManager::GetAllGeometries(RE::Actor* a_actor)
 	{
 		std::unordered_set<RE::BSGeometry*> geometries;
-		if (!a_actor || !a_actor->loadedData || !a_actor->loadedData->data3D)
+		if (IsInvalidActor(a_actor))
 			return geometries;
 		auto root = a_actor->loadedData->data3D.get();
 		if (!root)
@@ -271,9 +268,9 @@ namespace Mus {
 			return false;
 		RE::FormID id = a_actor->formID;
 		std::string actorName = a_actor->GetName();
-		if (isPlayer(id) && !Config::GetSingleton().GetPlayerEnable())
+		if (IsPlayer(id) && !Config::GetSingleton().GetPlayerEnable())
 			return true;
-		if (!isPlayer(id) && !Config::GetSingleton().GetNPCEnable())
+		if (!IsPlayer(id) && !Config::GetSingleton().GetNPCEnable())
 			return true;
 		if (GetSex(a_actor) == RE::SEX::kMale && !Config::GetSingleton().GetMaleEnable())
 			return true;
@@ -320,6 +317,8 @@ namespace Mus {
 			using Feature = RE::BSShaderMaterial::Feature;
 			if (!geo || geo->name.empty())
 				continue;
+			if (auto extraData = geo->GetExtraData<RE::NiIntegerExtraData>(NoDynamicNormalMapExtraDataName); extraData && extraData->value > 0)
+				continue;
 			if (!geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
 				continue;
 			auto effect = geo->GetGeometryRuntimeData().properties[State::kEffect].get();
@@ -347,46 +346,7 @@ namespace Mus {
 			if (!geo->GetGeometryRuntimeData().skinInstance)
 				continue;
 
-			bSlot slot = 0;
-			bool isDynamicTriShape = geo->AsDynamicTriShape() ? true : false;
-			if (condition.DynamicTriShapeAsHead && isDynamicTriShape)
-			{
-				slot = RE::BIPED_OBJECT::kHead;
-			}
-			else
-			{
-				auto skinInstance = geo->GetGeometryRuntimeData().skinInstance.get();
-				auto dismember = netimmerse_cast<RE::BSDismemberSkinInstance*>(skinInstance);
-				if (dismember)
-				{
-					std::int32_t pslot = -1;
-					for (std::int32_t p = 0; p < dismember->GetRuntimeData().numPartitions; p++)
-					{
-						pslot = dismember->GetRuntimeData().partitions[p].slot;
-						if (pslot < 30 || pslot >= RE::BIPED_OBJECT::kEditorTotal + 30)
-						{
-							if (isDynamicTriShape) { //maybe head
-								slot = RE::BIPED_OBJECT::kHead;
-							}
-							else if (pslot == 0) //BP_TORSO
-							{
-								slot = RE::BIPED_OBJECT::kBody;
-							}
-							else //unknown slot
-								continue;
-						}
-						else
-							slot = pslot - 30;
-						if (bipedSlot & 1 << slot)
-							break;
-					}
-				}
-				else //maybe it's just skinInstance in headpart or wrong mesh
-				{
-					slot = isDynamicTriShape ? RE::BIPED_OBJECT::kHead : RE::BIPED_OBJECT::kBody;
-				}
-			}
-
+			bSlot slot = nif::GetBipedSlot(geo, condition.DynamicTriShapeAsHead);
 			if ((!condition.HeadEnable || !Config::GetSingleton().GetHeadEnable()) && slot == RE::BIPED_OBJECT::kHead)
 				continue;
 
@@ -421,7 +381,7 @@ namespace Mus {
 					lastNormalMapLock.unlock_shared();
 				}
 
-				ActorVertexHasher::GetSingleton().Register(a_actor, slot);
+				ActorVertexHasher::GetSingleton().Register(a_actor, geo);
 
 				if (overrideInterfaceAPI->OverrideInterfaceload())
 				{
@@ -472,7 +432,7 @@ namespace Mus {
 
 			RegisterDelayTask([this, a_actorID, a_actorName, textures]() {
 				auto actor = GetFormByID<RE::Actor*>(a_actorID);
-				if (!actor || !actor->loadedData || !actor->loadedData->data3D)
+				if (IsInvalidActor(actor))
 				{
 					logger::error("{:x}::{} : invalid reference", a_actorID, a_actorName);
 					isUpdating[a_actorID] = false;
@@ -485,6 +445,8 @@ namespace Mus {
 					using State = RE::BSGeometry::States;
 					using Feature = RE::BSShaderMaterial::Feature;
 					if (!geo || geo->name.empty())
+						return RE::BSVisit::BSVisitControl::kContinue;
+					if (auto extraData = geo->GetExtraData<RE::NiIntegerExtraData>(NoDynamicNormalMapExtraDataName); extraData && extraData->value == 2)
 						return RE::BSVisit::BSVisitControl::kContinue;
 
 					auto found = textures.end();
@@ -516,10 +478,7 @@ namespace Mus {
 							return normalmap.geometry == geo;
 						});
 					}
-					if (found == textures.end())
-						return RE::BSVisit::BSVisitControl::kContinue;
-					if (!found->texture || !found->texture->normalmapTexture2D || !found->texture->normalmapShaderResourceView)
-						return RE::BSVisit::BSVisitControl::kContinue;
+
 					auto effect = geo->GetGeometryRuntimeData().properties[State::kEffect].get();
 					if (!effect)
 						return RE::BSVisit::BSVisitControl::kContinue;
@@ -529,6 +488,47 @@ namespace Mus {
 					RE::BSLightingShaderMaterialBase* material = skyrim_cast<RE::BSLightingShaderMaterialBase*>(lightingShader->material);
 					if (!material || !material->normalTexture)
 						return RE::BSVisit::BSVisitControl::kContinue;
+
+					if (found == textures.end())
+					{
+						auto& skinInstance = geo->GetGeometryRuntimeData().skinInstance;
+						if (!skinInstance)
+							return RE::BSVisit::BSVisitControl::kContinue;
+
+						auto dismember = netimmerse_cast<RE::BSDismemberSkinInstance*>(skinInstance.get());
+						if (dismember)
+						{
+							std::string texturePath = GetOriginalTexturePath(lowLetter(material->normalTexture->name.c_str()));
+							found = std::find_if(textures.begin(), textures.end(), [&](ObjectNormalMapUpdater::NormalMapResult normalmap) {
+								for (std::int32_t p = 0; p < dismember->GetRuntimeData().numPartitions; p++) {
+									bSlot slot;
+									auto pslot = dismember->GetRuntimeData().partitions[p].slot;
+									if (pslot < 30 || pslot >= RE::BIPED_OBJECT::kEditorTotal + 30)
+									{
+										if (geo->AsDynamicTriShape()) { //maybe head
+											slot = RE::BIPED_OBJECT::kHead;
+										}
+										else if (pslot == 0) //BP_TORSO
+										{
+											slot = RE::BIPED_OBJECT::kBody;
+										}
+										else //unknown slot
+											continue;
+									}
+									else
+										slot = pslot - 30;
+									if (normalmap.slot == slot && IsSameString(normalmap.texturePath, texturePath))
+										return true;
+								}
+								return false;
+							});
+						}
+						if (found == textures.end())
+							return RE::BSVisit::BSVisitControl::kContinue;
+					}
+					if (!found->texture || !found->texture->normalmapTexture2D || !found->texture->normalmapShaderResourceView)
+						return RE::BSVisit::BSVisitControl::kContinue;
+
 					RE::NiSourceTexturePtr normalmap = nullptr;
 					if (auto texIt = createdTextures.find(found->textureName); texIt != createdTextures.end())
 					{
@@ -762,6 +762,15 @@ namespace Mus {
 		return found->second;
 	}
 
+	std::string TaskManager::FixTexturePath(std::string texturePath)
+	{
+		texturePath = FixPath(texturePath);
+		texturePath = stringRemoveStarts(texturePath, "data\\");
+		if (!stringStartsWith(texturePath, "textures\\"))
+			texturePath = "textures\\" + texturePath;
+		return texturePath;
+	}
+
 	std::int64_t TaskManager::GenerateUniqueID()
 	{
 		static std::atomic<std::uint64_t> counter{ 0 };
@@ -795,7 +804,7 @@ namespace Mus {
 		TextureInfo info;
 		if (GetTextureInfo(a_textureName, info))
 			return info.texturePath;
-		return a_textureName;
+		return FixTexturePath(a_textureName);
 	}
 	bool TaskManager::IsCreatedByMDNM(std::string a_textureName)
 	{
@@ -804,7 +813,7 @@ namespace Mus {
 
 	bool TaskManager::RemoveNormalMap(RE::Actor* a_actor)
 	{
-		if (!a_actor || !a_actor->loadedData || !a_actor->loadedData->data3D)
+		if (IsInvalidActor(a_actor))
 			return false;
 
 		for(auto& geo : GetAllGeometries(a_actor))
@@ -972,8 +981,6 @@ namespace Mus {
 				}
 				else if (keyCode == 29) //ctrl
 				{
-					if (Config::GetSingleton().GetLogLevel() >= 2)
-						continue;
 					if (button->IsDown())
 					{
 						isPressedExportHotkey1 = true;
@@ -987,6 +994,9 @@ namespace Mus {
 				{
 					if (button->IsUp() && isPressedExportHotkey1)
 					{
+						if (Config::GetSingleton().GetLogLevel() >= 2)
+							continue;
+
 						logger::info("Print textures...");
 						RE::Actor* target = nullptr;
 						if (auto consoleRef = RE::Console::GetSelectedRef(); consoleRef && Config::GetSingleton().GetUseConsoleRef())
@@ -1032,10 +1042,8 @@ namespace Mus {
 							else if (stringStartsWith(texturePath, "Data\\"))
 								texturePath = GetRuntimeDataDirectory() + texturePath;
 
-							std::thread([&]() {
-								if (Shader::TextureLoadManager::GetSingleton().PrintTexture(texturePath, texture.Get()))
-									logger::info("Print texture done : {}", texturePath);
-							}).detach();
+							if (Shader::TextureLoadManager::GetSingleton().PrintTexture(texturePath, texture.Get()))
+								logger::info("Print texture done : {}", texturePath);
 						}
 					}
 				}

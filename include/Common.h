@@ -28,4 +28,10 @@ namespace Mus {
 		bSlot bipedSlot;
 		std::string texturePath;
 	};
+
+	struct TextureResource {
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> normalmapTexture2D = nullptr;
+		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> normalmapShaderResourceView = nullptr;
+	};
+	typedef std::shared_ptr<TextureResource> TextureResourcePtr;
 }

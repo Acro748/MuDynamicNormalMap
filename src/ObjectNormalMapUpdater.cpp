@@ -1,4 +1,5 @@
 #include "ObjectNormalMapUpdater.h"
+#include "bc7enc.h"
 
 namespace Mus {
 	void ObjectNormalMapUpdater::onEvent(const FrameEvent& e)
@@ -7,7 +8,7 @@ namespace Mus {
 			return;
 
 		static std::clock_t lastTickTime = currentTime;
-		if (currentTime - lastTickTime < 100) //0.1sec
+		if (lastTickTime + 100 > currentTime) //0.1sec
 			return;
 		lastTickTime = currentTime;
 		memoryManageThreads->submitAsync([&]() {
@@ -22,7 +23,7 @@ namespace Mus {
 					if (map->IsQueryDone())
 						map->time = currentTime;
 				}
-				else if (currentTime - map->time > Config::GetSingleton().GetWaitForRendererTickMS())
+				else if (map->time + Config::GetSingleton().GetWaitForRendererTickMS() < currentTime)
 				{
 					logger::debug("{} : Removed garbage texture resource", map->textureName);
 					continue;
@@ -108,6 +109,191 @@ namespace Mus {
 		}
 	}
 
+	void ObjectNormalMapUpdater::LoadCacheResource(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet& a_updateSet, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results)
+	{
+		//hash update with geo hash + texture hash
+		for (auto& update : a_updateSet) {
+			const auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
+				return geosInfo.geometry == update.first;
+											});
+			if (found == a_data->geometries.end())
+			{
+				logger::error("{}::{:x} : Geometry {} not found in data", __func__, a_actorID, update.second.geometryName);
+				a_updateSet.unsafe_erase(update.first);
+				continue;
+			}
+			found->hash = GetHash(update.second, found->hash);
+		}
+
+		//find texture from cache
+		std::vector<std::pair<RE::BSGeometry*, UpdateTextureSet>> sortUpdateSet(a_updateSet.begin(), a_updateSet.end());
+		std::sort(sortUpdateSet.begin(), sortUpdateSet.end(), [&](std::pair<RE::BSGeometry*, UpdateTextureSet>& a, std::pair<RE::BSGeometry*, UpdateTextureSet>& b) {
+			const auto aIt = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
+				return geosInfo.geometry == a.first;
+			});
+			if (aIt == a_data->geometries.end())
+				return a.first < b.first;
+			const auto bIt = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
+				return geosInfo.geometry == b.first;
+			});
+			if (bIt == a_data->geometries.end())
+				return a.first < b.first;
+			return aIt->objInfo.vertexCount() > bIt->objInfo.vertexCount();
+		});
+		std::unordered_set<std::uint64_t> pairedHashesAll;
+		for (const auto& update : sortUpdateSet) {
+			const auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
+				return geosInfo.geometry == update.first;
+			});
+			if (found == a_data->geometries.end())
+			{
+				logger::error("{}::{:x} : Geometry {} not found in data", __func__, a_actorID, update.second.geometryName);
+				continue;
+			}
+			if (pairedHashesAll.find(found->hash) != pairedHashesAll.end())
+				continue;
+
+			TextureResourcePtr textureResource = nullptr;
+			bool diskCache = false;
+			NormalMapStore::GetSingleton().GetResource(found->hash, textureResource, diskCache);
+			if (textureResource)
+			{
+				std::unordered_set<std::uint64_t> pairedHashes;
+				if (!std::ranges::all_of(a_updateSet, [&](auto& updateAlt) {
+					if (update.first == updateAlt.first)
+						return true;
+					if (update.second.textureName != updateAlt.second.textureName)
+						return true;
+					const auto foundAlt = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
+						return geosInfo.geometry == updateAlt.first;
+					});
+					if (foundAlt == a_data->geometries.end())
+					{
+						logger::error("{}::{:x} : Geometry {} not found in data", __func__, a_actorID, update.second.geometryName);
+						return true;
+					}
+					pairedHashes.insert(found->hash);
+					pairedHashes.insert(foundAlt->hash);
+					return NormalMapStore::GetSingleton().IsPairHashes(found->hash, foundAlt->hash);
+				}))
+				{
+					NormalMapStore::GetSingleton().InitHashPair(found->hash);
+					logger::info("{}::{:x}::{} : Found exist resource from {} ({:x}), but lack of components. so skip", __func__, a_actorID, 
+								 update.second.geometryName, (diskCache ? "disk cache" : "GPU"), found->hash);
+					continue;
+				}
+
+				logger::info("{}::{:x}::{} : Found exist resource from {} ({:x})", __func__, a_actorID, update.second.geometryName, (diskCache ? "disk cache" : "GPU"), found->hash);
+				NormalMapResult newNormalMapResult;
+				newNormalMapResult.slot = update.second.slot;
+				newNormalMapResult.geometry = update.first;
+				newNormalMapResult.vertexCount = found->objInfo.vertexCount();
+				newNormalMapResult.geoName = update.second.geometryName;
+				newNormalMapResult.texturePath = update.second.srcTexturePath.empty() ? update.second.detailTexturePath : update.second.srcTexturePath;
+				newNormalMapResult.textureName = update.second.textureName;
+				newNormalMapResult.texture = textureResource;
+				newNormalMapResult.hash = found->hash;
+				newNormalMapResult.existResource = true;
+				newNormalMapResult.diskCache = diskCache;
+				results.push_back(newNormalMapResult);
+
+				TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
+				newResourceData->textureName = update.second.textureName;
+				resourceDatas.push_back(newResourceData);
+
+				a_updateSet.unsafe_erase(update.first);
+
+				pairedHashesAll.insert(pairedHashes.begin(), pairedHashes.end());
+			}
+		}
+
+		//shere resource and use GPU resource instead of disk cache if multiple cache is loaded on the same texture name
+		for (auto& result : results) {
+			if (!result.existResource)
+				continue;
+			auto resultFound = std::find_if(results.begin(), results.end(), [&](NormalMapResult& r) {
+				return result.geometry != r.geometry && result.textureName == r.textureName && result.existResource == r.existResource;
+											});
+			if (resultFound == results.end())
+				continue;
+
+			NormalMapResult* srcResult = nullptr;
+			NormalMapResult* dstResult = nullptr;
+			if (result.diskCache == resultFound->diskCache)
+			{
+				if (result.vertexCount >= resultFound->vertexCount)
+				{
+					srcResult = &result;
+					dstResult = &*resultFound;
+				}
+				else
+				{
+					srcResult = &*resultFound;
+					dstResult = &result;
+				}
+			}
+			else
+			{
+				if (!result.diskCache)
+				{
+					srcResult = &result;
+					dstResult = &*resultFound;
+				}
+				else
+				{
+					srcResult = &*resultFound;
+					dstResult = &result;
+				}
+			}
+			dstResult->diskCache = srcResult->diskCache;
+			dstResult->texture = srcResult->texture;
+			logger::info("{}::{:x}::{} : Use share resource {:x}", __func__, a_actorID, dstResult->geoName, srcResult->hash);
+		}
+
+		//share resource if textureName is the same
+		auto updateSet_ = a_updateSet;
+		for (auto& update : updateSet_) {
+			const auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
+				return geosInfo.geometry == update.first;
+											});
+			if (found == a_data->geometries.end())
+			{
+				continue;
+			}
+
+			if (std::find_if(results.begin(), results.end(), [&](NormalMapResult& result) { return update.first == result.geometry; }) != results.end())
+				continue;
+
+			const auto resultFound = std::find_if(results.begin(), results.end(), [&](NormalMapResult& result) {
+				return update.first != result.geometry && update.second.textureName == result.textureName && result.existResource;
+			});
+			if (resultFound == results.end())
+				continue;
+
+			logger::info("{}::{:x}::{} : Use share resource {:x}", __func__, a_actorID, update.second.geometryName, resultFound->hash);
+
+			NormalMapResult newNormalMapResult;
+			newNormalMapResult.slot = update.second.slot;
+			newNormalMapResult.geometry = update.first;
+			newNormalMapResult.vertexCount = found->objInfo.vertexCount();
+			newNormalMapResult.geoName = update.second.geometryName;
+			newNormalMapResult.texturePath = update.second.srcTexturePath.empty() ? update.second.detailTexturePath : update.second.srcTexturePath;
+			newNormalMapResult.textureName = update.second.textureName;
+			newNormalMapResult.texture = resultFound->texture;
+			newNormalMapResult.hash = found->hash;
+			newNormalMapResult.existResource = true;
+			newNormalMapResult.diskCache = resultFound->diskCache;
+			results.push_back(newNormalMapResult);
+
+			TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
+			newResourceData->textureName = update.second.textureName;
+			resourceDatas.push_back(newResourceData);
+
+			mergedTextureGeometries.insert(update.first);
+			a_updateSet.unsafe_erase(update.first);
+		}
+	}
+
 	bool ObjectNormalMapUpdater::CreateGeometryResourceData(RE::FormID a_actorID, GeometryDataPtr a_data)
 	{
 		a_data->GetGeometryData();
@@ -183,9 +369,20 @@ namespace Mus {
 	{
 		ResourceDataMapLock.lock_shared();
 		auto found = GeometryResourceDataMap.find(a_actorID);
-		GeometryResourceDataPtr result = found != GeometryResourceDataMap.end() ? found->second : nullptr;
+		GeometryResourceDataPtr results = found != GeometryResourceDataMap.end() ? found->second : nullptr;
 		ResourceDataMapLock.unlock_shared();
-		return result;
+		return results;
+	}
+
+	std::uint64_t ObjectNormalMapUpdater::GetHash(UpdateTextureSet updateSet, std::uint64_t geoHash)
+	{
+		return std::hash<std::string>()(std::to_string(updateSet.slot) + "|"
+										+ updateSet.srcTexturePath + "|"
+										+ updateSet.detailTexturePath + "|"
+										+ updateSet.overlayTexturePath + "|"
+										+ updateSet.maskTexturePath + "|"
+										+ std::to_string(updateSet.detailStrength) + "|"
+										+ std::to_string(geoHash));
 	}
 
 	ObjectNormalMapUpdater::UpdateResult ObjectNormalMapUpdater::UpdateObjectNormalMap(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet a_updateSet)
@@ -194,7 +391,7 @@ namespace Mus {
 
 		const std::string_view _func_ = __func__;
 
-		UpdateResult result;
+		UpdateResult results;
 
 		HRESULT hr;
 		const auto device = GetDevice();
@@ -202,7 +399,7 @@ namespace Mus {
 		if (!device || !context)
 		{
 			logger::error("{}::{:x} : Invalid renderer", _func_, a_actorID);
-			return result;
+			return results;
 		}
 
 		logger::debug("{}::{:x} : updating... {}", _func_, a_actorID, a_updateSet.size());
@@ -220,7 +417,11 @@ namespace Mus {
 				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 		};
 
+		std::unordered_set<RE::BSGeometry*> mergedTextureGeometries;
 		concurrency::concurrent_vector<TextureResourceDataPtr> resourceDatas;
+		LoadCacheResource(a_actorID, a_data, a_updateSet, mergedTextureGeometries, resourceDatas, results);
+
+		std::mutex resultLock;
 		for (const auto& update : a_updateSet)
 		{
 			if (Config::GetSingleton().GetUpdateNormalMapTime1())
@@ -236,6 +437,7 @@ namespace Mus {
 			}
 			GeometryData::ObjectInfo& objInfo = found->objInfo;
 			TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
+			newResourceData->geometry = update.first;
 			newResourceData->textureName = update.second.textureName;
 
 			D3D11_TEXTURE2D_DESC srcStagingDesc = {}, detailStagingDesc = {}, overlayStagingDesc = {}, maskStagingDesc = {}, dstStagingDesc = {}, dstDesc = {};
@@ -599,30 +801,32 @@ namespace Mus {
 			newNormalMapResult.geoName = update.second.geometryName;
 			newNormalMapResult.texturePath = update.second.srcTexturePath.empty() ? update.second.detailTexturePath : update.second.srcTexturePath;
 			newNormalMapResult.textureName = update.second.textureName;
-			newNormalMapResult.texture = std::make_shared<NormalMapResult::TextureResource>();
+			newNormalMapResult.texture = std::make_shared<TextureResource>();
 			newNormalMapResult.texture->normalmapTexture2D = newResourceData->dstTexture2D;
 			newNormalMapResult.texture->normalmapShaderResourceView = newResourceData->dstShaderResourceView;
-			result.push_back(newNormalMapResult);
+			newNormalMapResult.hash = found->hash;
 
+			resultLock.lock();
+			results.push_back(newNormalMapResult);
 			resourceDatas.push_back(newResourceData);
+			resultLock.unlock();
 		}
 		WaitForGPU(device, context).Wait();
 
-		std::unordered_set<RE::BSGeometry*> mergedTextureGeometries;
-		MergeTexture(device, context, resourceDatas, result, mergedTextureGeometries);
-		WaitForGPU(device, context).Wait();
+		if (MergeTexture(device, context, resourceDatas, results, mergedTextureGeometries))
+			WaitForGPU(device, context).Wait();
 
-		BleedTexture(device, context, resourceDatas, result, mergedTextureGeometries);
-		WaitForGPU(device, context).Wait();
+		if (GenerateMipMap(device, context, resourceDatas, results, mergedTextureGeometries))
+			WaitForGPU(device, context).Wait();
 
-		GenerateMipMap(device, context, resourceDatas, result, mergedTextureGeometries);
-		WaitForGPU(device, context).Wait();
+		if (BleedTexture(device, context, resourceDatas, results, mergedTextureGeometries))
+			WaitForGPU(device, context).Wait();
 
-		CompressTexture(device, context, resourceDatas, result, mergedTextureGeometries);
-		WaitForGPU(device, context).Wait();
+		if (CompressTexture(device, context, resourceDatas, results, mergedTextureGeometries))
+			WaitForGPU(device, context).Wait();
 
-		CopyResourceToMain(device, context, resourceDatas, result, mergedTextureGeometries);
-		return result;
+		CopyResourceToMain(device, context, resourceDatas, results, mergedTextureGeometries);
+		return results;
 	}
 
 	ObjectNormalMapUpdater::UpdateResult ObjectNormalMapUpdater::UpdateObjectNormalMapGPU(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet a_updateSet)
@@ -631,11 +835,11 @@ namespace Mus {
 
 		const std::string_view _func_ = __func__;
 
-		UpdateResult result;
+		UpdateResult results;
 		if (!samplerState)
 		{
 			logger::error("{}::{:x} : Invalid SampleState", _func_, a_actorID);
-			return result;
+			return results;
 		}
 
 		HRESULT hr;
@@ -644,7 +848,7 @@ namespace Mus {
 		if (!device || !context)
 		{
 			logger::error("{}::{:x} : Invalid renderer", _func_, a_actorID);
-			return result;
+			return results;
 		}
 
 		const bool isSecondGPU = Shader::ShaderManager::GetSingleton().IsSecondGPUResource(GetContext());
@@ -665,11 +869,15 @@ namespace Mus {
 		if (!geoData)
 		{
 			logger::error("{}::{:x} : GeometryResourceData not found for actor", _func_, a_actorID);
-			return result;
+			return results;
 		}
 		logger::debug("{}::{:x} : updating... {}", _func_, a_actorID, a_updateSet.size());
 
+		std::unordered_set<RE::BSGeometry*> mergedTextureGeometries;
 		concurrency::concurrent_vector<TextureResourceDataPtr> resourceDatas;
+		LoadCacheResource(a_actorID, a_data, a_updateSet, mergedTextureGeometries, resourceDatas, results);
+
+		std::mutex resultLock;
 		std::vector<std::future<void>> updateTasks;
 		for (const auto& update : a_updateSet)
 		{
@@ -687,6 +895,7 @@ namespace Mus {
 				}
 				const GeometryData::ObjectInfo& objInfo = found->objInfo;
 				TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
+				newResourceData->geometry = update.first;
 				newResourceData->textureName = update.second.textureName;
 
 				D3D11_TEXTURE2D_DESC srcDesc = {}, detailDesc = {}, overlayDesc = {}, maskDesc = {}, dstDesc = {}, dstWriteDesc = {};
@@ -740,7 +949,11 @@ namespace Mus {
 				dstWriteDesc.MiscFlags = 0;
 				dstWriteDesc.MipLevels = 1;
 				dstWriteDesc.CPUAccessFlags = 0;
-				hr = device->CreateTexture2D(&dstWriteDesc, nullptr, &newResourceData->dstWriteTexture2D);
+				D3D11_SUBRESOURCE_DATA initDstWrite = {};
+				std::vector<uint32_t> initDstWriteData((std::size_t)dstWriteDesc.Width * dstWriteDesc.Height, 0);
+				initDstWrite.pSysMem = initDstWriteData.data();
+				initDstWrite.SysMemPitch = (std::size_t)dstWriteDesc.Width * sizeof(std::uint32_t);
+				hr = device->CreateTexture2D(&dstWriteDesc, &initDstWrite, &newResourceData->dstWriteTexture2D);
 				if (FAILED(hr))
 				{
 					logger::error("{}::{:x}::{} : Failed to create dst texture 2d ({})", _func_, a_actorID, update.second.geometryName, hr);
@@ -917,7 +1130,7 @@ namespace Mus {
 				}
 				else
 				{
-					const std::uint32_t subSize = std::max(std::uint32_t(1), totalTris / 10000);
+					const std::uint32_t subSize = std::max(1u, totalTris / 10000);
 
 					const std::uint32_t numSubTris = (totalTris + subSize - 1) / subSize;
 					const std::uint32_t dispatch = (numSubTris + 64 - 1) / 64;
@@ -1001,12 +1214,15 @@ namespace Mus {
 				newNormalMapResult.geoName = update.second.geometryName;
 				newNormalMapResult.texturePath = update.second.srcTexturePath.empty() ? update.second.detailTexturePath : update.second.srcTexturePath;
 				newNormalMapResult.textureName = update.second.textureName;
-				newNormalMapResult.texture = std::make_shared<NormalMapResult::TextureResource>();
+				newNormalMapResult.texture = std::make_shared<TextureResource>();
 				newNormalMapResult.texture->normalmapTexture2D = newResourceData->dstTexture2D;
 				newNormalMapResult.texture->normalmapShaderResourceView = newResourceData->dstShaderResourceView;
+				newNormalMapResult.hash = found->hash;
 
-				result.push_back(newNormalMapResult);
+				resultLock.lock();
+				results.push_back(newNormalMapResult);
 				resourceDatas.push_back(newResourceData);
+				resultLock.unlock();
 			};
 			updateTasks.push_back(updateThreads->submitAsync([updateTaskFunc] {
 				updateTaskFunc();
@@ -1017,26 +1233,27 @@ namespace Mus {
 		}
 		WaitForGPU(device, context).Wait();
 
-		for (auto& resourceData : resourceDatas) {
-			CopySubresourceRegion(device, context, resourceData->dstTexture2D.Get(), resourceData->dstWriteTexture2D.Get(), 0, 0);
+		for (std::uint32_t i = 0; i < results.size(); i++) {
+			if (results[i].existResource)
+				continue;
+			CopySubresourceRegion(device, context, resourceDatas[i]->dstTexture2D.Get(), resourceDatas[i]->dstWriteTexture2D.Get(), 0, 0);
 		}
 		WaitForGPU(device, context).Wait();
 
-		std::unordered_set<RE::BSGeometry*> mergedTextureGeometries;
-		MergeTexture(device, context, resourceDatas, result, mergedTextureGeometries);
-		WaitForGPU(device, context).Wait();
+		if (MergeTexture(device, context, resourceDatas, results, mergedTextureGeometries))
+			WaitForGPU(device, context).Wait();
 
-		BleedTexture(device, context, resourceDatas, result, mergedTextureGeometries);
-		WaitForGPU(device, context).Wait();
+		if (GenerateMipMap(device, context, resourceDatas, results, mergedTextureGeometries))
+			WaitForGPU(device, context).Wait();
 
-		GenerateMipMap(device, context, resourceDatas, result, mergedTextureGeometries);
-		WaitForGPU(device, context).Wait();
+		if (BleedTexture(device, context, resourceDatas, results, mergedTextureGeometries))
+			WaitForGPU(device, context).Wait();
 
-		CompressTexture(device, context, resourceDatas, result, mergedTextureGeometries);
-		WaitForGPU(device, context).Wait();
+		if (CompressTexture(device, context, resourceDatas, results, mergedTextureGeometries))
+			WaitForGPU(device, context).Wait();
 
-		CopyResourceToMain(device, context, resourceDatas, result, mergedTextureGeometries);
-		return result;
+		CopyResourceToMain(device, context, resourceDatas, results, mergedTextureGeometries);
+		return results;
 	}
 
 	bool ObjectNormalMapUpdater::IsDetailNormalMap(const std::string& a_normalMapPath)
@@ -1216,37 +1433,34 @@ namespace Mus {
 		return true;
 	};
 
-	bool ObjectNormalMapUpdater::IsValidPixel(const std::uint32_t a_pixel)
+	bool ObjectNormalMapUpdater::BleedTexture(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries)
 	{
-		return (a_pixel & 0xFF000000) != 0;
-	}
-
-	void ObjectNormalMapUpdater::BleedTexture(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& result, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries)
-	{
-		if (!device || !context)
-			return;
-
-		for (std::uint32_t i = 0; i < result.size(); i++)
-		{
-			if (mergedTextureGeometries.find(result[i].geometry) != mergedTextureGeometries.end())
-				continue;
-
-			if (Config::GetSingleton().GetTextureMarginGPU())
-				BleedTextureGPU(device, context, resourceDatas[i], Config::GetSingleton().GetTextureMargin(),
-								result[i].texture->normalmapShaderResourceView.Get(), result[i].texture->normalmapTexture2D.Get());
-			else
-				BleedTexture(device, context, resourceDatas[i], Config::GetSingleton().GetTextureMargin(), result[i].texture->normalmapTexture2D.Get());
-		}
-	}
-	bool ObjectNormalMapUpdater::BleedTexture(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, std::int32_t margin, ID3D11Texture2D* texInOut)
-	{
-		if (margin == 0)
-			return true;
-
 		if (!device || !context)
 			return false;
 
-		logger::info("{}::{} : Bleed texture... {}", __func__, resourceData->textureName, margin);
+		bool isRendered = false;
+		for (std::uint32_t i = 0; i < results.size(); i++)
+		{
+			if (results[i].existResource)
+				continue;
+
+			if (mergedTextureGeometries.find(results[i].geometry) != mergedTextureGeometries.end())
+				continue;
+
+			if (Config::GetSingleton().GetTextureMarginGPU())
+				isRendered = BleedTextureGPU(device, context, resourceDatas[i],
+								results[i].texture->normalmapShaderResourceView.Get(), results[i].texture->normalmapTexture2D.Get()) ? true : isRendered;
+			else
+				isRendered = BleedTexture(device, context, resourceDatas[i], results[i].texture->normalmapTexture2D.Get()) ? true : isRendered;
+		}
+		return isRendered;
+	}
+	bool ObjectNormalMapUpdater::BleedTexture(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, ID3D11Texture2D* texInOut)
+	{
+		if (!device || !context)
+			return false;
+
+		logger::info("{}::{} : Bleed texture...", __func__, resourceData->textureName);
 
 		if (Config::GetSingleton().GetBleedTextureTime1())
 			PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, false, false);
@@ -1257,13 +1471,13 @@ namespace Mus {
 				Shader::ShaderManager::GetSingleton().ShaderSecondContextLock();
 			else
 				Shader::ShaderManager::GetSingleton().ShaderContextLock();
-		};
+			};
 		const auto ShaderUnlock = [isSecondGPU]() {
 			if (isSecondGPU)
 				Shader::ShaderManager::GetSingleton().ShaderSecondContextUnlock();
 			else
 				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-		};
+			};
 
 		HRESULT hr;
 
@@ -1274,93 +1488,157 @@ namespace Mus {
 		stagingDesc.BindFlags = 0;
 		stagingDesc.MiscFlags = 0;
 		stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ | D3D11_CPU_ACCESS_WRITE;
-		stagingDesc.MipLevels = 1;
 		stagingDesc.ArraySize = 1;
 		stagingDesc.SampleDesc.Count = 1;
-		hr = device->CreateTexture2D(&stagingDesc, nullptr, &resourceData->bleedTextureData.texture2D_1);
+		hr = device->CreateTexture2D(&stagingDesc, nullptr, &resourceData->bleedTextureData.texture2D);
 		if (FAILED(hr)) {
 			logger::error("{} : Failed to create staging texture ({})", __func__, hr);
 			return false;
 		}
 
-		CopySubresourceRegion(device, context, resourceData->bleedTextureData.texture2D_1.Get(), texInOut, 0, 0);
+		if (Config::GetSingleton().GetBleedTextureTime1())
+			PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, true, false);
+
+		UINT mipLevelEnd = stagingDesc.MipLevels;
+		for (UINT mipLevel = 0; mipLevel < stagingDesc.MipLevels; mipLevel++) {
+			const UINT width = std::max(stagingDesc.Width >> mipLevel, 1u);
+			const UINT height = std::max(stagingDesc.Height >> mipLevel, 1u);
+			if (width <= Config::GetSingleton().GetTextureMarginIgnoreSize() && height <= Config::GetSingleton().GetTextureMarginIgnoreSize())
+			{
+				mipLevelEnd = mipLevel;
+				break;
+			}
+			CopySubresourceRegion(device, context, resourceData->bleedTextureData.texture2D.Get(), texInOut, mipLevel, mipLevel);
+		}
 		WaitForGPU(device, context).Wait();
 
-		D3D11_MAPPED_SUBRESOURCE mappedResource;
-		ShaderLock();
-		hr = context->Map(resourceData->bleedTextureData.texture2D_1.Get(), 0, D3D11_MAP_READ_WRITE, 0, &mappedResource);
-		ShaderUnlock();
-		std::uint8_t* pData = reinterpret_cast<std::uint8_t*>(mappedResource.pData);
+		if (Config::GetSingleton().GetBleedTextureTime2())
+			PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, false, false);
 
-		const DirectX::XMINT2 offsets[8] = {
-			DirectX::XMINT2(-1, -1), // left up
-			DirectX::XMINT2(0, -1), // up
-			DirectX::XMINT2(1, -1), // right up
-			DirectX::XMINT2(-1,  0), // left
-			DirectX::XMINT2(1,  0), // right
-			DirectX::XMINT2(-1,  1), // left down
-			DirectX::XMINT2(0,  1), // down
-			DirectX::XMINT2(1,  1)  // right down
-		};
+		for (UINT mipLevel = 0; mipLevel < mipLevelEnd; mipLevel++) {
+			const UINT width = std::max(stagingDesc.Width >> mipLevel, 1u);
+			const UINT height = std::max(stagingDesc.Height >> mipLevel, 1u); 
+			const UINT radius = mipLevel / 2 + 1;
 
-		if (margin < 0)
-		{
-			margin = Config::GetSingleton().GetUseMipMap() ? std::max(UINT(1), std::max(stagingDesc.Width, stagingDesc.Height) / 512) : 1;
-			logger::debug("{}::{} : Bleed texture -> set margin {}", __func__, resourceData->textureName, margin);
-		}
-		for (std::uint32_t mi = 0; mi < margin; mi++)
-		{
 			std::vector<std::future<void>> processes;
-			std::size_t subX = std::max((std::size_t)1, std::min(std::size_t(stagingDesc.Width), processingThreads->GetThreads() * 16));
-			std::size_t subY = std::max((std::size_t)1, std::min(std::size_t(stagingDesc.Height), processingThreads->GetThreads() * 16));
-			std::size_t unitX = (std::size_t(stagingDesc.Width) + subX - 1) / subX;
-			std::size_t unitY = (std::size_t(stagingDesc.Height) + subY - 1) / subY;
+			const std::size_t subX = std::max((std::size_t)1, std::min(std::size_t(width), processingThreads->GetThreads() * 8));
+			const std::size_t subY = std::max((std::size_t)1, std::min(std::size_t(height), processingThreads->GetThreads() * 8));
+			const std::size_t unitX = (std::size_t(width) + subX - 1) / subX;
+			const std::size_t unitY = (std::size_t(height) + subY - 1) / subY;
+
+			D3D11_MAPPED_SUBRESOURCE mappedResource;
+			ShaderLock();
+			hr = context->Map(resourceData->bleedTextureData.texture2D.Get(), mipLevel, D3D11_MAP_READ_WRITE, 0, &mappedResource);
+			ShaderUnlock();
+			if (FAILED(hr)) {
+				logger::error("{} : Failed to map staging texture ({})", __func__, hr);
+				return false;
+			}
+
+			std::uint8_t* pData = reinterpret_cast<std::uint8_t*>(mappedResource.pData);
+
 			struct ColorMap {
 				std::uint32_t* src = nullptr;
-				RGBA resultColor;
+				RGBA resultsColor;
 			};
-			concurrency::concurrent_vector<ColorMap> resultColorMap;
+			concurrency::concurrent_vector<ColorMap> resultsColorMap;
 			for (std::size_t px = 0; px < subX; px++) {
 				for (std::size_t py = 0; py < subY; py++) {
-					std::size_t beginX = px * unitX;
-					std::size_t endX = std::min(beginX + unitX, std::size_t(stagingDesc.Width));
-					std::size_t beginY = py * unitY;
-					std::size_t endY = std::min(beginY + unitY, std::size_t(stagingDesc.Height));
+					const std::size_t beginX = px * unitX;
+					const std::size_t endX = std::min(beginX + unitX, std::size_t(width));
+					const std::size_t beginY = py * unitY;
+					const std::size_t endY = std::min(beginY + unitY, std::size_t(height));
 					processes.push_back(processingThreads->submitAsync([&, beginX, endX, beginY, endY]() {
 						for (UINT y = beginY; y < endY; y++) {
 							std::uint8_t* rowData = pData + y * mappedResource.RowPitch;
-							for (UINT x = beginX; x < endX; ++x)
+							for (UINT x = beginX; x < endX; x++)
 							{
 								std::uint32_t* pixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
-								if (IsValidPixel(*pixel))
+								RGBA color;
+								color.SetReverse(*pixel);
+								if (color.a == 1.0f)
 									continue;
 
 								RGBA averageColor(0.0f, 0.0f, 0.0f, 0.0f);
 								std::uint8_t validCount = 0;
-#pragma unroll(8)
-								for (std::uint8_t i = 0; i < 8; i++)
+								for (INT r = 1; r <= radius; r++)
 								{
-									DirectX::XMINT2 nearCoord = { (INT)x + offsets[i].x, (INT)y + offsets[i].y };
-									if (nearCoord.x < 0 || nearCoord.y < 0 ||
-										nearCoord.x >= stagingDesc.Width || nearCoord.y >= stagingDesc.Height)
-										continue;
+									const INT nx_start = -r;
+									const INT ny_start = -r;
+									const INT nx_end = r;
+									const INT ny_end = r;
 
-									std::uint8_t* nearRowData = pData + nearCoord.y * mappedResource.RowPitch;
-									std::uint32_t* nearPixel = reinterpret_cast<uint32_t*>(nearRowData + nearCoord.x * 4);
-									if (IsValidPixel(*nearPixel))
-									{
-										RGBA nearColor;
-										nearColor.SetReverse(*nearPixel);
-										averageColor += nearColor;
-										validCount++;
+									for (INT nx = nx_start; nx <= nx_end; nx++) {
+										DirectX::XMINT2 nearCoord = { (INT)x + nx, (INT)y + ny_start };
+										if (nearCoord.x > 0 && nearCoord.y > 0 &&
+											nearCoord.x < width && nearCoord.y < height)
+										{
+											std::uint8_t* nearRowData = pData + nearCoord.y * mappedResource.RowPitch;
+											std::uint32_t* nearPixel = reinterpret_cast<uint32_t*>(nearRowData + nearCoord.x * 4);
+											RGBA nearColor;
+											nearColor.SetReverse(*nearPixel);
+											if (nearColor.a == 1.0f)
+											{
+												averageColor += nearColor;
+												validCount++;
+											}
+										}
+
+										nearCoord = { (INT)x + nx, (INT)y + ny_end };
+										if (nearCoord.x > 0 && nearCoord.y > 0 &&
+											nearCoord.x < width && nearCoord.y < height)
+										{
+											std::uint8_t* nearRowData = pData + nearCoord.y * mappedResource.RowPitch;
+											std::uint32_t* nearPixel = reinterpret_cast<uint32_t*>(nearRowData + nearCoord.x * 4);
+											RGBA nearColor;
+											nearColor.SetReverse(*nearPixel);
+											if (nearColor.a == 1.0f)
+											{
+												averageColor += nearColor;
+												validCount++;
+											}
+										}
 									}
+									for (INT ny = ny_start + 1; ny < ny_end; ny++) {
+										DirectX::XMINT2 nearCoord = { (INT)x + nx_start, (INT)y + ny };
+										if (nearCoord.x > 0 && nearCoord.y > 0 &&
+											nearCoord.x < width && nearCoord.y < height)
+										{
+											std::uint8_t* nearRowData = pData + nearCoord.y * mappedResource.RowPitch;
+											std::uint32_t* nearPixel = reinterpret_cast<uint32_t*>(nearRowData + nearCoord.x * 4);
+											RGBA nearColor;
+											nearColor.SetReverse(*nearPixel);
+											if (nearColor.a == 1.0f)
+											{
+												averageColor += nearColor;
+												validCount++;
+											}
+										}
+
+										nearCoord = { (INT)x + nx_end, (INT)y + ny };
+										if (nearCoord.x > 0 && nearCoord.y > 0 &&
+											nearCoord.x < width && nearCoord.y < height)
+										{
+											std::uint8_t* nearRowData = pData + nearCoord.y * mappedResource.RowPitch;
+											std::uint32_t* nearPixel = reinterpret_cast<uint32_t*>(nearRowData + nearCoord.x * 4);
+											RGBA nearColor;
+											nearColor.SetReverse(*nearPixel);
+											if (nearColor.a == 1.0f)
+											{
+												averageColor += nearColor;
+												validCount++;
+											}
+										}
+									}
+									if (validCount > 0)
+										break;
 								}
 
 								if (validCount == 0)
 									continue;
 
-								RGBA resultColor = averageColor / validCount;
-								resultColorMap.push_back(ColorMap{ pixel, resultColor });
+								RGBA resultsColor = averageColor / validCount;
+								resultsColorMap.push_back(ColorMap{ pixel, resultsColor });
 							}
 						}
 					}));
@@ -1372,14 +1650,14 @@ namespace Mus {
 			}
 			processes.clear();
 
-			std::size_t sub = std::max(std::size_t(1), std::min(resultColorMap.size(), processingThreads->GetThreads()));
-			std::size_t unit = (resultColorMap.size() + sub - 1) / sub;
+			std::size_t sub = std::max(std::size_t(1), std::min(resultsColorMap.size(), processingThreads->GetThreads()));
+			std::size_t unit = (resultsColorMap.size() + sub - 1) / sub;
 			for (std::size_t p = 0; p < sub; p++) {
 				std::size_t begin = p * unit;
-				std::size_t end = std::min(begin + unit, resultColorMap.size());
+				std::size_t end = std::min(begin + unit, resultsColorMap.size());
 				processes.push_back(processingThreads->submitAsync([&, begin, end]() {
 					for (std::size_t i = begin; i < end; i++) {
-						*resultColorMap[i].src = resultColorMap[i].resultColor.GetReverse();
+						*resultsColorMap[i].src = resultsColorMap[i].resultsColor.GetReverse();
 					}
 				}));
 			}
@@ -1387,28 +1665,29 @@ namespace Mus {
 			{
 				process.get();
 			}
-		}
-		ShaderLock();
-		context->Unmap(resourceData->bleedTextureData.texture2D_1.Get(), 0);
-		ShaderUnlock();
 
-		if (Config::GetSingleton().GetBleedTextureTime1())
+			ShaderLock();
+			context->Unmap(resourceData->bleedTextureData.texture2D.Get(), mipLevel);
+			ShaderUnlock();
+		}
+
+		if (Config::GetSingleton().GetBleedTextureTime2())
 			PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, true, false);
 
-		CopySubresourceRegion(device, context, texInOut, resourceData->bleedTextureData.texture2D_1.Get(), 0, 0);
+		for (UINT mipLevel = 0; mipLevel < mipLevelEnd; mipLevel++) 
+		{
+			CopySubresourceRegion(device, context, texInOut, resourceData->bleedTextureData.texture2D.Get(), mipLevel, mipLevel);
+		}
 		logger::debug("{}::{} : Bleed texture done", __func__, resourceData->textureName);
 		return true;
 	}
-	bool ObjectNormalMapUpdater::BleedTextureGPU(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, std::int32_t margin, ID3D11ShaderResourceView* srvInOut, ID3D11Texture2D* texInOut)
+	bool ObjectNormalMapUpdater::BleedTextureGPU(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, ID3D11ShaderResourceView* srvInOut, ID3D11Texture2D* texInOut)
 	{
 		const std::string_view _func_ = __func__;
-		if (margin == 0)
-			return true;
-
 		if (!device || !context)
 			return false;
 
-		logger::info("{}::{} : Bleed texture... {}", _func_, resourceData->textureName, margin);
+		logger::info("{}::{} : Bleed texture...", _func_, resourceData->textureName);
 
 		if (Config::GetSingleton().GetBleedTextureTime1())
 			PerformanceLog(std::string(_func_) + "::" + resourceData->textureName, false, false);
@@ -1445,8 +1724,36 @@ namespace Mus {
 			UINT height;
 			UINT widthStart;
 			UINT heightStart;
+
+			UINT mipLevel;
+			UINT radius;
+			UINT padding2;
+			UINT padding3;
 		};
 		static_assert(sizeof(ConstBufferData) % 16 == 0, "Constant buffer must be 16-byte aligned.");
+
+		D3D11_BUFFER_DESC cbDesc = {};
+		cbDesc.Usage = D3D11_USAGE_DEFAULT;
+		cbDesc.ByteWidth = sizeof(ConstBufferData);
+		cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+		cbDesc.CPUAccessFlags = 0;
+		cbDesc.MiscFlags = 0;
+		cbDesc.StructureByteStride = 0;
+
+		desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		desc.Usage = D3D11_USAGE_DEFAULT;
+		desc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
+		desc.MiscFlags = 0;
+		desc.CPUAccessFlags = 0;
+
+		hr = device->CreateTexture2D(&desc, nullptr, &resourceData->bleedTextureData.texture2D);
+		if (FAILED(hr)) {
+			logger::error("{} : Failed to create texture 2d 1 ({})", _func_, hr);
+			return false;
+		}
+
+		if (Config::GetSingleton().GetBleedTextureTime1())
+			PerformanceLog(std::string(_func_) + "::" + resourceData->textureName, true, false);
 
 		struct ShaderBackup {
 		public:
@@ -1481,105 +1788,28 @@ namespace Mus {
 			Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav;
 		};
 
-
-		const UINT width = desc.Width;
-		const UINT height = desc.Height;
-
-		ConstBufferData cbData = {};
-		cbData.width = width;
-		cbData.height = height;
-		cbData.widthStart = 0;
-		cbData.heightStart = 0;
-
-		D3D11_BUFFER_DESC cbDesc = {};
-		cbDesc.Usage = D3D11_USAGE_DEFAULT;
-		cbDesc.ByteWidth = sizeof(ConstBufferData);
-		cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-		cbDesc.CPUAccessFlags = 0;
-		cbDesc.MiscFlags = 0;
-		cbDesc.StructureByteStride = 0;
-
-		desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		desc.Usage = D3D11_USAGE_DEFAULT;
-		desc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
-		desc.MiscFlags = 0;
-		desc.MipLevels = 1;
-		desc.CPUAccessFlags = 0;
-
-		hr = device->CreateTexture2D(&desc, nullptr, &resourceData->bleedTextureData.texture2D_1);
-		if (FAILED(hr)) {
-			logger::error("{} : Failed to create texture 2d 1 ({})", _func_, hr);
-			return false;
-		}
-		hr = device->CreateTexture2D(&desc, nullptr, &resourceData->bleedTextureData.texture2D_2);
-		if (FAILED(hr)) {
-			logger::error("{} : Failed to create texture 2d 2 ({})", _func_, hr);
-			return false;
-		}
-
-		srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-		srvDesc.Texture2D.MostDetailedMip = 0;
-		srvDesc.Texture2D.MipLevels = 1;
-		hr = device->CreateShaderResourceView(resourceData->bleedTextureData.texture2D_1.Get(), &srvDesc, &resourceData->bleedTextureData.srv1);
-		if (FAILED(hr)) {
-			logger::error("{} : Failed to create shader resource view ({})", _func_, hr);
-			return false;
-		}
-		hr = device->CreateShaderResourceView(resourceData->bleedTextureData.texture2D_2.Get(), &srvDesc, &resourceData->bleedTextureData.srv2);
-		if (FAILED(hr)) {
-			logger::error("{} : Failed to create shader resource view ({})", _func_, hr);
-			return false;
-		}
-
-		D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
-		uavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		uavDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
-		uavDesc.Texture2D.MipSlice = 0;
-		hr = device->CreateUnorderedAccessView(resourceData->bleedTextureData.texture2D_1.Get(), &uavDesc, &resourceData->bleedTextureData.uav1);
-		if (FAILED(hr)) {
-			logger::error("{} : Failed to create unordered access view ({})", _func_, hr);
-			return false;
-		}
-		hr = device->CreateUnorderedAccessView(resourceData->bleedTextureData.texture2D_2.Get(), &uavDesc, &resourceData->bleedTextureData.uav2);
-		if (FAILED(hr)) {
-			logger::error("{} : Failed to create unordered access view ({})", _func_, hr);
-			return false;
-		}
-
-		if (Config::GetSingleton().GetBleedTextureTime1())
-			PerformanceLog(std::string(_func_) + "::" + resourceData->textureName, true, false);
-
-		auto srv = srvInOut;
-		auto srvAlt = resourceData->bleedTextureData.srv1.Get();
-		auto uav = resourceData->bleedTextureData.uav1.Get();
-		auto uavAlt = resourceData->bleedTextureData.uav2.Get();
-		auto tex = resourceData->bleedTextureData.texture2D_1.Get();
-		auto texAlt = resourceData->bleedTextureData.texture2D_2.Get();
-
-		if (margin < 0)
-		{
-			margin = std::max(UINT(1), std::max(width, height) / 256);
-			logger::debug("{}::{} : Bleed texture -> set margin {}", _func_, resourceData->textureName, margin);
-		}
-
+		UINT mipLevelEnd = desc.MipLevels;
 		if (isSecondGPU || isNoSplitGPU)
 		{
-			const DirectX::XMUINT2 dispatch = { (width + 8 - 1) / 8, (height + 8 - 1) / 8 };
-			for (std::uint32_t mi = 0; mi < margin; mi++)
+			for (UINT mipLevel = 0; mipLevel < desc.MipLevels; mipLevel++) 
 			{
-				if (mi > 0)
+				const UINT width = std::max(desc.Width >> mipLevel, 1u);
+				const UINT height = std::max(desc.Height >> mipLevel, 1u);
+				if (width <= Config::GetSingleton().GetTextureMarginIgnoreSize() && height <= Config::GetSingleton().GetTextureMarginIgnoreSize())
 				{
-					auto tmpSrv = srv;
-					srv = srvAlt;
-					srvAlt = tmpSrv;
-					auto tmpUav = uav;
-					uav = uavAlt;
-					uavAlt = tmpUav;
-					auto tmpTex = tex;
-					tex = texAlt;
-					texAlt = tmpTex;
+					mipLevelEnd = mipLevel;
+					break;
 				}
+
+				const DirectX::XMUINT2 dispatch = { (width + 8 - 1) / 8, (height + 8 - 1) / 8 };
+
+				ConstBufferData cbData = {};
+				cbData.height = height;
+				cbData.width = width;
+				cbData.heightStart = 0;
+				cbData.widthStart = 0;
+				cbData.mipLevel = mipLevel;
+				cbData.radius = mipLevel / 2 + 1;
 
 				D3D11_SUBRESOURCE_DATA cbInitData = {};
 				cbInitData.pSysMem = &cbData;
@@ -1587,63 +1817,83 @@ namespace Mus {
 				hr = device->CreateBuffer(&cbDesc, &cbInitData, &constBuffer);
 				if (FAILED(hr)) {
 					logger::error("{} : Failed to create const buffer ({})", _func_, hr);
-					continue;
+					return false;
 				}
+				resourceData->bleedTextureData.constBuffers.push_back(constBuffer);
+
+				D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+				uavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+				uavDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
+				uavDesc.Texture2D.MipSlice = mipLevel;
+				Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav;
+				hr = device->CreateUnorderedAccessView(resourceData->bleedTextureData.texture2D.Get(), &uavDesc, &uav);
+				if (FAILED(hr)) {
+					logger::error("{} : Failed to create unordered access view ({})", _func_, hr);
+					return false;
+				}
+				resourceData->bleedTextureData.uavs.push_back(uav);
 
 				if (Config::GetSingleton().GetBleedTextureTime2())
 					GPUPerformanceLog(device, context, std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
-									  + "::" + std::to_string(mi), false, false);
-
+									  + "::" + std::to_string(mipLevel), false, false);
 				ShaderBackup sb;
 				ShaderLock();
 				sb.Backup(context);
 				context->CSSetShader(shader.Get(), nullptr, 0);
 				context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
-				context->CSSetShaderResources(0, 1, &srv);
-				context->CSSetUnorderedAccessViews(0, 1, &uav, nullptr);
+				context->CSSetShaderResources(0, 1, &srvInOut);
+				context->CSSetUnorderedAccessViews(0, 1, uav.GetAddressOf(), nullptr);
 				context->Dispatch(dispatch.x, dispatch.y, 1);
 				sb.Revert(context);
 				ShaderUnlock();
 
 				if (Config::GetSingleton().GetBleedTextureTime2())
 					GPUPerformanceLog(device, context, std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
-									  + "::" + std::to_string(mi), true, false);
-
-				resourceData->bleedTextureData.constBuffers.push_back(constBuffer);
-				WaitForGPU(device, context).Wait();
-				if (mi == 0)
-				{
-					srv = resourceData->bleedTextureData.srv2.Get();
-				}
+									  + "::" + std::to_string(mipLevel), true, false);
 			}
 		}
 		else
 		{
 			const std::uint32_t subResolution = 4096 / (1u << Config::GetSingleton().GetDivideTaskQ());
-			const DirectX::XMUINT2 dispatch = { (std::min(width, subResolution) + 8 - 1) / 8, (std::min(height, subResolution) + 8 - 1) / 8 };
-			const std::uint32_t subXSize = std::max(std::uint32_t(1), width / subResolution);
-			const std::uint32_t subYSize = std::max(std::uint32_t(1), height / subResolution);
+			std::vector<std::future<void>> gpuTasks;
 
-			for (std::uint32_t mi = 0; mi < margin; mi++)
+			for (UINT mipLevel = 0; mipLevel < desc.MipLevels; mipLevel++)
 			{
-				if (mi > 0)
+				const UINT width = std::max(desc.Width >> mipLevel, 1u);
+				const UINT height = std::max(desc.Height >> mipLevel, 1u);
+				if (width <= Config::GetSingleton().GetTextureMarginIgnoreSize() && height <= Config::GetSingleton().GetTextureMarginIgnoreSize())
 				{
-					auto tmpSrv = srv;
-					srv = srvAlt;
-					srvAlt = tmpSrv;
-					auto tmpUav = uav;
-					uav = uavAlt;
-					uavAlt = tmpUav;
-					auto tmpTex = tex;
-					tex = texAlt;
-					texAlt = tmpTex;
+					mipLevelEnd = mipLevel;
+					break;
 				}
-				std::vector<std::future<void>> gpuTasks;
+
+				const DirectX::XMUINT2 dispatch = { (width + 8 - 1) / 8, (height + 8 - 1) / 8 };
+				const std::uint32_t subXSize = std::max(1u, width / subResolution);
+				const std::uint32_t subYSize = std::max(1u, height / subResolution);
+
+				D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+				uavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+				uavDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
+				uavDesc.Texture2D.MipSlice = mipLevel;
+				Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav;
+				hr = device->CreateUnorderedAccessView(resourceData->bleedTextureData.texture2D.Get(), &uavDesc, &uav);
+				if (FAILED(hr)) {
+					logger::error("{} : Failed to create unordered access view ({})", _func_, hr);
+					return false;
+				}
+				resourceData->bleedTextureData.uavs.push_back(uav);
+
+				ConstBufferData cbData = {};
+				cbData.width = width;
+				cbData.height = height;
+				cbData.mipLevel = mipLevel;
+				cbData.radius = mipLevel / 2 + 1;
+
 				for (std::uint32_t subY = 0; subY < subYSize; subY++)
 				{
 					for (std::uint32_t subX = 0; subX < subXSize; subX++)
 					{
-						auto cbData_ = cbData;
+						ConstBufferData cbData_ = cbData;
 						cbData_.widthStart = subResolution * subX;
 						cbData_.heightStart = subResolution * subY;
 						D3D11_SUBRESOURCE_DATA cbInitData = {};
@@ -1652,80 +1902,105 @@ namespace Mus {
 						hr = device->CreateBuffer(&cbDesc, &cbInitData, &constBuffer);
 						if (FAILED(hr)) {
 							logger::error("{} : Failed to create const buffer ({})", _func_, hr);
-							continue;
+							return false;
 						}
+						resourceData->bleedTextureData.constBuffers.push_back(constBuffer);
 
-						gpuTasks.push_back(gpuTask->submitAsync([&, constBuffer, subX, subY, mi, srv, uav]() {
+						auto gpuFunc = [&, dispatch, constBuffer, width, height, mipLevel, subX, subY, uav]() {
 							if (Config::GetSingleton().GetBleedTextureTime2())
 								GPUPerformanceLog(device, context, std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
-												  + "::" + std::to_string(subX) + "|" + std::to_string(subY) + "::" + std::to_string(mi), false, false);
+												  + "::" + std::to_string(subX) + "|" + std::to_string(subY) + "::" + std::to_string(mipLevel), false, false);
 
 							ShaderBackup sb;
 							ShaderLock();
 							sb.Backup(context);
 							context->CSSetShader(shader.Get(), nullptr, 0);
 							context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
-							context->CSSetShaderResources(0, 1, &srv);
-							context->CSSetUnorderedAccessViews(0, 1, &uav, nullptr);
+							context->CSSetShaderResources(0, 1, &srvInOut);
+							context->CSSetUnorderedAccessViews(0, 1, uav.GetAddressOf(), nullptr);
 							context->Dispatch(dispatch.x, dispatch.y, 1);
 							sb.Revert(context);
 							ShaderUnlock();
 
 							if (Config::GetSingleton().GetBleedTextureTime2())
 								GPUPerformanceLog(device, context, std::string(_func_) + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
-												  + "::" + std::to_string(subX) + "|" + std::to_string(subY) + "::" + std::to_string(mi), true, false);
-						}));
-						resourceData->bleedTextureData.constBuffers.push_back(constBuffer);
+												  + "::" + std::to_string(subX) + "|" + std::to_string(subY) + "::" + std::to_string(mipLevel), true, false);
+						};
+
+						if (width <= 256 && height <= 256)
+						{
+							gpuFunc();
+						}
+						else
+						{
+							gpuTasks.push_back(gpuTask->submitAsync([gpuFunc]() {
+								gpuFunc();
+							}));
+						}
 					}
 				}
-				for (auto& task : gpuTasks)
-				{
-					task.get();
-				}
-				WaitForGPU(device, context).Wait();
-				if (mi == 0)
-				{
-					srv = resourceData->bleedTextureData.srv2.Get();
-				}
+			}
+			for (auto& task : gpuTasks)
+			{
+				task.get();
 			}
 		}
-		CopySubresourceRegion(device, context, texInOut, tex, 0, 0);
+		WaitForGPU(device, context).Wait();
+		for (UINT mipLevel = 0; mipLevel < mipLevelEnd; mipLevel++)
+		{
+			CopySubresourceRegion(device, context, texInOut, resourceData->bleedTextureData.texture2D.Get(), mipLevel, mipLevel);
+		}
 		logger::debug("{}::{} : Bleed texture done", _func_, resourceData->textureName);
 
 		return true;
 	}
 
-	void ObjectNormalMapUpdater::MergeTexture(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& result, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries)
+	bool ObjectNormalMapUpdater::MergeTexture(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries)
 	{
 		if (!device || !context)
-			return;
+			return false;
 
-		for (std::uint32_t dst = 0; dst < result.size(); dst++)
+		bool merged = false;
+		auto results_ = results;
+		std::sort(results_.begin(), results_.end(), [](NormalMapResult& a, NormalMapResult& b){
+			return a.vertexCount > b.vertexCount;
+		});
+		for (auto& dst : results_)
 		{
-			if (mergedTextureGeometries.find(result[dst].geometry) != mergedTextureGeometries.end())
+			if (mergedTextureGeometries.find(dst.geometry) != mergedTextureGeometries.end())
 				continue;
-			for (std::uint32_t src = 0; src < result.size(); src++)
+
+			for (auto& src : results)
 			{
-				if (result[src].geometry == result[dst].geometry)
+				if (src.geometry == dst.geometry)
 					continue;
-				if (result[src].textureName != result[dst].textureName)
+				if (mergedTextureGeometries.find(src.geometry) != mergedTextureGeometries.end())
+					continue;
+				if (src.textureName != dst.textureName)
+					continue;
+				if (src.vertexCount > dst.vertexCount)
 					continue;
 
-				logger::info("{} : Merge texture {} into {}...", result[src].textureName, result[src].geoName, result[dst].geoName);
+				auto resourceIt = std::find_if(resourceDatas.begin(), resourceDatas.end(), [&](TextureResourceDataPtr& resource) { return resource->geometry == src.geometry; });
+				logger::info("{} : Merge texture {} into {}...", src.textureName, src.geoName, dst.geoName);
 				bool mergeResult = false;
 				if (Config::GetSingleton().GetMergeTextureGPU())
-					mergeResult = MergeTextureGPU(device, context, resourceDatas[src],
-												  result[dst].texture->normalmapShaderResourceView.Get(), result[dst].texture->normalmapTexture2D.Get(),
-												  result[src].texture->normalmapShaderResourceView.Get(), result[src].texture->normalmapTexture2D.Get());
+					mergeResult = MergeTextureGPU(device, context, *resourceIt,
+												  dst.texture->normalmapShaderResourceView.Get(), dst.texture->normalmapTexture2D.Get(),
+												  src.texture->normalmapShaderResourceView.Get(), src.texture->normalmapTexture2D.Get());
 				else
-					mergeResult = MergeTexture(device, context, resourceDatas[src], result[dst].texture->normalmapTexture2D.Get(), result[src].texture->normalmapTexture2D.Get());
+					mergeResult = MergeTexture(device, context, *resourceIt,
+											   dst.texture->normalmapTexture2D.Get(), src.texture->normalmapTexture2D.Get());
 				if (mergeResult)
 				{
-					result[src].texture = result[dst].texture;
-					mergedTextureGeometries.insert(result[src].geometry);
+					src.texture = dst.texture;
+					mergedTextureGeometries.insert(src.geometry);
+					merged = true;
+					NormalMapStore::GetSingleton().AddHashPair(dst.hash, src.hash);
 				}
 			}
 		}
+		return merged;
 	}
 	bool ObjectNormalMapUpdater::MergeTexture(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, ID3D11Texture2D* dstTex, ID3D11Texture2D* srcTex)
 	{
@@ -1759,7 +2034,7 @@ namespace Mus {
 		dstStagingDesc.Usage = D3D11_USAGE_STAGING;
 		dstStagingDesc.BindFlags = 0;
 		dstStagingDesc.MiscFlags = 0;
-		dstStagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+		dstStagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ | D3D11_CPU_ACCESS_WRITE;
 		dstStagingDesc.MipLevels = 1;
 		dstStagingDesc.ArraySize = 1;
 		dstStagingDesc.SampleDesc.Count = 1;
@@ -1789,15 +2064,15 @@ namespace Mus {
 
 		D3D11_MAPPED_SUBRESOURCE dstMappedResource, srcMappedResource;
 		ShaderLock();
-		hr = context->Map(resourceData->mergeTextureData.dstTexture2D.Get(), 0, D3D11_MAP_WRITE, 0, &dstMappedResource);
+		hr = context->Map(resourceData->mergeTextureData.dstTexture2D.Get(), 0, D3D11_MAP_READ_WRITE, 0, &dstMappedResource);
 		hr = context->Map(resourceData->mergeTextureData.srcTexture2D.Get(), 0, D3D11_MAP_READ, 0, &srcMappedResource);
 		ShaderUnlock();
 
 		std::uint8_t* dst_pData = reinterpret_cast<std::uint8_t*>(dstMappedResource.pData);
 		std::uint8_t* src_pData = reinterpret_cast<std::uint8_t*>(srcMappedResource.pData);
 		std::vector<std::future<void>> processes;
-		const std::size_t subX = std::max((std::size_t)1, std::min(std::size_t(dstStagingDesc.Width), processingThreads->GetThreads() * 8));
-		const std::size_t subY = std::max((std::size_t)1, std::min(std::size_t(dstStagingDesc.Height), processingThreads->GetThreads() * 8));
+		const std::size_t subX = std::max((std::size_t)1, std::min(std::size_t(dstStagingDesc.Width), processingThreads->GetThreads() * 4));
+		const std::size_t subY = std::max((std::size_t)1, std::min(std::size_t(dstStagingDesc.Height), processingThreads->GetThreads() * 4));
 		const std::size_t unitX = (std::size_t(dstStagingDesc.Width) + subX - 1) / subX;
 		const std::size_t unitY = (std::size_t(dstStagingDesc.Height) + subY - 1) / subY;
 		for (std::size_t px = 0; px < subX; px++) {
@@ -1822,7 +2097,7 @@ namespace Mus {
 							if (dstPixelColor.a < 1.0f && srcPixelColor.a < 1.0f)
 								continue;
 
-							RGBA dstColor = RGBA::lerp(srcPixelColor, srcPixelColor, srcPixelColor.a);
+							RGBA dstColor = RGBA::lerp(srcPixelColor, dstPixelColor, dstPixelColor.a);
 							*dstPixel = dstColor.GetReverse() | 0xFF000000;
 						}
 					}
@@ -2007,8 +2282,8 @@ namespace Mus {
 		{
 			const std::uint32_t subResolution = 4096 / (1u << Config::GetSingleton().GetDivideTaskQ());
 			const DirectX::XMUINT2 dispatch = { (std::min(width, subResolution) + 8 - 1) / 8, (std::min(height, subResolution) + 8 - 1) / 8 };
-			const std::uint32_t subXSize = std::max(std::uint32_t(1), width / subResolution);
-			const std::uint32_t subYSize = std::max(std::uint32_t(1), height / subResolution);
+			const std::uint32_t subXSize = std::max(1u, width / subResolution);
+			const std::uint32_t subYSize = std::max(1u, height / subResolution);
 
 			bool isResultFirst = true;
 			std::vector<std::future<void>> gpuTasks;
@@ -2064,10 +2339,10 @@ namespace Mus {
 		return true;
 	}
 
-	void ObjectNormalMapUpdater::GenerateMipMap(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& result, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries)
+	bool ObjectNormalMapUpdater::GenerateMipMap(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries)
 	{
 		if (!device || !context || !Config::GetSingleton().GetUseMipMap())
-			return;
+			return false;
 
 		const bool isSecondGPU = Shader::ShaderManager::GetSingleton().IsSecondGPUResource(context);
 		const auto ShaderLock = [isSecondGPU]() {
@@ -2083,14 +2358,18 @@ namespace Mus {
 				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 		};
 
-		for (std::uint32_t i = 0; i < result.size(); i++)
+		for (std::uint32_t i = 0; i < results.size(); i++)
 		{
-			if (mergedTextureGeometries.find(result[i].geometry) != mergedTextureGeometries.end())
+			if (results[i].existResource)
+				continue;
+
+			if (mergedTextureGeometries.find(results[i].geometry) != mergedTextureGeometries.end())
 				continue;
 			ShaderLock();
-			context->GenerateMips(result[i].texture->normalmapShaderResourceView.Get());
+			context->GenerateMips(results[i].texture->normalmapShaderResourceView.Get());
 			ShaderUnlock();
 		}
+		return true;
 	}
 
 	bool ObjectNormalMapUpdater::CopySubresourceRegion(ID3D11Device* device, ID3D11DeviceContext* context, ID3D11Texture2D* dstTexture, ID3D11Texture2D* srcTexture, UINT dstMipMapLevel, UINT srcMipMapLevel)
@@ -2102,7 +2381,11 @@ namespace Mus {
 		dstTexture->GetDesc(&dstDesc);
 		srcTexture->GetDesc(&srcDesc);
 
-		if (dstDesc.Width != srcDesc.Width || dstDesc.Height != srcDesc.Height)
+		const UINT srcWidth = std::max(srcDesc.Width >> srcMipMapLevel, 1u);
+		const UINT srcHeight = std::max(srcDesc.Height >> srcMipMapLevel, 1u);
+		const UINT dstWidth = std::max(dstDesc.Width >> dstMipMapLevel, 1u);
+		const UINT dstHeight = std::max(dstDesc.Height >> dstMipMapLevel, 1u);
+		if (srcWidth != dstWidth || srcHeight != dstHeight)
 			return false;
 
 		const bool isSecondGPU = Shader::ShaderManager::GetSingleton().IsSecondGPUResource(context);
@@ -2119,7 +2402,7 @@ namespace Mus {
 				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 		};
 
-		if (isSecondGPU || isNoSplitGPU)
+		if (isSecondGPU || isNoSplitGPU || (dstWidth <= 256 && dstHeight <= 256))
 		{
 			ShaderLock();
 			context->CopySubresourceRegion(dstTexture, dstMipMapLevel, 0, 0, 0, srcTexture, srcMipMapLevel, NULL);
@@ -2127,11 +2410,9 @@ namespace Mus {
 			return true;
 		}
 
-		const UINT width = dstDesc.Width;
-		const UINT height = dstDesc.Height;
 		const std::uint32_t subResolution = 4096 / (1u << Config::GetSingleton().GetDivideTaskQ());
-		const std::uint32_t subXSize = std::max(std::uint32_t(1), width / subResolution);
-		const std::uint32_t subYSize = std::max(std::uint32_t(1), height / subResolution);
+		const std::uint32_t subXSize = std::max(1u, dstWidth / subResolution);
+		const std::uint32_t subYSize = std::max(1u, dstHeight / subResolution);
 		std::vector<std::future<void>> gpuTasks;
 		for (std::uint32_t subY = 0; subY < subYSize; subY++)
 		{
@@ -2139,15 +2420,15 @@ namespace Mus {
 			{
 				D3D11_BOX box = {};
 				box.left = subX * subResolution;
-				box.right = std::min(width, box.left + subResolution);
+				box.right = std::min(dstWidth, box.left + subResolution);
 				box.top = subY * subResolution;
-				box.bottom = std::min(height, box.top + subResolution);
+				box.bottom = std::min(dstHeight, box.top + subResolution);
 				box.front = 0;
 				box.back = 1;
 
-				gpuTasks.push_back(gpuTask->submitAsync([&, box, subX, subY]() {
+				gpuTasks.push_back(gpuTask->submitAsync([&, box, dstWidth, dstHeight, subX, subY]() {
 					if (Config::GetSingleton().GetTextureCopyTime())
-						GPUPerformanceLog(device, context, std::string("CopySubresourceRegion") + "::" + std::to_string(dstDesc.Width) + "::" + std::to_string(dstDesc.Width)
+						GPUPerformanceLog(device, context, std::string("CopySubresourceRegion") + "::" + std::to_string(dstWidth) + "::" + std::to_string(dstHeight)
 										  + "::" + std::to_string(subX) + "|" + std::to_string(subY), false, false);
 
 					ShaderLock();
@@ -2159,7 +2440,7 @@ namespace Mus {
 					ShaderUnlock();
 
 					if (Config::GetSingleton().GetTextureCopyTime())
-						GPUPerformanceLog(device, context, std::string("CopySubresourceRegion") + "::" + std::to_string(dstDesc.Width) + "::" + std::to_string(dstDesc.Width)
+						GPUPerformanceLog(device, context, std::string("CopySubresourceRegion") + "::" + std::to_string(dstWidth) + "::" + std::to_string(dstHeight)
 										  + "::" + std::to_string(subX) + "|" + std::to_string(subY), true, false);
 				}));
 			}
@@ -2170,7 +2451,7 @@ namespace Mus {
 		return true;
 	}
 
-	void ObjectNormalMapUpdater::CopyResourceToMain(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& result, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries)
+	void ObjectNormalMapUpdater::CopyResourceToMain(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries)
 	{
 		if (!device || !context)
 			return;
@@ -2179,35 +2460,48 @@ namespace Mus {
 		{
 			WaitForGPU(device, context, false).Wait();
 			std::unordered_set<std::uint32_t> failedCopyResources;
-			for (std::uint32_t i = 0; i < result.size(); i++)
+			for (std::uint32_t i = 0; i < results.size(); i++)
 			{
-				if (mergedTextureGeometries.find(result[i].geometry) != mergedTextureGeometries.end())
+				if (results[i].existResource)
 					continue;
-				if (CopyResourceSecondToMain(resourceDatas[i], result[i].texture->normalmapTexture2D, result[i].texture->normalmapShaderResourceView))
-					logger::info("{} : normalmap created", result[i].textureName, result[i].geoName);
+				if (mergedTextureGeometries.find(results[i].geometry) != mergedTextureGeometries.end())
+					continue;
+				if (CopyResourceSecondToMain(resourceDatas[i], results[i].texture->normalmapTexture2D, results[i].texture->normalmapShaderResourceView))
+				{
+					logger::info("{} : normalmap created", results[i].textureName, results[i].geoName);
+					NormalMapStore::GetSingleton().AddResource(results[i].hash, results[i].texture);
+				}
 				else
 					failedCopyResources.insert(i);
 			}
-			auto result_ = result;
-			result.clear();
-			for (std::uint32_t i = 0; i < result_.size(); i++)
+			auto results_ = results;
+			results.clear();
+			for (std::uint32_t i = 0; i < results_.size(); i++)
 			{
 				if (failedCopyResources.find(i) != failedCopyResources.end())
 					continue;
-				result.push_back(result_[i]);
+				results.push_back(results_[i]);
 			}
 		}
 		else
 		{
 			if (Config::GetSingleton().GetWaitForRendererTickMS() > 0)
 			{
-				for (std::uint32_t i = 0; i < result.size(); i++)
+				for (std::uint32_t i = 0; i < results.size(); i++)
 				{
+					if (results[i].existResource)
+						continue;
+
 					resourceDatas[i]->GetQuery(device, context);
 					ResourceDataMapLock.lock_shared();
 					ResourceDataMap.push_back(resourceDatas[i]);
 					ResourceDataMapLock.unlock_shared();
-					logger::info("{} : normalmap created", result[i].textureName, result[i].geoName);
+
+					if (mergedTextureGeometries.find(results[i].geometry) != mergedTextureGeometries.end())
+						continue;
+
+					logger::info("{} : normalmap created", results[i].textureName, results[i].geoName);
+					NormalMapStore::GetSingleton().AddResource(results[i].hash, results[i].texture);
 				}
 			}
 		}
@@ -2313,18 +2607,22 @@ namespace Mus {
 		return true;
 	}
 
-	void ObjectNormalMapUpdater::CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& result, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries)
+	bool ObjectNormalMapUpdater::CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries)
 	{
 		if (!device || !context)
-			return;
+			return false;
 
-		for (std::uint32_t i = 0; i < result.size(); i++)
+		bool isCompressed = false;
+		for (std::uint32_t i = 0; i < results.size(); i++)
 		{
-			if (mergedTextureGeometries.find(result[i].geometry) != mergedTextureGeometries.end())
+			if (results[i].existResource)
 				continue;
-			CompressTexture(device, context,
-							resourceDatas[i], result[i].texture->normalmapTexture2D, result[i].texture->normalmapShaderResourceView);
+			if (mergedTextureGeometries.find(results[i].geometry) != mergedTextureGeometries.end())
+				continue;
+			isCompressed = CompressTexture(device, context,
+							resourceDatas[i], results[i].texture->normalmapTexture2D, results[i].texture->normalmapShaderResourceView) ? true : isCompressed;
 		}
+		return isCompressed;
 	}
 	bool ObjectNormalMapUpdater::CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut)
 	{
@@ -2332,50 +2630,36 @@ namespace Mus {
 			return false;
 
 		const bool isSecondGPU = Shader::ShaderManager::GetSingleton().IsSecondGPUResource(context);
-		DXGI_FORMAT format = DXGI_FORMAT_BC7_UNORM;
+		bool isGPUCompress = false;
 		if (Config::GetSingleton().GetTextureCompress() == -1)
 		{
-			if (isSecondGPU)
-				format = DXGI_FORMAT_BC7_UNORM;
-			else
-				return false;
+			isGPUCompress = isSecondGPU;
 		}
 		else
 		{
-			if (Config::GetSingleton().GetTextureCompress() == 1)
-				format = DXGI_FORMAT_BC3_UNORM;
-			else if (Config::GetSingleton().GetTextureCompress() == 2)
-				format = DXGI_FORMAT_BC7_UNORM;
-			else
-				return false;
+			isGPUCompress = Config::GetSingleton().GetTextureCompress() == 2;
 		}
 
-		logger::info("{}::{} : Compress texture... {}", __func__, resourceData->textureName, magic_enum::enum_name(format).data());
-
+		logger::info("{}::{} : Compress texture...", __func__, resourceData->textureName);
 		resourceData->textureCompressData.srcOldTexture2D = texInOut;
 		resourceData->textureCompressData.srcOldShaderResourceView = srvInOut;
 
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTexture = nullptr;
 		bool isCompressed = false;
-		auto compressTaskFunc = [&]() {
+
+		if (isGPUCompress)
+		{
 			if (Config::GetSingleton().GetCompressTime())
 				PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, false, false);
 
-			isCompressed = Shader::TextureLoadManager::GetSingleton().CompressTexture(device, context, resourceData->textureCompressData.srcOldTexture2D, format, dstTexture);
+			isCompressed = Shader::TextureLoadManager::GetSingleton().CompressTexture(device, context, dstTexture, resourceData->textureCompressData.srcOldTexture2D, DXGI_FORMAT_BC7_UNORM);
 
 			if (Config::GetSingleton().GetCompressTime())
 				PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, true, false);
-			};
-
-		if (isSecondGPU || isNoSplitGPU)
-		{
-			compressTaskFunc();
 		}
 		else
 		{
-			gpuTask->submitAsync([&]() {
-				compressTaskFunc();
-			}).get();
+			isCompressed = CompressTextureBC7(device, context, resourceData, dstTexture, resourceData->textureCompressData.srcOldTexture2D);
 		}
 
 		if (!isCompressed || !dstTexture)
@@ -2399,6 +2683,157 @@ namespace Mus {
 
 		logger::debug("{}::{} : Compress texture done", __func__, resourceData->textureName);
 		return isCompressed;
+	}
+	bool ObjectNormalMapUpdater::CompressTextureBC7(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTexture, Microsoft::WRL::ComPtr<ID3D11Texture2D>& srcTexture)
+	{
+		if (!device || !context || !srcTexture)
+			return false;
+
+		const bool isSecondGPU = Shader::ShaderManager::GetSingleton().IsSecondGPUResource(context);
+		const auto ShaderLock = [isSecondGPU]() {
+			if (isSecondGPU)
+				Shader::ShaderManager::GetSingleton().ShaderSecondContextLock();
+			else
+				Shader::ShaderManager::GetSingleton().ShaderContextLock();
+			};
+		const auto ShaderUnlock = [isSecondGPU]() {
+			if (isSecondGPU)
+				Shader::ShaderManager::GetSingleton().ShaderSecondContextUnlock();
+			else
+				Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+			};
+
+		if (Config::GetSingleton().GetCompressTime())
+			PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, false, false);
+
+		D3D11_TEXTURE2D_DESC srcDesc;
+		srcTexture->GetDesc(&srcDesc);
+
+		if (srcDesc.Format != DXGI_FORMAT_R8G8B8A8_UNORM)
+			return false;
+
+		D3D11_TEXTURE2D_DESC stagingDesc = srcDesc;
+		stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+		stagingDesc.Usage = D3D11_USAGE_STAGING;
+		stagingDesc.ArraySize = 1;
+		stagingDesc.BindFlags = 0;
+		stagingDesc.MiscFlags = 0;
+		stagingDesc.SampleDesc.Count = 1;
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> stagingTexture;
+		HRESULT hr = device->CreateTexture2D(&stagingDesc, nullptr, &stagingTexture);
+		if (FAILED(hr))
+		{
+			logger::error("Failed to create staging texture");
+			return false;
+		}
+
+		for (UINT mipLevel = 0; mipLevel < srcDesc.MipLevels; mipLevel++) {
+			CopySubresourceRegion(device, context, stagingTexture.Get(), resourceData->textureCompressData.srcOldTexture2D.Get(), mipLevel, mipLevel);
+		}
+
+		std::vector<D3D11_SUBRESOURCE_DATA> initData(srcDesc.MipLevels);
+		std::vector<std::vector<std::uint8_t>> bc7Buffers(srcDesc.MipLevels);
+
+		bc7enc_compress_block_init();
+
+		bc7enc_compress_block_params params;
+		bc7enc_compress_block_params_init(&params);
+		bc7enc_compress_block_params_init_linear_weights(&params);
+		params.m_mode_mask = 1 << 6;
+		params.m_max_partitions = 1;
+		params.m_uber_level = 0;
+
+		for (UINT mipLevel = 0; mipLevel < srcDesc.MipLevels; mipLevel++)
+		{
+			UINT width = std::max(1u, srcDesc.Width >> mipLevel);
+			UINT height = std::max(1u, srcDesc.Height >> mipLevel);
+			UINT bc7Width = (width + 4 - 1) / 4;
+			UINT bc7Height = (height + 4 - 1) / 4;
+			bc7Buffers[mipLevel].resize((std::size_t)bc7Width * bc7Height * 16);
+
+			D3D11_MAPPED_SUBRESOURCE mapped;
+			ShaderLock();
+			hr = context->Map(stagingTexture.Get(), mipLevel, D3D11_MAP_READ, 0, &mapped);
+			ShaderUnlock();
+			if (FAILED(hr))
+			{
+				logger::error("Failed to map staging texture at level {}", mipLevel);
+				return false;
+			}
+
+			std::uint8_t* srcData = reinterpret_cast<uint8_t*>(mapped.pData);
+			std::vector<std::future<void>> processes;
+			const std::size_t subX = std::max((std::size_t)1, std::min(std::size_t(bc7Width), processingThreads->GetThreads() * 4));
+			const std::size_t subY = std::max((std::size_t)1, std::min(std::size_t(bc7Height), processingThreads->GetThreads() * 4));
+			const std::size_t unitX = (std::size_t(bc7Width) + subX - 1) / subX;
+			const std::size_t unitY = (std::size_t(bc7Height) + subY - 1) / subY;
+			for (UINT sby = 0; sby < subY; sby++) {
+				for (UINT sbx = 0; sbx < subX; sbx++)
+				{
+					const std::size_t beginX = sbx * unitX;
+					const std::size_t endX = std::min(beginX + unitX, std::size_t(bc7Width));
+					const std::size_t beginY = sby * unitY;
+					const std::size_t endY = std::min(beginY + unitY, std::size_t(bc7Height));
+					processes.push_back(processingThreads->submitAsync([&, beginX, endX, beginY, endY]() {
+						for (UINT by = beginY; by < endY; by++) {
+							for (UINT bx = beginX; bx < endX; bx++) {
+								const std::size_t currentBlockIndex = (std::size_t)by * bc7Width + bx;
+								std::vector<std::uint8_t> block(64);
+								for (UINT y = 0; y < 4; y++) {
+									for (UINT x = 0; x < 4; x++) {
+										UINT px = bx * 4 + x;
+										UINT py = by * 4 + y;
+										UINT clampedPx = std::min(px, width - 1);
+										UINT clampedPy = std::min(py, height - 1);
+
+										std::uint32_t* dstPixel = reinterpret_cast<std::uint32_t*>(srcData + clampedPy * mapped.RowPitch + clampedPx * 4);
+										RGBA rgba;
+										rgba.SetReverse(*dstPixel);
+										std::uint8_t* dst = block.data() + (y * 4 + x) * 4;
+										dst[0] = rgba.R();
+										dst[1] = rgba.G();
+										dst[2] = rgba.B();
+										dst[3] = rgba.A();
+									}
+								}
+								std::uint8_t* outputPtr = bc7Buffers[mipLevel].data() + currentBlockIndex * 16;
+								bc7enc_compress_block(outputPtr, block.data(), &params);
+							}
+						}
+					}));
+				}
+			}
+			for (auto& process : processes) {
+				process.get();
+			}
+			ShaderLock();
+			context->Unmap(stagingTexture.Get(), mipLevel);
+			ShaderUnlock();
+
+			initData[mipLevel].pSysMem = bc7Buffers[mipLevel].data();
+			initData[mipLevel].SysMemPitch = bc7Width * 16;
+			initData[mipLevel].SysMemSlicePitch = 0;
+		}
+
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> tmpDstTexture;
+		D3D11_TEXTURE2D_DESC dstDesc = srcDesc;
+		dstDesc.Format = DXGI_FORMAT_BC7_UNORM;
+		dstDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+		dstDesc.Usage = D3D11_USAGE_DEFAULT;
+		dstDesc.MiscFlags = 0;
+		dstDesc.CPUAccessFlags = 0;
+		hr = device->CreateTexture2D(&dstDesc, initData.data(), &tmpDstTexture);
+		if (FAILED(hr))
+		{
+			logger::error("Failed to create BC7 compressed texture ({})", hr);
+			return false;
+		}
+
+		dstTexture = tmpDstTexture;
+
+		if (Config::GetSingleton().GetCompressTime())
+			PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, true, false);
+		return true;
 	}
 
 	void ObjectNormalMapUpdater::GPUPerformanceLog(ID3D11Device* device, ID3D11DeviceContext* context, std::string funcStr, bool isEnd, bool isAverage, std::uint32_t args)
@@ -2549,7 +2984,7 @@ namespace Mus {
 	{
 		if (!device || !context || !query)
 			return;
-		if (isSecondGPU && secondGPUNoWait)
+		if (isSecondGPU && secondGPUNoWait && !Config::GetSingleton().GetSecondaryGPUWaitForGPU())
 			return;
 		HRESULT hr;
 		while (true) {

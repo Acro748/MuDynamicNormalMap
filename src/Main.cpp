@@ -163,9 +163,12 @@ namespace {
 
         Mus::InitialSetting();
 
+        Mus::NormalMapStore::GetSingleton().ClearDiskCache();
+
 		Mus::g_frameEventDispatcher.addListener(&Mus::ObjectNormalMapUpdater::GetSingleton());
 		Mus::g_frameEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_frameEventDispatcher.addListener(&Mus::ActorVertexHasher::GetSingleton());
+		Mus::g_frameEventDispatcher.addListener(&Mus::NormalMapStore::GetSingleton());
 
         Mus::g_playerCellChangeEventDispatcher.addListener(&Mus::ObjectNormalMapUpdater::GetSingleton());
         Mus::g_playerCellChangeEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
@@ -173,6 +176,9 @@ namespace {
 		Mus::g_armorAttachEventEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_facegenNiNodeEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_actorChangeHeadPartEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
+
+		Mus::g_quitGameEventDispatcher.addListener(&Mus::NormalMapStore::GetSingleton());
+
         Mus::TaskManager::GetSingleton().Init(true);
         Mus::ObjectNormalMapUpdater::GetSingleton().Init();
     }

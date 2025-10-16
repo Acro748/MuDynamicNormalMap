@@ -65,6 +65,7 @@ namespace Mus {
 		struct GeometriesInfo {
 			RE::BSGeometry* geometry; //for ptr compare only 
 			ObjectInfo objInfo;
+			std::uint64_t hash;
 		};
 		std::vector<GeometriesInfo> geometries;
 		std::uint32_t mainGeometryIndex = 0;

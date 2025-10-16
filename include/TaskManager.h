@@ -114,6 +114,8 @@ namespace Mus {
 		std::string GetMaskNormalMapPath(std::string a_normalMapPath, std::vector<std::string> a_proxyFolder, bool a_proxyFirstScan);
 		std::string GetMaskNormalMapPath(RE::Actor* a_actor);
 
+		std::string FixTexturePath(std::string texturePath);
+
 		concurrency::concurrent_unordered_map<RE::FormID, bSlotbit> updateSlotQueue;
 		std::shared_mutex updateQueueLock;
 		concurrency::concurrent_unordered_map<RE::FormID, bool> isUpdating;

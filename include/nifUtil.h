@@ -56,4 +56,6 @@ namespace Mus::nif {
 
     bool IsSkinned(RE::BSGeometry* a_geometry);
     bool IsSkinned(RE::BSLightingShaderProperty* property);
+
+    bSlot GetBipedSlot(RE::BSGeometry* a_geo, bool isDynamicAsHead);
 }

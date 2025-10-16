@@ -148,7 +148,7 @@ namespace Mus {
         return s;
     }
 
-    inline bool isPlayer(RE::FormID id) { return (id == 0x14 || id == 0x7); };
+    inline bool IsPlayer(RE::FormID id) { return (id == 0x14 || id == 0x7); };
 
     inline RE::SEX GetSex(RE::Actor* actor)
     {
@@ -852,6 +852,18 @@ namespace Mus {
             }
         }
         return slots;
+    }
+
+    inline std::uint64_t GetFileSize(std::filesystem::path filePath) {
+        std::error_code ec;
+        std::uint64_t size = std::filesystem::file_size(filePath, ec);
+        if (ec)
+            return 0;
+        return size;
+    }
+
+    inline bool IsInvalidActor(RE::Actor* a_actor) {
+        return !a_actor || !a_actor->loadedData || !a_actor->loadedData->data3D;
     }
 
     inline void TextureLog(ID3D11Texture2D* texture)

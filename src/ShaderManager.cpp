@@ -434,7 +434,7 @@ namespace Mus {
 
 			Microsoft::WRL::ComPtr<IDXCoreAdapterList> gpuList;
 			constexpr GUID gpuFilter = { 0x8c47866b, 0x7583, 0x450d, 0xf0, 0xf0, 0x6b, 0xad, 0xa8, 0x95, 0xaf, 0x4b }; //DXCORE_ADAPTER_ATTRIBUTE_D3D11_GRAPHICS
-			hr = factory->CreateAdapterList(std::uint32_t(1), &gpuFilter, gpuList.GetAddressOf());
+			hr = factory->CreateAdapterList(1u, &gpuFilter, gpuList.GetAddressOf());
 			if (FAILED(hr)) {
 				logger::error("Failed to create DXCoreAdapterList : {}", hr);
 				return false;
@@ -1024,7 +1024,7 @@ namespace Mus {
 			}
 			return true;
 		}
-		bool TextureLoadManager::CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTexture)
+		bool TextureLoadManager::CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTexture, Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture, DXGI_FORMAT newFormat)
 		{
 			auto formatType = IsCompressFormat(newFormat);
 			if (formatType < 0)

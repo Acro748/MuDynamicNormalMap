@@ -9,7 +9,7 @@ namespace Mus {
     ThreadPool_ParallelModule::ThreadPool_ParallelModule(std::uint32_t threadSize)
         : stop(false)
     {
-        std::uint32_t coreCount = std::max(std::uint32_t(1), threadSize);
+        std::uint32_t coreCount = std::max(1u, threadSize);
         for (std::uint32_t i = 0; i < coreCount; i++) {
             workers.emplace_back([this] { workerLoop(); });
         }
@@ -42,13 +42,17 @@ namespace Mus {
 
     std::unique_ptr<ThreadPool_GPUTaskModule> gpuTask;
 
-    ThreadPool_GPUTaskModule::ThreadPool_GPUTaskModule(std::uint8_t a_taskQTick, bool a_directTaskQ, std::uint8_t a_taskQMax)
+    ThreadPool_GPUTaskModule::ThreadPool_GPUTaskModule(std::uint32_t a_threadSize, std::clock_t a_taskQTick, bool a_directTaskQ)
         : stop(false), taskQTick(a_taskQTick)
         , directTaskQ(a_directTaskQ)
-        , taskQMaxCount(std::max(std::uint8_t(1), a_taskQMax))
+        , runTask(true), running(false)
     {
-        for (std::uint8_t i = 0; i < taskQMaxCount + 1; i++) {
-            workers.emplace_back([this] { workerLoop(); });
+        std::uint32_t threadCount = std::max(1u, a_threadSize);
+        for (std::uint8_t i = 0; i < threadCount; i++) {
+            lastTickTime.push_back(currentTime);
+            runTask.push_back(true);
+            running.push_back(false);
+            workers.emplace_back([this, i] { workerLoop(i); });
         }
     }
 
@@ -59,42 +63,47 @@ namespace Mus {
             if (t.joinable()) t.join();
     }
 
-    void ThreadPool_GPUTaskModule::workerLoop() {
+    void ThreadPool_GPUTaskModule::workerLoop(std::uint32_t threadNum) {
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
         while (true) {
             std::function<void()> task;
             {
                 std::unique_lock lock(queueMutex);
-                cv.wait(lock, [this] { 
-                    return stop.load() || !currentTasks.empty();
+                cv.wait(lock, [this, threadNum] {
+                    return stop.load() || (!tasks.empty() && (runTask[threadNum] || directTaskQ));
                 });
-                if (stop.load() && currentTasks.empty())
+                runTask[threadNum] = false;
+                running[threadNum] = true;
+                if (stop.load() && tasks.empty())
                     return;
-                task = std::move(currentTasks.front());
-                currentTasks.pop();
+                task = std::move(tasks.front());
+                tasks.pop();
             }
             task();
+            lastTickTime[threadNum] = currentTime;
+            running[threadNum] = false;
         }
     }
 
     void ThreadPool_GPUTaskModule::onEvent(const FrameEvent& e)
     {
-        if (!currentTasks.empty())
-            cv.notify_one();
         if (tasks.empty())
             return;
-        if (currentTasks.size() >= taskQMaxCount)
-            return;
-
-        if (currentTime - lastTickTime < taskQTick)
-            return;
-        lastTickTime = currentTime;
-
-        std::lock_guard<std::mutex> qlg(queueMutex);
-        while (currentTasks.size() < taskQMaxCount && !tasks.empty()) {
-            currentTasks.push(std::move(tasks.front()));
-            tasks.pop();
-            cv.notify_one();
+        std::uint32_t notified = 0;
+        for (std::uint32_t i = 0; i < GetThreads(); i++)
+        {
+            if (running[i])
+                continue;
+            if (!directTaskQ) 
+            {
+                if (lastTickTime[i] + taskQTick > currentTime)
+                    continue;
+            }
+            runTask[i] = true;
+            notified++;
         }
+        if (notified == 0)
+            return;
+        cv.notify_all();
     }
 }

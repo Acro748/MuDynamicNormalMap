@@ -33,6 +33,8 @@ namespace Mus {
 	extern std::clock_t taskQTickMS;
 	extern bool isNoSplitGPU;
 
+	const RE::BSFixedString NoDynamicNormalMapExtraDataName = "NoDynamicNormalMap";
+
 	constexpr float floatPrecision = 1e-6f;
 	extern float weldDistance;
 	extern float weldDistanceMult;

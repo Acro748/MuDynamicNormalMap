@@ -163,9 +163,6 @@ namespace Mus {
         [[nodiscard]] inline auto GetTextureHeight() const noexcept {
             return TextureHeight;
         }
-        [[nodiscard]] inline auto GetTextureMargin() const noexcept {
-            return TextureMargin;
-        }
         [[nodiscard]] inline auto GetTangentZCorrection() const noexcept {
             return TangentZCorrection;
         }
@@ -180,11 +177,17 @@ namespace Mus {
         [[nodiscard]] inline auto GetTextureMarginGPU() const noexcept {
             return TextureMarginGPU;
         }
+        [[nodiscard]] inline auto GetTextureMarginIgnoreSize() const noexcept {
+            return TextureMarginIgnoreSize;
+        }
         [[nodiscard]] inline auto GetMergeTextureGPU() const noexcept {
             return MergeTextureGPU;
         }
         [[nodiscard]] inline auto GetGPUDeviceIndex() const noexcept {
             return GPUDeviceIndex;
+        }
+        [[nodiscard]] inline auto GetSecondaryGPUWaitForGPU() const noexcept {
+            return SecondaryGPUWaitForGPU;
         }
         [[nodiscard]] inline auto GetWaitForRendererTickMS() const noexcept {
             return WaitForRendererTickMS;
@@ -220,6 +223,18 @@ namespace Mus {
         [[nodiscard]] inline auto GetTextureCompress() const noexcept {
             return TextureCompress;
         }
+        [[nodiscard]] inline auto GetDiskCache() const noexcept {
+            return DiskCache;
+        }
+        [[nodiscard]] inline auto GetDiskCacheFolder() const noexcept {
+            return DiskCacheFolder;
+        }
+        [[nodiscard]] inline auto GetDiskCacheLimitMB() const noexcept {
+            return DiskCacheLimitMB;
+        }
+        [[nodiscard]] inline auto GetClearDiskCache() const noexcept {
+            return ClearDiskCache;
+        }
 
         //RealtimeDetect
         [[nodiscard]] inline auto GetRealtimeDetect() const noexcept {
@@ -242,10 +257,6 @@ namespace Mus {
         inline void SetTaskQMax(std::uint8_t newTaskQMax) {
             TaskQMax = newTaskQMax;
             logger::info("Set TaskQMax {}", newTaskQMax);
-        }
-        inline void SetTaskQTickMS(std::clock_t newTaskQTick) {
-            TaskQTickMS = newTaskQTick;
-            logger::info("Set TaskQTickMS {}", newTaskQTick);
         }
         inline void SetDirectTaskQ(bool isEnable) {
             DirectTaskQ = isEnable;
@@ -316,15 +327,16 @@ namespace Mus {
         //Texture
         std::uint32_t TextureWidth = 2048;
         std::uint32_t TextureHeight = 2048;
-        std::int32_t TextureMargin = -1;
         bool TangentZCorrection = true;
         float DetailStrength = 0.5f;
 
         //Performance
         bool GPUEnable = true;
         bool TextureMarginGPU = true;
+        std::uint32_t TextureMarginIgnoreSize = 64;
         bool MergeTextureGPU = true;
         std::int32_t GPUDeviceIndex = -1;
+        bool SecondaryGPUWaitForGPU = false;
         std::clock_t WaitForRendererTickMS = 1000; //1sec
         float UpdateDistance = 4096.0f * 4096.0f;
         bool UpdateDistanceVramSave = false;
@@ -336,7 +348,11 @@ namespace Mus {
         bool DirectTaskQ = false;
         std::uint8_t DivideTaskQ = 1;
         bool VRAMSaveMode = false;
-        std::int8_t TextureCompress = 0; //-1 auto compress, 0 no compress, 1 dxt5, 2 bc7
+        std::int8_t TextureCompress = 0; //-1 auto compress, 0 no compress, 1 cpu bc7, 2 gpu bc7
+        bool DiskCache = true;
+        std::string DiskCacheFolder = "Data\\SKSE\\Plugins\\MuDynamicNormalMap\\DiskCache";
+        std::uint32_t DiskCacheLimitMB = 500;
+        bool ClearDiskCache = true;
 
         //RealtimeDetect
         bool RealtimeDetect = true;
