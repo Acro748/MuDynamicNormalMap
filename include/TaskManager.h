@@ -77,8 +77,6 @@ namespace Mus {
 		void QUpdateNormalMapImpl(RE::FormID a_actorID, std::string a_actorName, GeometryDataPtr a_geoData, UpdateSet a_updateSet);
 
 		bool RemoveNormalMap(RE::Actor* a_actor);
-
-		std::int64_t GenerateUniqueID();
 	protected:
 		void onEvent(const FrameEvent& e) override;
 		void onEvent(const FacegenNiNodeEvent& e) override;

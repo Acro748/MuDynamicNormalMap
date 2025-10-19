@@ -2405,7 +2405,7 @@ namespace Mus {
 		if (isSecondGPU || isNoSplitGPU || (dstWidth <= 256 && dstHeight <= 256))
 		{
 			ShaderLock();
-			context->CopySubresourceRegion(dstTexture, dstMipMapLevel, 0, 0, 0, srcTexture, srcMipMapLevel, NULL);
+			context->CopySubresourceRegion(dstTexture, dstMipMapLevel, 0, 0, 0, srcTexture, srcMipMapLevel, nullptr);
 			ShaderUnlock();
 			return true;
 		}
@@ -2458,7 +2458,7 @@ namespace Mus {
 
 		if (Shader::ShaderManager::GetSingleton().IsSecondGPUResource(context))
 		{
-			WaitForGPU(device, context, false).Wait();
+			WaitForGPU(device, context).Wait();
 			std::unordered_set<std::uint32_t> failedCopyResources;
 			for (std::uint32_t i = 0; i < results.size(); i++)
 			{
@@ -2955,15 +2955,13 @@ namespace Mus {
 		}
 	}
 
-	ObjectNormalMapUpdater::WaitForGPU::WaitForGPU(ID3D11Device* a_device, ID3D11DeviceContext* a_context, bool a_secondGPUNoWait)
-		: device(a_device), context(a_context), secondGPUNoWait(a_secondGPUNoWait)
+	ObjectNormalMapUpdater::WaitForGPU::WaitForGPU(ID3D11Device* a_device, ID3D11DeviceContext* a_context)
+		: device(a_device), context(a_context)
 	{
 		if (!device || !context)
 			return;
 
 		isSecondGPU = Shader::ShaderManager::GetSingleton().IsSecondGPUResource(context);
-		if (isSecondGPU && secondGPUNoWait)
-			return;
 
 		D3D11_QUERY_DESC queryDesc = {};
 		queryDesc.Query = D3D11_QUERY_EVENT;
@@ -2983,8 +2981,6 @@ namespace Mus {
 	void ObjectNormalMapUpdater::WaitForGPU::Wait()
 	{
 		if (!device || !context || !query)
-			return;
-		if (isSecondGPU && secondGPUNoWait && !Config::GetSingleton().GetSecondaryGPUWaitForGPU())
 			return;
 		HRESULT hr;
 		while (true) {

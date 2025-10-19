@@ -186,9 +186,6 @@ namespace Mus {
         [[nodiscard]] inline auto GetGPUDeviceIndex() const noexcept {
             return GPUDeviceIndex;
         }
-        [[nodiscard]] inline auto GetSecondaryGPUWaitForGPU() const noexcept {
-            return SecondaryGPUWaitForGPU;
-        }
         [[nodiscard]] inline auto GetWaitForRendererTickMS() const noexcept {
             return WaitForRendererTickMS;
         }
@@ -336,7 +333,6 @@ namespace Mus {
         std::uint32_t TextureMarginIgnoreSize = 64;
         bool MergeTextureGPU = true;
         std::int32_t GPUDeviceIndex = -1;
-        bool SecondaryGPUWaitForGPU = false;
         std::clock_t WaitForRendererTickMS = 1000; //1sec
         float UpdateDistance = 4096.0f * 4096.0f;
         bool UpdateDistanceVramSave = false;

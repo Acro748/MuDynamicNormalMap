@@ -199,7 +199,7 @@ namespace Mus {
 		class WaitForGPU {
 		public:
 			WaitForGPU() = delete;
-			WaitForGPU(ID3D11Device* a_device, ID3D11DeviceContext* a_context, bool a_secondGPUNoWait = true);
+			WaitForGPU(ID3D11Device* a_device, ID3D11DeviceContext* a_context);
 			~WaitForGPU() {};
 
 			void Wait();
@@ -221,7 +221,6 @@ namespace Mus {
 				else
 					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 			};
-			bool secondGPUNoWait = true;
 		};
 
 		void WaitForFreeVram();

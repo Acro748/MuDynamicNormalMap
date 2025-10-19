@@ -307,10 +307,6 @@ namespace Mus {
                 {
                     GPUDeviceIndex = GetIntValue(variableValue);
                 }
-                else if (variableName == "SecondaryGPUWaitForGPU")
-                {
-                    SecondaryGPUWaitForGPU = GetBoolValue(variableValue);
-                }
                 else if (variableName == "WaitForRendererTickMS")
                 {
                     WaitForRendererTickMS = GetUIntValue(variableValue);
