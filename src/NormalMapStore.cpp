@@ -96,7 +96,7 @@ namespace Mus {
 
 	void NormalMapStore::AddHashPair(std::uint64_t a_hash, std::uint64_t b_hash)
 	{
-		hashPairsLock.lock();
+		hashPairsLock.lock_shared();
 		auto found = std::find_if(hashPairs.begin(), hashPairs.end(), [&](HashPair& pair) {
 			return pair.find(a_hash) != pair.end() || pair.find(b_hash) != pair.end();
 		});
@@ -114,7 +114,7 @@ namespace Mus {
 			hashPairs.push_back(newPair);
 			logger::debug("Create and add hash pair {:x} - {:x}", a_hash, b_hash);
 		}
-		hashPairsLock.unlock();
+		hashPairsLock.unlock_shared();
 	}
 	bool NormalMapStore::IsPairHashes(std::uint64_t a_hash, std::uint64_t b_hash)
 	{

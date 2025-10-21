@@ -42,9 +42,10 @@ namespace Mus {
 
     std::unique_ptr<ThreadPool_GPUTaskModule> gpuTask;
 
-    ThreadPool_GPUTaskModule::ThreadPool_GPUTaskModule(std::uint32_t a_threadSize, std::clock_t a_taskQTick, bool a_directTaskQ)
+    ThreadPool_GPUTaskModule::ThreadPool_GPUTaskModule(std::uint32_t a_threadSize, std::clock_t a_taskQTick, bool a_directTaskQ, bool a_waitPreTask)
         : stop(false), taskQTick(a_taskQTick)
         , directTaskQ(a_directTaskQ)
+		, waitPreTask(a_waitPreTask)
         , runTask(true), running(false)
     {
         std::uint32_t threadCount = std::max(1u, a_threadSize);
@@ -80,6 +81,8 @@ namespace Mus {
                 tasks.pop();
             }
             task();
+			if (waitPreTask)
+                WaitForGPU(Shader::ShaderManager::GetSingleton().GetDevice(), Shader::ShaderManager::GetSingleton().GetContext()).Wait();
             lastTickTime[threadNum] = currentTime;
             running[threadNum] = false;
         }

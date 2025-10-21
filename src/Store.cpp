@@ -13,7 +13,8 @@ namespace Mus {
 
 	std::clock_t currentTime = 0;
 
-	std::clock_t taskQTickMS = 100.0f;
+	std::uint8_t divideTaskQ = 0;
+	bool vramSaveMode = true;
 	bool isNoSplitGPU = false;
 
 	float weldDistance = 0.0001f;

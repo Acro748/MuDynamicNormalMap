@@ -78,8 +78,6 @@ namespace Mus {
 
     bool Config::LoadConfig(std::ifstream& configfile)
     {
-        std::int32_t detectPriorityCores = 0;
-
         std::string line;
         std::string currentSetting;
         while (std::getline(configfile, line))
@@ -139,6 +137,14 @@ namespace Mus {
                 {
                     UpdateNormalMapTime2 = GetBoolValue(variableValue);
                 }
+                else if (variableName == "MergeTime")
+                {
+                    MergeTime = GetBoolValue(variableValue);
+                }
+                else if (variableName == "GenerateMipsTime")
+                {
+                    GenerateMipsTime = GetBoolValue(variableValue);
+                }
                 else if (variableName == "BleedTextureTime1")
                 {
                     BleedTextureTime1 = GetBoolValue(variableValue);
@@ -147,21 +153,13 @@ namespace Mus {
                 {
                     BleedTextureTime2 = GetBoolValue(variableValue);
                 }
-                else if (variableName == "TextureCopyTime")
-                {
-                    TextureCopyTime = GetBoolValue(variableValue);
-                }
-                else if (variableName == "MergeTime1")
-                {
-                    MergeTime1 = GetBoolValue(variableValue);
-                }
-                else if (variableName == "MergeTime2")
-                {
-                    MergeTime2 = GetBoolValue(variableValue);
-                }
                 else if (variableName == "CompressTime")
                 {
                     CompressTime = GetBoolValue(variableValue);
+                }
+                else if (variableName == "TextureCopyTime")
+                {
+                    TextureCopyTime = GetBoolValue(variableValue);
                 }
             }
             else if (currentSetting == "[General]")
@@ -291,25 +289,13 @@ namespace Mus {
                 {
                     GPUEnable = GetBoolValue(variableValue);
                 }
-                else if (variableName == "TextureMarginGPU")
-                {
-                    TextureMarginGPU = GetBoolValue(variableValue);
-                }
-                else if (variableName == "TextureMarginIgnoreSize")
-                {
-                    TextureMarginIgnoreSize = GetUIntValue(variableValue);
-                }
-                else if (variableName == "MergeTextureGPU")
-                {
-                    MergeTextureGPU = GetBoolValue(variableValue);
-                }
                 else if (variableName == "GPUDeviceIndex")
                 {
                     GPUDeviceIndex = GetIntValue(variableValue);
                 }
-                else if (variableName == "WaitForRendererTickMS")
+                else if (variableName == "GPUForceSync")
                 {
-                    WaitForRendererTickMS = GetUIntValue(variableValue);
+                    GPUForceSync = GetBoolValue(variableValue);
                 }
                 else if (variableName == "UpdateDistance")
                 {
@@ -328,25 +314,9 @@ namespace Mus {
                 {
                     AutoTaskQ = std::min(std::uint32_t(AutoTaskQList::Total - 1), GetUIntValue(variableValue));
                 }
-                else if (variableName == "TaskQMax")
-                {
-                    TaskQMax = GetUIntValue(variableValue);
-                }
                 else if (variableName == "TaskQTickMS")
                 {
                     TaskQTickMS = GetUIntValue(variableValue);
-                }
-                else if (variableName == "DirectTaskQ")
-                {
-                    DirectTaskQ = GetBoolValue(variableValue);
-                }
-                else if (variableName == "DivideTaskQ")
-                {
-                    DivideTaskQ = GetUIntValue(variableValue);
-                }
-                else if (variableName == "VRAMSaveMode")
-                {
-                    VRAMSaveMode = GetBoolValue(variableValue);
                 }
                 else if (variableName == "TextureCompress")
                 {
@@ -525,85 +495,92 @@ namespace Mus {
 
         bool isSecondGPUEnabled = Config::GetSingleton().GetGPUDeviceIndex() != 0 && Shader::ShaderManager::GetSingleton().IsValidSecondGPU();
 
+		const std::uint32_t coreCount = std::thread::hardware_concurrency();
         std::uint32_t actorThreadCount = 2;
         std::uint32_t memoryManageThreadCount = 2;
         std::uint32_t updateThreadCount = 2;
-        std::uint32_t processingThreadCount = std::thread::hardware_concurrency();
+        std::uint32_t processingThreadCount = coreCount;
+		std::uint32_t gpuTaskThreadCount = 1;
         isNoSplitGPU = false;
+		bool waitPreTask = false;
+        std::clock_t taskQTickMS = 1000.0f;
+        bool directTaskQ = false;
         if (Config::GetSingleton().GetAutoTaskQ() > 0)
         {
-            //float benchMarkResult = miniBenchMark();
-            //55~high-end, 35~middle-end, 15~low-end
-            //logger::info("CPU bench mark score : {}", (std::uint32_t)benchMarkResult);
-            //float CPUPerformanceMult = std::max(1.0f, 55.0f / benchMarkResult);
-            //float gpuBenchMarkResult = miniBenchMarkGPU();
-            //float GPUPerformanceMult = 1.0f;
-            //if (gpuBenchMarkResult > 0.0f) {
-            //    //500 middle-end
-            //    logger::info("GPU bench mark score : {}", (std::int32_t)gpuBenchMarkResult);
-            //    GPUPerformanceMult = 500.0f / gpuBenchMarkResult;
-            //}
-
             switch (Config::GetSingleton().GetAutoTaskQ()) {
+            default:
             case Config::AutoTaskQList::Fastest:
-                Config::GetSingleton().SetTaskQMax(2);
+                gpuTaskThreadCount = 2;
                 taskQTickMS = 0;
-                Config::GetSingleton().SetDirectTaskQ(true);
-                Config::GetSingleton().SetDivideTaskQ(0);
-                Config::GetSingleton().SetVRAMSaveMode(false);
+                directTaskQ = true;
+                divideTaskQ = 0;
+                vramSaveMode = false;
                 actorThreadCount = 2;
                 isNoSplitGPU = true;
+                waitPreTask = false;
                 waitSleepTime = std::chrono::microseconds(100);
+                processingThreadCount = coreCount;
+                updateThreadCount = 2;
                 break;
             case Config::AutoTaskQList::Faster:
-                Config::GetSingleton().SetTaskQMax(1);
-                taskQTickMS = Config::GetSingleton().GetTaskQTickMS()/* * GPUPerformanceMult*/;
-                Config::GetSingleton().SetDirectTaskQ(false);
-                Config::GetSingleton().SetDivideTaskQ(0);
-                Config::GetSingleton().SetVRAMSaveMode(true);
+                gpuTaskThreadCount = 1;
+                taskQTickMS = Config::GetSingleton().GetTaskQTickMS();
+                directTaskQ = true;
+                divideTaskQ = 0;
+                vramSaveMode = true;
                 actorThreadCount = 1;
                 isNoSplitGPU = true;
+                waitPreTask = false;
                 waitSleepTime = std::chrono::microseconds(500);
+                processingThreadCount = coreCount;
+                updateThreadCount = 2;
                 break;
             case Config::AutoTaskQList::Balanced:
-                Config::GetSingleton().SetTaskQMax(1);
-                taskQTickMS = Config::GetSingleton().GetTaskQTickMS()/* * GPUPerformanceMult*/;
-                Config::GetSingleton().SetDirectTaskQ(false);
-                Config::GetSingleton().SetDivideTaskQ(0);
-                Config::GetSingleton().SetVRAMSaveMode(true);
+                gpuTaskThreadCount = 1;
+                taskQTickMS = Config::GetSingleton().GetTaskQTickMS();
+                directTaskQ = false;
+                divideTaskQ = 0;
+                vramSaveMode = true;
                 actorThreadCount = 1;
                 isNoSplitGPU = false;
+                waitPreTask = false;
                 waitSleepTime = std::chrono::microseconds(1000);
+                processingThreadCount = coreCount;
+                updateThreadCount = 2;
                 break;
             case Config::AutoTaskQList::BetterPerformance:
-                Config::GetSingleton().SetTaskQMax(1);
-                taskQTickMS = Config::GetSingleton().GetTaskQTickMS()/* * GPUPerformanceMult*/;
-                Config::GetSingleton().SetDirectTaskQ(false);
-                Config::GetSingleton().SetDivideTaskQ(1);
-                Config::GetSingleton().SetVRAMSaveMode(true);
+                gpuTaskThreadCount = 1;
+                taskQTickMS = Config::GetSingleton().GetTaskQTickMS();
+                directTaskQ = false;
+                divideTaskQ = 0;
+                vramSaveMode = true;
                 actorThreadCount = 1;
                 isNoSplitGPU = false;
+                waitPreTask = true;
                 waitSleepTime = std::chrono::microseconds(1000);
+                processingThreadCount = coreCount;
+                updateThreadCount = 1;
                 break;
             case Config::AutoTaskQList::BestPerformance:
-                Config::GetSingleton().SetTaskQMax(1);
-                taskQTickMS = Config::GetSingleton().GetTaskQTickMS()/* * GPUPerformanceMult * 2*/;
-                Config::GetSingleton().SetDirectTaskQ(false);
-                Config::GetSingleton().SetDivideTaskQ(2);
-                Config::GetSingleton().SetVRAMSaveMode(true);
+                gpuTaskThreadCount = 1;
+                taskQTickMS = Config::GetSingleton().GetTaskQTickMS();
+                directTaskQ = false;
+                divideTaskQ = 2;
+                vramSaveMode = true;
                 actorThreadCount = 1;
                 isNoSplitGPU = false;
+                waitPreTask = true;
                 waitSleepTime = std::chrono::microseconds(1000);
-                break;
-            default:
+                processingThreadCount = coreCount;
+                updateThreadCount = 1;
                 break;
             }
         }
 
         if (isSecondGPUEnabled)
-            Config::GetSingleton().SetVRAMSaveMode(false);
+            vramSaveMode = false;
 
-        gpuTask = std::make_unique<ThreadPool_GPUTaskModule>(Config::GetSingleton().GetTaskQMax(), taskQTickMS, Config::GetSingleton().GetDirectTaskQ());
+        gpuTask = std::make_unique<ThreadPool_GPUTaskModule>(gpuTaskThreadCount, taskQTickMS, directTaskQ, waitPreTask);
         g_frameEventDispatcher.addListener(gpuTask.get());
 
         if (isSecondGPUEnabled)
@@ -615,6 +592,7 @@ namespace Mus {
         logger::info("set memoryManageThreads {}", memoryManageThreadCount);
 
         updateThreads = std::make_unique<ThreadPool_ParallelModule>(updateThreadCount);
+        logger::info("set updateThreads {}", updateThreadCount);
 
         processingThreads = std::make_unique<ThreadPool_ParallelModule>(processingThreadCount);
         logger::info("set processingThreads {}", processingThreadCount);

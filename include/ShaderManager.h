@@ -45,15 +45,6 @@ namespace Mus {
 			bool IsSecondGPUResource(ID3D11DeviceContext* context) { return context == secondContext_.Get(); };
 			bool IsSecondGPUResource(ID3D11Device* device) { return device == secondDevice_.Get(); };
 
-			class ShaderLockGuard {
-			public:
-				ShaderLockGuard() { EnterCriticalSection(reinterpret_cast<LPCRITICAL_SECTION>(&RE::BSGraphics::Renderer::GetSingleton()->GetLock())); };
-				~ShaderLockGuard() { LeaveCriticalSection(reinterpret_cast<LPCRITICAL_SECTION>(&RE::BSGraphics::Renderer::GetSingleton()->GetLock())); };
-
-				ShaderLockGuard(const ShaderLockGuard&) = delete;
-				ShaderLockGuard& operator=(const ShaderLockGuard&) = delete;
-			};
-
 			bool IsFailedShader(std::string shaderName);
 
 			void ResetShader() { computeShaders.clear(); vertexShaders.clear(); pixelShaders.clear(); failedList.clear(); };
@@ -101,6 +92,27 @@ namespace Mus {
 			std::unordered_set<std::string> failedList;
 		};
 
+		class ShaderLocker {
+		public:
+			ShaderLocker() = delete;
+			ShaderLocker(ID3D11DeviceContext* context) : isSecondGPU(Shader::ShaderManager::GetSingleton().IsSecondGPUResource(context)) {};
+			inline void Lock() {
+				if (isSecondGPU)
+					Shader::ShaderManager::GetSingleton().ShaderSecondContextLock();
+				else
+					Shader::ShaderManager::GetSingleton().ShaderContextLock();
+			};
+			inline void Unlock() {
+				if (isSecondGPU)
+					Shader::ShaderManager::GetSingleton().ShaderSecondContextUnlock();
+				else
+					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+			};
+			bool IsSecondGPU() const { return isSecondGPU; };
+		private:
+			const bool isSecondGPU = false;
+		};
+
 		class TextureLoadManager {
 		public:
 			[[nodiscard]] static TextureLoadManager& GetSingleton() {
@@ -112,17 +124,17 @@ namespace Mus {
 			~TextureLoadManager() {};
 
 			RE::NiPointer<RE::NiSourceTexture> GetNiSourceTexture(std::string filePath, std::string name);
-			bool GetTexture2D(std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, UINT newWidth, UINT newHeight, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
-			bool GetTexture2D(std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
-			bool GetTexture2D(std::string filePath, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
-			bool GetTexture2D(std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
-			bool GetTexture2D(std::string filePath, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
+			bool GetTexture2D(std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, UINT newWidth, UINT newHeight, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
+			bool GetTexture2D(std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
+			bool GetTexture2D(std::string filePath, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
+			bool GetTexture2D(std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, DXGI_FORMAT newFormat, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
+			bool GetTexture2D(std::string filePath, DXGI_FORMAT newFormat, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
 
-			bool GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, UINT newWidth, UINT newHeight, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
-			bool GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
-			bool GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
-			bool GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
-			bool GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
+			bool GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, UINT newWidth, UINT newHeight, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
+			bool GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
+			bool GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
+			bool GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, DXGI_FORMAT newFormat, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
+			bool GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, DXGI_FORMAT newFormat, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
 
 			bool UpdateTexture(std::string filePath);
 
@@ -173,8 +185,8 @@ namespace Mus {
 				return func(shaderProperty, unk1);
 			}
 
-			bool ConvertTexture(ID3D11Device* device, ID3D11DeviceContext* context, Microsoft::WRL::ComPtr<ID3D11Texture2D> texture, DXGI_FORMAT newFormat, UINT newWidth, UINT newHeight, DirectX::TEX_FILTER_FLAGS resizeFilter, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
-			bool CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTexture, Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture, DXGI_FORMAT newFormat);
+			bool ConvertTexture(ID3D11Device* device, ID3D11DeviceContext* context, Microsoft::WRL::ComPtr<ID3D11Texture2D> texture, DXGI_FORMAT newFormat, UINT newWidth, UINT newHeight, DirectX::TEX_FILTER_FLAGS resizeFilter, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
+			bool CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, DXGI_FORMAT newFormat, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut);
 		
 			std::int8_t IsCompressFormat(DXGI_FORMAT format); // -1 non compress, 1 cpu compress, 2 gpu compress
 
@@ -184,7 +196,7 @@ namespace Mus {
 
 			bool PrintTexture(std::string filePath, ID3D11Texture2D* texture);
 		private:
-			bool ConvertD3D11(ID3D11Device* device, DirectX::ScratchImage& image, Microsoft::WRL::ComPtr<ID3D11Resource>& output);
+			bool ConvertD3D11(ID3D11Device* device, DirectX::ScratchImage& image, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Resource>& output);
 			bool UpdateNiTexture(std::string filePath);
 
 			concurrency::concurrent_unordered_map<std::string, RE::NiPointer<RE::NiSourceTexture>> niTextures;

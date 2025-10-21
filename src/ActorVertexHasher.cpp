@@ -85,14 +85,14 @@ namespace Mus {
 	{
 		if (actorHash.size() == 0)
 			return;
-		auto p = RE::PlayerCharacter::GetSingleton();
-		if (!p || !p->loadedData || !p->loadedData->data3D)
+		auto camera = RE::PlayerCamera::GetSingleton();
+		if (!camera)
 			return;
 
 		const std::string funcName = __func__;
-		auto playerPosition = p->loadedData->data3D->world.translate;
+		auto cameraPosition = camera->GetRuntimeData2().pos;
 
-		auto actorHashFunc = [&, funcName, playerPosition](std::pair<RE::FormID, GeometryHashData> map) {
+		auto actorHashFunc = [&, funcName, cameraPosition](std::pair<RE::FormID, GeometryHashData> map) {
 			RE::NiPointer<RE::Actor> actor = RE::NiPointer(GetFormByID<RE::Actor*>(map.first));
 			if (!actor || !actor->loadedData || !actor->loadedData->data3D)
 			{
@@ -106,7 +106,7 @@ namespace Mus {
 
 			if (IsBlocked(actor->formID))
 				return;
-			if (!IsPlayer(actor->formID) && (Config::GetSingleton().GetDetectDistance() > floatPrecision && playerPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) > Config::GetSingleton().GetDetectDistance()))
+			if (!IsPlayer(actor->formID) && (Config::GetSingleton().GetDetectDistance() > floatPrecision && cameraPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) > Config::GetSingleton().GetDetectDistance()))
 				return;
 			if (!GetHash(actor.get(), map.second.hash))
 				return;

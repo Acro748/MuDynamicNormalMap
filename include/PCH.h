@@ -174,8 +174,6 @@ using EventResult = RE::BSEventNotifyControl;
 #include "TaskManager.h"
 #include "PapyrusScripts.h"
 
-#include "MiniBenchmark.h"
-
 #include "Interface/Interface.h"
 #include "Interface/InterfaceImpl.h"
 

@@ -114,8 +114,8 @@ namespace Mus {
 
 		std::string FixTexturePath(std::string texturePath);
 
-		concurrency::concurrent_unordered_map<RE::FormID, bSlotbit> updateSlotQueue;
 		std::shared_mutex updateQueueLock;
+		concurrency::concurrent_unordered_map<RE::FormID, bSlotbit> updateSlotQueue;
 		concurrency::concurrent_unordered_map<RE::FormID, bool> isUpdating;
 
 		std::shared_mutex lastNormalMapLock;

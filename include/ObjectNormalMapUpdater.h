@@ -19,7 +19,7 @@ namespace Mus {
 		void ClearGeometryResourceData();
 
 		inline bool IsBeforeTaskReleased() {
-			if (Config::GetSingleton().GetVRAMSaveMode())
+			if (vramSaveMode)
 			{
 				ResourceDataMapLock.lock_shared();
 				bool isEmpty = ResourceDataMap.empty();
@@ -69,7 +69,6 @@ namespace Mus {
 
 		bool LoadTexture(ID3D11Device* device, ID3D11DeviceContext* context, const std::string& filePath, D3D11_TEXTURE2D_DESC& texDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texOutput, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvOutput);
 		bool LoadTexture(ID3D11Device* device, ID3D11DeviceContext* context, const std::string& filePath, D3D11_TEXTURE2D_DESC& texDesc, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texOutput, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvOutput);
-		bool LoadTextureCPU(ID3D11Device* device, ID3D11DeviceContext* context, const std::string& filePath, D3D11_TEXTURE2D_DESC& texDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
 		bool LoadTextureCPU(ID3D11Device* device, ID3D11DeviceContext* context, const std::string& filePath, D3D11_TEXTURE2D_DESC& texDesc, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
 
 		struct TextureResourceData {
@@ -77,12 +76,14 @@ namespace Mus {
 			std::string textureName;
 			std::clock_t time = -1;
 
+			std::shared_ptr<Shader::ShaderLocker> sl;
+
 			Microsoft::WRL::ComPtr<ID3D11Query> query = nullptr;
 			bool GetQuery(ID3D11Device* device, ID3D11DeviceContext* context) {
 				if (!device || !context)
 					return false;
-
-				isQuaryUseSecondGPU = Shader::ShaderManager::GetSingleton().IsValidSecondGPU();
+				
+				sl = std::make_shared<Shader::ShaderLocker>(context);
 				D3D11_QUERY_DESC queryDesc = {};
 				queryDesc.Query = D3D11_QUERY_EVENT;
 				queryDesc.MiscFlags = 0;
@@ -92,37 +93,23 @@ namespace Mus {
 					query = nullptr;
 					return false;
 				}
-				QuaryShaderLock();
+				sl->Lock();
 				context->End(query.Get());
-				QuaryShaderUnlock();
+				sl->Unlock();
 				queryContext = context;
 				return true;
 			}
 			bool IsQueryDone() {
 				if (!queryContext || !query)
-					return true; 
-				QuaryShaderLock();
+					return true;
+				sl->Lock();
 				HRESULT hr = queryContext->GetData(query.Get(), nullptr, 0, 0);
-				QuaryShaderUnlock();
+				sl->Unlock();
 				if (FAILED(hr))
 					return true;
 				return hr == S_OK;
 			}
-
 			ID3D11DeviceContext* queryContext = nullptr;
-			bool isQuaryUseSecondGPU = false;
-			void QuaryShaderLock() const {
-				if (isQuaryUseSecondGPU)
-					Shader::ShaderManager::GetSingleton().ShaderSecondContextLock();
-				else
-					Shader::ShaderManager::GetSingleton().ShaderContextLock();
-			};
-			void QuaryShaderUnlock() const {
-				if (isQuaryUseSecondGPU)
-					Shader::ShaderManager::GetSingleton().ShaderSecondContextUnlock();
-				else
-					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-			};
 
 			std::vector<Microsoft::WRL::ComPtr<ID3D11Buffer>> constBuffers;
 			Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture2D = nullptr;
@@ -133,38 +120,33 @@ namespace Mus {
 			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> overlayShaderResourceView = nullptr;
 			Microsoft::WRL::ComPtr<ID3D11Texture2D> maskTexture2D = nullptr;
 			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> maskShaderResourceView = nullptr;
-			Microsoft::WRL::ComPtr<ID3D11Texture2D> dstWriteTexture2D = nullptr;
-			Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> dstWriteTextureUAV = nullptr;
-			Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTexture2D = nullptr;
-			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> dstShaderResourceView = nullptr;
-
-			struct BleedTextureData {
-				std::vector<Microsoft::WRL::ComPtr<ID3D11Buffer>> constBuffers;
-				Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D = nullptr;
-				std::vector<Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView>> uavs;
-			};
-			BleedTextureData bleedTextureData;
-
-			struct CopySecondToMainData {
-				Microsoft::WRL::ComPtr<ID3D11Texture2D> copyTexture2D = nullptr;
-				Microsoft::WRL::ComPtr<ID3D11Texture2D> srcOldTexture2D = nullptr;
-				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcOldShaderResourceView = nullptr;
-			};
-			CopySecondToMainData copySecondToMainData;
+			Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> dstUnorderedAccessView = nullptr;
 
 			struct MergeTextureData {
 				std::vector<Microsoft::WRL::ComPtr<ID3D11Buffer>> constBuffers;
-				Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTexture2D = nullptr;
-				Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture2D = nullptr;
 				Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav = nullptr;
 			};
 			MergeTextureData mergeTextureData;
 
+			struct GenerateMipsData {
+				std::vector<Microsoft::WRL::ComPtr<ID3D11Buffer>> constBuffers;
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D = nullptr;
+				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv = nullptr;
+				std::vector<Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView>> uavs;
+			};
+			GenerateMipsData generateMipsData;
+
 			struct TextureCompressData {
-				Microsoft::WRL::ComPtr<ID3D11Texture2D> srcOldTexture2D = nullptr;
-				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcOldShaderResourceView = nullptr;
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> srcStagingTexture = nullptr;
 			};
 			TextureCompressData textureCompressData;
+
+			struct CopySecondToMainData {
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> copyTexture2D = nullptr;
+			};
+			CopySecondToMainData copySecondToMainData;
+
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> stagingTexture2D = nullptr;
 		};
 		typedef std::shared_ptr<TextureResourceData> TextureResourceDataPtr;
 
@@ -174,61 +156,28 @@ namespace Mus {
 		DirectX::XMVECTOR SlerpVector(const DirectX::XMVECTOR& a, const DirectX::XMVECTOR& b, const float& t);
 		bool ComputeBarycentric(const float& px, const float& py, const DirectX::XMINT2& a, const DirectX::XMINT2& b, const DirectX::XMINT2& c, DirectX::XMFLOAT3& out);
 		bool CreateStructuredBuffer(ID3D11Device* device, const void* data, UINT size, UINT stride, Microsoft::WRL::ComPtr<ID3D11Buffer>& bufferOut, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvOut);
-
-		bool BleedTexture(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries);
-		bool BleedTexture(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, ID3D11Texture2D* texInOut);
-		bool BleedTextureGPU(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, ID3D11ShaderResourceView* srvInOut, ID3D11Texture2D* texInOut);
-
-		bool MergeTexture(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries);
-		bool MergeTexture(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, ID3D11Texture2D* dstTex, ID3D11Texture2D* srcTex);
-		bool MergeTextureGPU(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, ID3D11ShaderResourceView* dstSrv, ID3D11Texture2D* dstTex,ID3D11ShaderResourceView* srcSrv, ID3D11Texture2D* srcTex);
-
-		bool GenerateMipMap(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries);
-
 		bool CopySubresourceRegion(ID3D11Device* device, ID3D11DeviceContext* context, ID3D11Texture2D* dstTexture, ID3D11Texture2D* srcTexture, UINT dstMipMapLevel, UINT srcMipMapLevel);
 		
-		bool CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries);
-		bool CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut);
-		bool CompressTextureBC7(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTexture, Microsoft::WRL::ComPtr<ID3D11Texture2D>& srcTexture);
+		void PostProcessing(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries);
+		void PostProcessingGPU(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries);
 
-		void CopyResourceToMain(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries);
+		bool MergeTexture(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& rsourceData, ID3D11Texture2D* dstTex, ID3D11Texture2D* srcTex);
+		bool MergeTextureGPU(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, ID3D11ShaderResourceView* dstSrv, ID3D11Texture2D* dstTex, ID3D11ShaderResourceView* srcSrv, ID3D11Texture2D* srcTex);
+
+		bool GenerateMips(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, ID3D11Texture2D* texInOut);
+		bool GenerateMipsGPU(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, ID3D11ShaderResourceView* srvInOut, ID3D11Texture2D* texInOut);
+
+		bool CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut);
+		bool CompressTextureBC7(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut);
+
 		bool CopyResourceSecondToMain(TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut);
 		
 		void GPUPerformanceLog(ID3D11Device* device, ID3D11DeviceContext* context, std::string funcStr, bool isEnd, bool isAverage = true, std::uint32_t args = 0);
-
-		class WaitForGPU {
-		public:
-			WaitForGPU() = delete;
-			WaitForGPU(ID3D11Device* a_device, ID3D11DeviceContext* a_context);
-			~WaitForGPU() {};
-
-			void Wait();
-
-		private:
-			ID3D11Device* device = nullptr;
-			ID3D11DeviceContext* context = nullptr;
-			Microsoft::WRL::ComPtr<ID3D11Query> query = nullptr;
-			bool isSecondGPU = false;
-			inline void ShaderLock() const {
-				if (isSecondGPU)
-					Shader::ShaderManager::GetSingleton().ShaderSecondContextLock();
-				else
-					Shader::ShaderManager::GetSingleton().ShaderContextLock();
-			};
-			inline void ShaderUnlock() const {
-				if (isSecondGPU)
-					Shader::ShaderManager::GetSingleton().ShaderSecondContextUnlock();
-				else
-					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-			};
-		};
-
 		void WaitForFreeVram();
 
-		const std::string_view BleedTextureShaderName = "BleedTexture";
 		const std::string_view UpdateNormalMapShaderName = "UpdateNormalMap";
 		const std::string_view MergeTextureShaderName = "MergeTexture";
-		const std::string_view TexturePostProcessingShaderName = "TexturePostProcessing";
+		const std::string_view GenerateMipsShaderName = "GenerateMips";
 
 		Microsoft::WRL::ComPtr<ID3D11SamplerState> samplerState = nullptr;
 
@@ -254,5 +203,20 @@ namespace Mus {
 		concurrency::concurrent_vector<TextureResourceDataPtr> ResourceDataMap;
 
 		std::uint64_t GetHash(UpdateTextureSet updateSet, std::uint64_t geoHash);
+	};
+
+	class WaitForGPU {
+	public:
+		WaitForGPU() = delete;
+		WaitForGPU(ID3D11Device* a_device, ID3D11DeviceContext* a_context);
+		~WaitForGPU() {};
+
+		void Wait();
+
+	private:
+		ID3D11Device* device = nullptr;
+		ID3D11DeviceContext* context = nullptr;
+		Microsoft::WRL::ComPtr<ID3D11Query> query = nullptr;
+		Shader::ShaderLocker sl;
 	};
 }

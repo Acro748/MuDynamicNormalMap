@@ -56,23 +56,23 @@ namespace Mus {
         [[nodiscard]] inline auto GetUpdateNormalMapTime2() const noexcept {
             return UpdateNormalMapTime2;
         }
+        [[nodiscard]] inline auto GetMergeTime() const noexcept {
+            return MergeTime;
+        }
+        [[nodiscard]] inline auto GetGenerateMipsTime() const noexcept {
+            return GenerateMipsTime;
+        }
         [[nodiscard]] inline auto GetBleedTextureTime1() const noexcept {
             return BleedTextureTime1;
         }
         [[nodiscard]] inline auto GetBleedTextureTime2() const noexcept {
             return BleedTextureTime2;
         }
-        [[nodiscard]] inline auto GetTextureCopyTime() const noexcept {
-            return TextureCopyTime;
-        }
-        [[nodiscard]] inline auto GetMergeTime1() const noexcept {
-            return MergeTime1;
-        }
-        [[nodiscard]] inline auto GetMergeTime2() const noexcept {
-            return MergeTime2;
-        }
         [[nodiscard]] inline auto GetCompressTime() const noexcept {
             return CompressTime;
+        }
+        [[nodiscard]] inline auto GetTextureCopyTime() const noexcept {
+            return TextureCopyTime;
         }
 
         //General
@@ -174,20 +174,11 @@ namespace Mus {
         [[nodiscard]] inline auto GetGPUEnable() const noexcept {
             return GPUEnable;
         }
-        [[nodiscard]] inline auto GetTextureMarginGPU() const noexcept {
-            return TextureMarginGPU;
-        }
-        [[nodiscard]] inline auto GetTextureMarginIgnoreSize() const noexcept {
-            return TextureMarginIgnoreSize;
-        }
-        [[nodiscard]] inline auto GetMergeTextureGPU() const noexcept {
-            return MergeTextureGPU;
-        }
         [[nodiscard]] inline auto GetGPUDeviceIndex() const noexcept {
             return GPUDeviceIndex;
         }
-        [[nodiscard]] inline auto GetWaitForRendererTickMS() const noexcept {
-            return WaitForRendererTickMS;
+        [[nodiscard]] inline auto GetGPUForceSync() const noexcept {
+            return GPUForceSync;
         }
         [[nodiscard]] inline auto GetUpdateDistance() const noexcept {
             return UpdateDistance;
@@ -202,20 +193,8 @@ namespace Mus {
         [[nodiscard]] inline auto GetAutoTaskQ() const noexcept {
             return AutoTaskQ;
         }
-        [[nodiscard]] inline auto GetTaskQMax() const noexcept {
-            return TaskQMax;
-        }
         [[nodiscard]] inline auto GetTaskQTickMS() const noexcept {
             return TaskQTickMS;
-        }
-        [[nodiscard]] inline auto GetDirectTaskQ() const noexcept {
-            return DirectTaskQ;
-        }
-        [[nodiscard]] inline auto GetDivideTaskQ() const noexcept {
-            return DivideTaskQ;
-        }
-        [[nodiscard]] inline auto GetVRAMSaveMode() const noexcept {
-            return VRAMSaveMode;
         }
         [[nodiscard]] inline auto GetTextureCompress() const noexcept {
             return TextureCompress;
@@ -250,23 +229,6 @@ namespace Mus {
             return DetectTickMS;
         }
 
-
-        inline void SetTaskQMax(std::uint8_t newTaskQMax) {
-            TaskQMax = newTaskQMax;
-            logger::info("Set TaskQMax {}", newTaskQMax);
-        }
-        inline void SetDirectTaskQ(bool isEnable) {
-            DirectTaskQ = isEnable;
-            logger::info("DirectTaskQ {}", isEnable ? "Enabled" : "Disabled");
-        }
-        inline void SetDivideTaskQ(std::uint8_t newDivideTaskQ) {
-            DivideTaskQ = newDivideTaskQ;
-            logger::info("Set DivideTaskQ {}", newDivideTaskQ);
-        }
-        inline void SetVRAMSaveMode(bool newVRAMSaveMode) {
-            VRAMSaveMode = newVRAMSaveMode;
-            logger::info("Set VRAMSaveMode {}", newVRAMSaveMode);
-        }
     protected:
         //Debug
         spdlog::level::level_enum logLevel{ spdlog::level::level_enum::info };
@@ -280,12 +242,12 @@ namespace Mus {
         bool GeometryDataTime = false;
         bool UpdateNormalMapTime1 = false;
         bool UpdateNormalMapTime2 = false;
+        bool MergeTime = false;
+        bool GenerateMipsTime = false;
         bool BleedTextureTime1 = false;
         bool BleedTextureTime2 = false;
-        bool TextureCopyTime = false;
-        bool MergeTime1 = false;
-        bool MergeTime2 = false;
         bool CompressTime = false;
+        bool TextureCopyTime = false;
 
         //General
         bool PlayerEnable = true;
@@ -329,21 +291,14 @@ namespace Mus {
 
         //Performance
         bool GPUEnable = true;
-        bool TextureMarginGPU = true;
-        std::uint32_t TextureMarginIgnoreSize = 64;
-        bool MergeTextureGPU = true;
         std::int32_t GPUDeviceIndex = -1;
-        std::clock_t WaitForRendererTickMS = 1000; //1sec
+        bool GPUForceSync = false;
         float UpdateDistance = 4096.0f * 4096.0f;
         bool UpdateDistanceVramSave = false;
 		bool UseMipMap = true;
 
         std::uint8_t AutoTaskQ = AutoTaskQList::Disable;
-        std::uint8_t TaskQMax = 1;
         std::clock_t TaskQTickMS = 100;
-        bool DirectTaskQ = false;
-        std::uint8_t DivideTaskQ = 1;
-        bool VRAMSaveMode = false;
         std::int8_t TextureCompress = 0; //-1 auto compress, 0 no compress, 1 cpu bc7, 2 gpu bc7
         bool DiskCache = true;
         std::string DiskCacheFolder = "Data\\SKSE\\Plugins\\MuDynamicNormalMap\\DiskCache";
