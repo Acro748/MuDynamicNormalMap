@@ -40,7 +40,6 @@ set(headers
         include/InputManager.h
         include/RGBA.h
         include/ThreadPool.h
-        include/MiniBenchMark.h
         include/ActorVertexHasher.h
         include/NormalMapStore.h
         include/Condition.h
@@ -146,9 +145,8 @@ install(TARGETS ${PROJECT_NAME}
 ########################################################################################################################
 set(compute_shader_sources 
    ${CMAKE_CURRENT_SOURCE_DIR}/shader/UpdateNormalMap.hlsl
-   ${CMAKE_CURRENT_SOURCE_DIR}/shader/BleedTexture.hlsl
-   ${CMAKE_CURRENT_SOURCE_DIR}/shader/MiniBenchmark.hlsl
    ${CMAKE_CURRENT_SOURCE_DIR}/shader/MergeTexture.hlsl
+   ${CMAKE_CURRENT_SOURCE_DIR}/shader/GenerateMips.hlsl
 )
 set(vertex_shader_sources 
 

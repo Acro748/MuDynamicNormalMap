@@ -45,7 +45,7 @@ namespace Mus {
     {
     public:
         ThreadPool_GPUTaskModule() = delete;
-        ThreadPool_GPUTaskModule(std::uint32_t a_threadSize, std::clock_t a_taskQTick, bool a_directTaskQ);
+        ThreadPool_GPUTaskModule(std::uint32_t a_threadSize, std::clock_t a_taskQTick, bool a_directTaskQ, bool a_waitPreTask);
         ~ThreadPool_GPUTaskModule();
 
         template<typename F, typename... Args>
@@ -78,6 +78,7 @@ namespace Mus {
 
         const std::clock_t taskQTick = 0;
         const bool directTaskQ = false;
+        const bool waitPreTask = false;
 
         std::vector<std::clock_t> lastTickTime;
         std::vector<bool> runTask;

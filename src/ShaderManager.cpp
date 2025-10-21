@@ -561,7 +561,7 @@ namespace Mus {
 			D3D11_TEXTURE2D_DESC texDesc;
 			D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
 			Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2d;
-			GetTexture2D(filePath, texDesc, srvDesc, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 0, texture2d);
+			GetTexture2D(filePath, texDesc, srvDesc, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 0, false, texture2d);
 			if (!texture2d)
 			{
 				logger::error("Failed to get texture 2d for NiTexture ({})", filePath);
@@ -727,7 +727,7 @@ namespace Mus {
 			return true;
 		}
 		
-		bool TextureLoadManager::GetTexture2D(std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, UINT newWidth, UINT newHeight, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
+		bool TextureLoadManager::GetTexture2D(std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, UINT newWidth, UINT newHeight, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
 		{
 			filePath = stringRemoveStarts(filePath, "Data\\");
 			if (!stringStartsWith(filePath, "textures"))
@@ -762,7 +762,7 @@ namespace Mus {
 			}
 			else
 			{
-				ConvertTexture(ShaderManager::GetSingleton().GetDevice(), ShaderManager::GetSingleton().GetContext(), texture2D, newFormat, newWidth, newHeight, DirectX::TEX_FILTER_FLAGS::TEX_FILTER_FANT, output);
+				ConvertTexture(ShaderManager::GetSingleton().GetDevice(), ShaderManager::GetSingleton().GetContext(), texture2D, newFormat, newWidth, newHeight, DirectX::TEX_FILTER_FLAGS::TEX_FILTER_FANT, cpuReadable, output);
 			}
 			if (!output)
 			{
@@ -771,28 +771,28 @@ namespace Mus {
 			}
 			return true;
 		}
-		bool TextureLoadManager::GetTexture2D(std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
+		bool TextureLoadManager::GetTexture2D(std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
 		{
-			return GetTexture2D(filePath, textureDesc, srvDesc, newFormat, 0, 0, output);
+			return GetTexture2D(filePath, textureDesc, srvDesc, newFormat, 0, 0, cpuReadable, output);
 		}
-		bool TextureLoadManager::GetTexture2D(std::string filePath, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
+		bool TextureLoadManager::GetTexture2D(std::string filePath, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
 		{
 			D3D11_TEXTURE2D_DESC tmpTexDesc;
-			return GetTexture2D(filePath, tmpTexDesc, srvDesc, newFormat, output);
+			return GetTexture2D(filePath, tmpTexDesc, srvDesc, newFormat, cpuReadable, output);
 		}
-		bool TextureLoadManager::GetTexture2D(std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
+		bool TextureLoadManager::GetTexture2D(std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, DXGI_FORMAT newFormat, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
 		{
 			D3D11_SHADER_RESOURCE_VIEW_DESC tmpSRVDesc;
-			return GetTexture2D(filePath, textureDesc, tmpSRVDesc, newFormat, output);
+			return GetTexture2D(filePath, textureDesc, tmpSRVDesc, newFormat, cpuReadable, output);
 		}
-		bool TextureLoadManager::GetTexture2D(std::string filePath, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
+		bool TextureLoadManager::GetTexture2D(std::string filePath, DXGI_FORMAT newFormat, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
 		{
 			D3D11_TEXTURE2D_DESC tmpTexDesc;
 			D3D11_SHADER_RESOURCE_VIEW_DESC tmpSRVDesc;
-			return GetTexture2D(filePath, tmpTexDesc, tmpSRVDesc, newFormat, output);
+			return GetTexture2D(filePath, tmpTexDesc, tmpSRVDesc, newFormat, cpuReadable, output);
 		}
 
-		bool TextureLoadManager::GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, UINT newWidth, UINT newHeight, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
+		bool TextureLoadManager::GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, UINT newWidth, UINT newHeight, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
 		{
 			if (!device)
 				return false;
@@ -809,7 +809,7 @@ namespace Mus {
 				return false;
 			}
 			Microsoft::WRL::ComPtr<ID3D11Resource> resource;
-			if (!ConvertD3D11(device, image, resource) || !resource)
+			if (!ConvertD3D11(device, image, cpuReadable, resource))
 			{
 				logger::error("Failed to get texture from {} file", filePath);
 				return false;
@@ -826,7 +826,7 @@ namespace Mus {
 			}
 			else
 			{
-				ConvertTexture(device, context, texture2D, newFormat, newWidth, newHeight, DirectX::TEX_FILTER_FLAGS::TEX_FILTER_FANT, output);
+				ConvertTexture(device, context, texture2D, newFormat, newWidth, newHeight, DirectX::TEX_FILTER_FLAGS::TEX_FILTER_FANT, cpuReadable, output);
 			}
 			if (!output)
 			{
@@ -840,25 +840,25 @@ namespace Mus {
 			srvDesc.Texture2D.MipLevels = textureDesc.MipLevels;
 			return true;
 		}
-		bool TextureLoadManager::GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
+		bool TextureLoadManager::GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
 		{
-			return GetTextureFromFile(device, context, filePath, textureDesc, srvDesc, newFormat, 0, 0, output);
+			return GetTextureFromFile(device, context, filePath, textureDesc, srvDesc, newFormat, 0, 0, cpuReadable, output);
 		}
-		bool TextureLoadManager::GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
+		bool TextureLoadManager::GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_SHADER_RESOURCE_VIEW_DESC& srvDesc, DXGI_FORMAT newFormat, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
 		{
 			D3D11_TEXTURE2D_DESC tmpTexDesc;
-			return GetTextureFromFile(device, context, filePath, tmpTexDesc, srvDesc, newFormat, output);
+			return GetTextureFromFile(device, context, filePath, tmpTexDesc, srvDesc, newFormat, cpuReadable, output);
 		}
-		bool TextureLoadManager::GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
+		bool TextureLoadManager::GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, D3D11_TEXTURE2D_DESC& textureDesc, DXGI_FORMAT newFormat, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
 		{
 			D3D11_SHADER_RESOURCE_VIEW_DESC tmpSRVDesc;
-			return GetTextureFromFile(device, context, filePath, textureDesc, tmpSRVDesc, newFormat, output);
+			return GetTextureFromFile(device, context, filePath, textureDesc, tmpSRVDesc, newFormat, cpuReadable, output);
 		}
-		bool TextureLoadManager::GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, DXGI_FORMAT newFormat, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
+		bool TextureLoadManager::GetTextureFromFile(ID3D11Device* device, ID3D11DeviceContext* context, std::string filePath, DXGI_FORMAT newFormat, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
 		{
 			D3D11_TEXTURE2D_DESC tmpTexDesc;
 			D3D11_SHADER_RESOURCE_VIEW_DESC tmpSRVDesc;
-			return GetTextureFromFile(device, context, filePath, tmpTexDesc, tmpSRVDesc, newFormat, output);
+			return GetTextureFromFile(device, context, filePath, tmpTexDesc, tmpSRVDesc, newFormat, cpuReadable, output);
 		}
 
 		bool TextureLoadManager::UpdateTexture(std::string filePath)
@@ -881,7 +881,7 @@ namespace Mus {
 			Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
 			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
 			D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
-			if (!GetTextureFromFile(ShaderManager::GetSingleton().GetDevice(), ShaderManager::GetSingleton().GetContext(), filePath, srvDesc, DXGI_FORMAT::DXGI_FORMAT_UNKNOWN, texture))
+			if (!GetTextureFromFile(ShaderManager::GetSingleton().GetDevice(), ShaderManager::GetSingleton().GetContext(), filePath, srvDesc, DXGI_FORMAT::DXGI_FORMAT_UNKNOWN, false, texture))
 			{
 				logger::error("Failed to load texture file : {}", filePath);
 				return false;
@@ -911,7 +911,7 @@ namespace Mus {
 				oldResource->Release();
 			return true;
 		}
-		bool TextureLoadManager::ConvertTexture(ID3D11Device* device, ID3D11DeviceContext* context, Microsoft::WRL::ComPtr<ID3D11Texture2D> texture, DXGI_FORMAT newFormat, UINT newWidth, UINT newHeight, DirectX::TEX_FILTER_FLAGS resizeFilter, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
+		bool TextureLoadManager::ConvertTexture(ID3D11Device* device, ID3D11DeviceContext* context, Microsoft::WRL::ComPtr<ID3D11Texture2D> texture, DXGI_FORMAT newFormat, UINT newWidth, UINT newHeight, DirectX::TEX_FILTER_FLAGS resizeFilter, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output)
 		{
 			if (!texture || !device || !context)
 				return false;
@@ -970,11 +970,11 @@ namespace Mus {
 						logger::error("Failed to resize texture ({})", hr);
 						return false;
 					}
-					convertResult = ConvertD3D11(device, resize, tmpResource);
+					convertResult = ConvertD3D11(device, resize, cpuReadable, tmpResource);
 				}
 				else
 				{
-					convertResult = ConvertD3D11(device, convertedImage, tmpResource);
+					convertResult = ConvertD3D11(device, convertedImage, cpuReadable, tmpResource);
 				}
 			}
 			else
@@ -988,11 +988,11 @@ namespace Mus {
 						logger::error("Failed to resize texture ({})", hr);
 						return false;
 					}
-					convertResult = ConvertD3D11(device, resize, tmpResource);
+					convertResult = ConvertD3D11(device, resize, cpuReadable, tmpResource);
 				}
 				else
 				{
-					convertResult = ConvertD3D11(device, image, tmpResource);
+					convertResult = ConvertD3D11(device, image, cpuReadable, tmpResource);
 				}
 			}
 			if (!convertResult || !tmpResource)
@@ -1011,12 +1011,28 @@ namespace Mus {
 			output = tmpTexture;
 			return true;
 		}
-		bool TextureLoadManager::ConvertD3D11(ID3D11Device* device, DirectX::ScratchImage& image, Microsoft::WRL::ComPtr<ID3D11Resource>& output)
+		bool TextureLoadManager::ConvertD3D11(ID3D11Device* device, DirectX::ScratchImage& image, bool cpuReadabl, Microsoft::WRL::ComPtr<ID3D11Resource>& output)
 		{
 			// convert texture to d3d11 texture
 			if (!device)
 				return false;
-			HRESULT hr = DirectX::CreateTexture(device, image.GetImages(), image.GetImageCount(), image.GetMetadata(), output.ReleaseAndGetAddressOf());
+			HRESULT hr;
+			if (cpuReadabl)
+				hr = DirectX::CreateTextureEx(device, image.GetImages(), image.GetImageCount(), image.GetMetadata(), 
+											  D3D11_USAGE_STAGING, 
+											  0, 
+											  D3D11_CPU_ACCESS_READ, 
+											  0, 
+											  DirectX::CREATETEX_FLAGS::CREATETEX_DEFAULT, 
+											  output.ReleaseAndGetAddressOf());
+			else
+				hr = DirectX::CreateTextureEx(device, image.GetImages(), image.GetImageCount(), image.GetMetadata(), 
+											  D3D11_USAGE_DEFAULT, 
+											  D3D11_BIND_SHADER_RESOURCE, 
+											  0, 
+											  0, 
+											  DirectX::CREATETEX_FLAGS::CREATETEX_DEFAULT, 
+											  output.ReleaseAndGetAddressOf());
 			if (FAILED(hr))
 			{
 				logger::error("Failed to convert texture to d3d11 ({})", hr);
@@ -1024,13 +1040,13 @@ namespace Mus {
 			}
 			return true;
 		}
-		bool TextureLoadManager::CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, Microsoft::WRL::ComPtr<ID3D11Texture2D>& dstTexture, Microsoft::WRL::ComPtr<ID3D11Texture2D> srcTexture, DXGI_FORMAT newFormat)
+		bool TextureLoadManager::CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, DXGI_FORMAT newFormat, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut)
 		{
-			auto formatType = IsCompressFormat(newFormat);
-			if (formatType < 0)
+			if (!texInOut || !device || !context)
 				return false;
 
-			if (!srcTexture || !device || !context)
+			auto formatType = IsCompressFormat(newFormat);
+			if (formatType < 0)
 				return false;
 
 			bool isSecondGPU = ShaderManager::GetSingleton().IsSecondGPUResource(context);
@@ -1050,7 +1066,7 @@ namespace Mus {
 			// decoding texture
 			DirectX::ScratchImage image;
 			ShaderLock();
-			HRESULT hr = DirectX::CaptureTexture(device, context, srcTexture.Get(), image);
+			HRESULT hr = DirectX::CaptureTexture(device, context, texInOut.Get(), image);
 			ShaderUnlock();
 			if (FAILED(hr))
 			{
@@ -1088,7 +1104,7 @@ namespace Mus {
 			}
 
 			Microsoft::WRL::ComPtr<ID3D11Resource> tmpResource;
-			if (!ConvertD3D11(device, compressedImage, tmpResource) || !tmpResource)
+			if (!ConvertD3D11(device, compressedImage, cpuReadable, tmpResource))
 			{
 				logger::error("Failed to convert texture to d3d11 resource");
 				return false;
@@ -1101,7 +1117,7 @@ namespace Mus {
 				logger::error("Failed to get compress texture from the resource({})", hr);
 				return false;
 			}
-			dstTexture = tmpTexture;
+			texInOut = tmpTexture;
 			return true;
 		}
 	}

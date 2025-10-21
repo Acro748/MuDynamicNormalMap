@@ -771,13 +771,6 @@ namespace Mus {
 		return texturePath;
 	}
 
-	std::int64_t TaskManager::GenerateUniqueID()
-	{
-		static std::atomic<std::uint64_t> counter{ 0 };
-		auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-		return (now << 16) | (counter++ & 0xFFFF);
-	}
-
 	std::string TaskManager::GetTextureName(RE::Actor* a_actor, bSlot a_bipedSlot, std::string a_texturePath)
 	{ // ActorID + BipedSlot + TexturePath
 		if (!a_actor || a_texturePath.empty())
@@ -953,6 +946,7 @@ namespace Mus {
 							if (!target)
 								target = RE::PlayerCharacter::GetSingleton();
 							QUpdateNormalMap(target, BipedObjectSlot::kAll);
+							RE::DebugNotification("MDNM : Re-update %s %s...", target->GetName(), GetHexStr(target->formID).c_str());
 							isResetTasks = false;
 						}
 					}
@@ -1043,7 +1037,10 @@ namespace Mus {
 								texturePath = GetRuntimeDataDirectory() + texturePath;
 
 							if (Shader::TextureLoadManager::GetSingleton().PrintTexture(texturePath, texture.Get()))
+							{
 								logger::info("Print texture done : {}", texturePath);
+								RE::DebugNotification("MDNM : Print texture done (%s)", texturePath.c_str());
+							}
 						}
 					}
 				}

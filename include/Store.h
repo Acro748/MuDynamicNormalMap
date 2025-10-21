@@ -4,6 +4,7 @@ namespace Mus {
 	const RE::NiPoint3 emptyPoint = RE::NiPoint3(0, 0, 0);
 	const RE::NiMatrix3 emptyRotate = RE::NiMatrix3();
 	const DirectX::XMVECTOR emptyVector = DirectX::XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
+	const RGBA emptyColor = RGBA(0.0f, 0.0f, 0.0f, 0.0f);
 
 	extern std::atomic<bool> IsRaceSexMenu;
 	extern std::atomic<bool> IsMainMenu;
@@ -30,7 +31,8 @@ namespace Mus {
 	constexpr float TimeTick60 = 1.0f / 60.0f;
 	constexpr float TimeTick60msec = TimeTick60 * 1000;
 
-	extern std::clock_t taskQTickMS;
+	extern std::uint8_t divideTaskQ;
+	extern bool vramSaveMode;
 	extern bool isNoSplitGPU;
 
 	const RE::BSFixedString NoDynamicNormalMapExtraDataName = "NoDynamicNormalMap";

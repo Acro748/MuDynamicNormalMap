@@ -77,8 +77,6 @@ namespace Mus {
 		void QUpdateNormalMapImpl(RE::FormID a_actorID, std::string a_actorName, GeometryDataPtr a_geoData, UpdateSet a_updateSet);
 
 		bool RemoveNormalMap(RE::Actor* a_actor);
-
-		std::int64_t GenerateUniqueID();
 	protected:
 		void onEvent(const FrameEvent& e) override;
 		void onEvent(const FacegenNiNodeEvent& e) override;
@@ -116,8 +114,8 @@ namespace Mus {
 
 		std::string FixTexturePath(std::string texturePath);
 
-		concurrency::concurrent_unordered_map<RE::FormID, bSlotbit> updateSlotQueue;
 		std::shared_mutex updateQueueLock;
+		concurrency::concurrent_unordered_map<RE::FormID, bSlotbit> updateSlotQueue;
 		concurrency::concurrent_unordered_map<RE::FormID, bool> isUpdating;
 
 		std::shared_mutex lastNormalMapLock;
