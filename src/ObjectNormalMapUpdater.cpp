@@ -1588,7 +1588,11 @@ namespace Mus {
 					return;
 				if (Config::GetSingleton().GetUseMipMap())
 				{
-					GenerateMipsGPU(device, context, resourceDatas[i], results[i].texture->normalmapShaderResourceView.Get(), results[i].texture->normalmapTexture2D.Get());
+					if (GenerateMipsGPU(device, context, resourceDatas[i], results[i].texture->normalmapShaderResourceView.Get(), results[i].texture->normalmapTexture2D.Get()))
+					{
+						if (Config::GetSingleton().GetGPUForceSync())
+							WaitForGPU(device, context).Wait();
+					}
 				}
 				CompressTexture(device, context, resourceDatas[i], results[i].texture->normalmapTexture2D);
 				if (!isSecondGPU)
@@ -2556,6 +2560,8 @@ namespace Mus {
 		}
 		else
 		{
+			WaitForGPU(device, context).Wait();
+
 			stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 			stagingDesc.Usage = D3D11_USAGE_STAGING;
 			stagingDesc.ArraySize = 1;
