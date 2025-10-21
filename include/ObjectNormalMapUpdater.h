@@ -138,6 +138,7 @@ namespace Mus {
 
 			struct TextureCompressData {
 				Microsoft::WRL::ComPtr<ID3D11Texture2D> srcStagingTexture = nullptr;
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> dstStagingTexture = nullptr;
 			};
 			TextureCompressData textureCompressData;
 

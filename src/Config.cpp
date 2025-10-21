@@ -495,12 +495,12 @@ namespace Mus {
 
         bool isSecondGPUEnabled = Config::GetSingleton().GetGPUDeviceIndex() != 0 && Shader::ShaderManager::GetSingleton().IsValidSecondGPU();
 
-		const std::uint32_t coreCount = std::thread::hardware_concurrency();
-        std::uint32_t actorThreadCount = 2;
-        std::uint32_t memoryManageThreadCount = 2;
-        std::uint32_t updateThreadCount = 2;
-        std::uint32_t processingThreadCount = coreCount;
-		std::uint32_t gpuTaskThreadCount = 1;
+		const std::int32_t coreCount = std::thread::hardware_concurrency();
+        std::int32_t actorThreadCount = 1;
+        std::int32_t memoryManageThreadCount = 1;
+        std::int32_t updateThreadCount = 1;
+        std::int32_t processingThreadCount = coreCount / 2;
+		std::int32_t gpuTaskThreadCount = 1;
         isNoSplitGPU = false;
 		bool waitPreTask = false;
         std::clock_t taskQTickMS = 1000.0f;
@@ -510,69 +510,84 @@ namespace Mus {
             switch (Config::GetSingleton().GetAutoTaskQ()) {
             default:
             case Config::AutoTaskQList::Fastest:
-                gpuTaskThreadCount = 2;
                 taskQTickMS = 0;
                 directTaskQ = true;
                 divideTaskQ = 0;
                 vramSaveMode = false;
-                actorThreadCount = 2;
+
                 isNoSplitGPU = true;
+
                 waitPreTask = false;
                 waitSleepTime = std::chrono::microseconds(100);
+
+                actorThreadCount = 4;
+                updateThreadCount = 4;
                 processingThreadCount = coreCount;
-                updateThreadCount = 2;
+                gpuTaskThreadCount = 4;
                 break;
             case Config::AutoTaskQList::Faster:
-                gpuTaskThreadCount = 1;
                 taskQTickMS = Config::GetSingleton().GetTaskQTickMS();
                 directTaskQ = true;
                 divideTaskQ = 0;
                 vramSaveMode = true;
-                actorThreadCount = 1;
+
                 isNoSplitGPU = true;
+
                 waitPreTask = false;
                 waitSleepTime = std::chrono::microseconds(500);
-                processingThreadCount = coreCount;
+
+                actorThreadCount = 1;
                 updateThreadCount = 2;
+                processingThreadCount = coreCount;
+                gpuTaskThreadCount = 1;
                 break;
             case Config::AutoTaskQList::Balanced:
-                gpuTaskThreadCount = 1;
                 taskQTickMS = Config::GetSingleton().GetTaskQTickMS();
                 directTaskQ = false;
                 divideTaskQ = 0;
                 vramSaveMode = true;
-                actorThreadCount = 1;
+
                 isNoSplitGPU = false;
+
                 waitPreTask = false;
                 waitSleepTime = std::chrono::microseconds(1000);
-                processingThreadCount = coreCount;
+
+                actorThreadCount = 1;
                 updateThreadCount = 2;
+				processingThreadCount = std::max(1, std::max(coreCount / 2, coreCount - 4));
+                gpuTaskThreadCount = 1;
                 break;
             case Config::AutoTaskQList::BetterPerformance:
-                gpuTaskThreadCount = 1;
                 taskQTickMS = Config::GetSingleton().GetTaskQTickMS();
                 directTaskQ = false;
                 divideTaskQ = 0;
                 vramSaveMode = true;
-                actorThreadCount = 1;
+
                 isNoSplitGPU = false;
+
                 waitPreTask = true;
                 waitSleepTime = std::chrono::microseconds(1000);
-                processingThreadCount = coreCount;
-                updateThreadCount = 1;
+
+                actorThreadCount = 1;
+                updateThreadCount = 2;
+                processingThreadCount = std::max(1, coreCount / 2);
+                gpuTaskThreadCount = 1;
                 break;
             case Config::AutoTaskQList::BestPerformance:
-                gpuTaskThreadCount = 1;
                 taskQTickMS = Config::GetSingleton().GetTaskQTickMS();
                 directTaskQ = false;
                 divideTaskQ = 2;
                 vramSaveMode = true;
-                actorThreadCount = 1;
+
                 isNoSplitGPU = false;
+
                 waitPreTask = true;
                 waitSleepTime = std::chrono::microseconds(1000);
-                processingThreadCount = coreCount;
+
+                actorThreadCount = 1;
                 updateThreadCount = 1;
+                processingThreadCount = std::max(1, coreCount / 2);
+                gpuTaskThreadCount = 1;
                 break;
             }
         }

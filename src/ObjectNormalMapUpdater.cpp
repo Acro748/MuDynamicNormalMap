@@ -1240,9 +1240,23 @@ namespace Mus {
 			if (!Shader::TextureLoadManager::GetSingleton().GetTexture2D(filePath, texDesc, tmpSrvDesc, DXGI_FORMAT_R8G8B8A8_UNORM, true, texture))
 				return false;
 		}
-
-		output = texture;
-		return true;
+		texture->GetDesc(&texDesc);
+		if (texDesc.CPUAccessFlags & D3D11_CPU_ACCESS_READ)
+		{
+			output = texture;
+			return true;
+		}
+		texDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+		texDesc.Usage = D3D11_USAGE_STAGING;
+		texDesc.MiscFlags = 0;
+		texDesc.BindFlags = 0;
+		hr = device->CreateTexture2D(&texDesc, nullptr, output.GetAddressOf());
+		if (FAILED(hr))
+		{
+			logger::error("Failed to create texture 2d ({})", hr);
+			return false;
+		}
+		return CopySubresourceRegion(device, context, output.Get(), texture.Get(), 0, 0);
 	}
 
 	DirectX::XMVECTOR ObjectNormalMapUpdater::SlerpVector(const DirectX::XMVECTOR& a, const DirectX::XMVECTOR& b, const float& t)
@@ -2530,7 +2544,8 @@ namespace Mus {
 		HRESULT hr;
 
 		D3D11_TEXTURE2D_DESC srcDesc;
-		texInOut->GetDesc(&srcDesc);
+		texInOut->GetDesc(&srcDesc); 
+		D3D11_TEXTURE2D_DESC stagingDesc = srcDesc;
 
 		if (srcDesc.Format != DXGI_FORMAT_R8G8B8A8_UNORM)
 			return false;
@@ -2541,7 +2556,6 @@ namespace Mus {
 		}
 		else
 		{
-			D3D11_TEXTURE2D_DESC stagingDesc = srcDesc;
 			stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 			stagingDesc.Usage = D3D11_USAGE_STAGING;
 			stagingDesc.ArraySize = 1;
@@ -2644,6 +2658,7 @@ namespace Mus {
 		}
 		sl.Unlock();
 
+
 		D3D11_TEXTURE2D_DESC dstDesc = srcDesc;
 		if (sl.IsSecondGPU())
 		{
@@ -2652,20 +2667,63 @@ namespace Mus {
 			dstDesc.BindFlags = 0;
 			dstDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 			dstDesc.MiscFlags = 0;
+
+			hr = device->CreateTexture2D(&dstDesc, initData.data(), texInOut.ReleaseAndGetAddressOf());
+			if (FAILED(hr))
+			{
+				logger::error("Failed to create dst texture 2d");
+				return false;
+			}
 		}
 		else
 		{
+			stagingDesc.Format = DXGI_FORMAT_BC7_UNORM;
+			stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+			hr = device->CreateTexture2D(&stagingDesc, nullptr, &resourceData->textureCompressData.dstStagingTexture);
+			if (FAILED(hr))
+			{
+				logger::error("Failed to create dst texture 2d");
+				return false;
+			}
+
+			for (UINT mipLevel = 0; mipLevel < stagingDesc.MipLevels; mipLevel++) {
+				const UINT height = std::max(stagingDesc.Height >> mipLevel, 1u);
+				std::size_t blockHeight = std::size_t(height + 3) / 4;
+
+				D3D11_MAPPED_SUBRESOURCE mapped;
+				sl.Lock();
+				context->Map(resourceData->textureCompressData.dstStagingTexture.Get(), mipLevel, D3D11_MAP_WRITE, 0, &mapped);
+				sl.Unlock();
+				if (FAILED(hr))
+				{
+					logger::error("Failed to map copy texture : {}", hr);
+					return false;
+				}
+				const std::size_t rowPitch = mapped.RowPitch;
+
+				for (std::size_t y = 0; y < blockHeight; y++) {
+					memcpy(reinterpret_cast<std::uint8_t*>(mapped.pData) + y * rowPitch, bc7Buffers[mipLevel].data() + y * rowPitch, rowPitch);
+				}
+
+				sl.Lock();
+				context->Unmap(resourceData->textureCompressData.dstStagingTexture.Get(), mipLevel);
+				sl.Unlock();
+			}
+
 			dstDesc.Format = DXGI_FORMAT_BC7_UNORM;
 			dstDesc.Usage = D3D11_USAGE_DEFAULT;
 			dstDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
 			dstDesc.CPUAccessFlags = 0;
-			dstDesc.MiscFlags = 0;
-		}
-		hr = device->CreateTexture2D(&dstDesc, initData.data(), texInOut.ReleaseAndGetAddressOf());
-		if (FAILED(hr))
-		{
-			logger::error("Failed to create dst texture 2d");
-			return false;
+			dstDesc.MiscFlags = 0; 
+			hr = device->CreateTexture2D(&dstDesc, nullptr, texInOut.ReleaseAndGetAddressOf());
+			if (FAILED(hr))
+			{
+				logger::error("Failed to create dst texture 2d");
+				return false;
+			}
+			for (UINT mipLevel = 0; mipLevel < dstDesc.MipLevels; mipLevel++) {
+				CopySubresourceRegion(device, context, texInOut.Get(), resourceData->textureCompressData.dstStagingTexture.Get(), mipLevel, mipLevel);
+			}
 		}
 
 		if (Config::GetSingleton().GetCompressTime())
