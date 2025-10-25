@@ -1,20 +1,14 @@
 #include "TaskManager.h"
 
 namespace Mus {
-	void TaskManager::Init(bool dataLoaded)
+	void TaskManager::Init()
 	{
-		if (!dataLoaded)
-		{
-			if (const auto Menu = RE::UI::GetSingleton(); Menu)
-				Menu->AddEventSink<RE::MenuOpenCloseEvent>(this);
-			if (const auto NiNodeEvent = SKSE::GetNiNodeUpdateEventSource(); NiNodeEvent)
-				NiNodeEvent->AddEventSink<SKSE::NiNodeUpdateEvent>(this);
-		}
-		else
-		{
-			if (const auto inputManager = RE::BSInputDeviceManager::GetSingleton(); inputManager)
-				inputManager->AddEventSink<RE::InputEvent*>(this);
-		}
+		if (const auto Menu = RE::UI::GetSingleton(); Menu)
+			Menu->AddEventSink<RE::MenuOpenCloseEvent>(this);
+		if (const auto NiNodeEvent = SKSE::GetNiNodeUpdateEventSource(); NiNodeEvent)
+			NiNodeEvent->AddEventSink<SKSE::NiNodeUpdateEvent>(this);
+		if (const auto inputManager = RE::BSInputDeviceManager::GetSingleton(); inputManager)
+			inputManager->AddEventSink<RE::InputEvent*>(this);
 	}
 
 	void TaskManager::onEvent(const FrameEvent& e)
@@ -24,6 +18,7 @@ namespace Mus {
 
 		RunDelayTask();
 		RunUpdateQueue();
+		RunManageResource(false);
 	}
 	void TaskManager::onEvent(const FacegenNiNodeEvent& e)
 	{
@@ -85,36 +80,8 @@ namespace Mus {
 	{
 		if (!e.IsChangedInOut)
 			return;
-		if (lastNormalMap.size() == 0)
-			return;
 
-		memoryManageThreads->submitAsync([&]() {
-			auto lastNormalMap_ = lastNormalMap;
-			for (auto& map : lastNormalMap_)
-			{
-				RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
-				if (IsInvalidActor(actor))
-				{
-					if (isUpdating[map.first])
-					{
-						continue;
-					}
-					for (auto& textureName : map.second)
-					{
-						if (textureName.second.empty())
-							continue;
-						Shader::TextureLoadManager::GetSingleton().ReleaseNiTexture(textureName.second);
-						logger::trace("{:x}::{}::{} : Removed unused NiTexture", map.first, textureName.first.slot, textureName.second);
-					}
-					lastNormalMapLock.lock();
-					lastNormalMap.unsafe_erase(map.first);
-					lastNormalMapLock.unlock();
-					logger::debug("{:x} : Removed unused NiTexture", map.first);
-				}
-			}
-			if (lastNormalMap.size() > 0)
-				logger::debug("Current remain NiTexture {}", lastNormalMap.size());
-		});
+		RunManageResource(true);
 	}
 
 	void TaskManager::RunUpdateQueue()
@@ -227,6 +194,15 @@ namespace Mus {
 			RegisterDelayTask(func);
 		else
 			RegisterDelayTask([=]() { RegisterDelayTask(delayTick - 1, func); });
+	}
+
+	void TaskManager::RunManageResource(bool isImminently)
+	{
+		static std::clock_t lastTickTime = currentTime;
+		if (lastTickTime + 1000 > currentTime && !isImminently) //1sec
+			return;
+		lastTickTime = currentTime;
+		ReleaseResourceOnUnloadActors();
 	}
 
 	std::unordered_set<RE::BSGeometry*> TaskManager::GetAllGeometries(RE::Actor* a_actor)
@@ -375,9 +351,9 @@ namespace Mus {
 				if (!Config::GetSingleton().GetRevertNormalMap())
 				{
 					lastNormalMapLock.lock_shared();
-					auto found = lastNormalMap[id].find({ slot, texturePath });
+					auto found = lastNormalMap[id].find({ newUpdateSet[geo].slot, newUpdateSet[geo].textureName });
 					if (found != lastNormalMap[id].end())
-						Shader::TextureLoadManager::CreateSourceTexture(found->second, material->normalTexture);
+						Shader::TextureLoadManager::CreateSourceTexture(found->textureName, material->normalTexture);
 					lastNormalMapLock.unlock_shared();
 				}
 
@@ -554,7 +530,7 @@ namespace Mus {
 					material->normalTexture = normalmap;
 
 					lastNormalMapLock.lock_shared();
-					lastNormalMap[a_actorID][{ found->slot, found->texturePath }] = found->textureName;
+					lastNormalMap[a_actorID].insert({ found->slot, found->textureName });
 					lastNormalMapLock.unlock_shared();
 					logger::info("{:x}::{}::{} : update object normalmap done", a_actorID, a_actorName, geo->name.c_str());
 					return RE::BSVisit::BSVisitControl::kContinue;
@@ -839,16 +815,10 @@ namespace Mus {
 			material->normalTexture = texture;
 		}
 		lastNormalMapLock.lock_shared();
-		if (auto found = lastNormalMap.find(a_actor->formID); found != lastNormalMap.end())
-		{
-			auto textures = found->second;
-			for (auto& texture : textures)
-			{
-				Shader::TextureLoadManager::GetSingleton().ReleaseNiTexture(texture.second);
-				logger::debug("{:x} : Removed unused NiTexture", a_actor->formID);
-			}
-		}
+		auto found = lastNormalMap.find(a_actor->formID);
+		auto textures = found != lastNormalMap.end() ? found->second : SlotTexSet();
 		lastNormalMapLock.unlock_shared();
+		ReleaseNormalMap(textures);
 		lastNormalMapLock.lock();
 		lastNormalMap.unsafe_erase(a_actor->formID);
 		lastNormalMapLock.unlock();
@@ -928,7 +898,7 @@ namespace Mus {
 							RE::Actor* target = nullptr;
 							if (auto consoleRef = RE::Console::GetSelectedRef(); consoleRef && Config::GetSingleton().GetUseConsoleRef())
 							{
-								auto target = consoleRef.get();
+								target = skyrim_cast<RE::Actor*>(consoleRef.get());
 							}
 							else if (auto crossHair = RE::CrosshairPickData::GetSingleton(); crossHair && crossHair->targetActor)
 							{
@@ -946,7 +916,10 @@ namespace Mus {
 							if (!target)
 								target = RE::PlayerCharacter::GetSingleton();
 							QUpdateNormalMap(target, BipedObjectSlot::kAll);
-							RE::DebugNotification("MDNM : Re-update %s %s...", target->GetName(), GetHexStr(target->formID).c_str());
+							std::string notification = "MDNM : Re-update ";
+							notification += target->GetName();
+							notification += " " + GetHexStr(target->formID);
+							RE::DebugNotification(notification.c_str());
 							isResetTasks = false;
 						}
 					}
@@ -1015,17 +988,17 @@ namespace Mus {
 
 						lastNormalMapLock.lock_shared();
 						auto found = lastNormalMap.find(target->formID);
-						auto map = found != lastNormalMap.end() ? found->second : concurrency::concurrent_unordered_map<SlotTexKey, std::string, SlotTexHash>();
+						auto map = found != lastNormalMap.end() ? found->second : SlotTexSet();
 						lastNormalMapLock.unlock_shared();
 
 						for (auto& pair : map)
 						{
-							auto texture = Shader::TextureLoadManager::GetSingleton().GetNiTexture(pair.second);
+							auto texture = Shader::TextureLoadManager::GetSingleton().GetNiTexture(pair.textureName);
 							if (!texture)
 								continue;
 
 							TextureInfo info;
-							if (!GetTextureInfo(pair.second, info))
+							if (!GetTextureInfo(pair.textureName, info))
 								continue;
 
 							auto texturePath = stringRemoveEnds(info.texturePath, ".dds");
@@ -1068,7 +1041,66 @@ namespace Mus {
 				IsRaceSexMenu.store(false);
 			}
 		}
+	}
 
-		return EventResult::kContinue;
+
+	void TaskManager::ReleaseResourceOnUnloadActors()
+	{
+		memoryManageThreads->submitAsync([&]() {
+			lastNormalMapLock.lock();
+			auto lastNormalMap_ = lastNormalMap;
+			lastNormalMapLock.unlock();
+			if (lastNormalMap_.empty())
+				return;
+			for (auto& map : lastNormalMap_)
+			{
+				RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
+				if (IsInvalidActor(actor))
+				{
+					if (isUpdating[map.first])
+					{
+						continue;
+					}
+					ReleaseNormalMap(map.second);
+					lastNormalMapLock.lock();
+					lastNormalMap.unsafe_erase(map.first);
+					lastNormalMapLock.unlock();
+				}
+			}
+			lastNormalMapLock.lock_shared();
+			std::size_t count = lastNormalMap.size();
+			lastNormalMapLock.unlock_shared();
+			if (count > 0)
+				logger::debug("Current remain NiTexture {}", count);
+		});
+	}
+	void TaskManager::ReleaseNormalMap(RE::FormID a_actorID, bSlot a_slot)
+	{
+		lastNormalMapLock.lock_shared();
+		auto found = lastNormalMap.find(a_actorID);
+		SlotTexSet set = found != lastNormalMap.end() ? found->second : SlotTexSet();
+		lastNormalMapLock.unlock_shared();
+		for (auto& texture : set)
+		{
+			if (texture.slot == a_slot && !texture.textureName.empty())
+			{
+				Shader::TextureLoadManager::GetSingleton().ReleaseNiTexture(texture.textureName);
+				logger::debug("{} : Removed unused NiTexture", texture.textureName);
+				lastNormalMapLock.lock();
+				lastNormalMap[a_actorID].unsafe_erase(texture);
+				lastNormalMapLock.unlock();
+			}
+		}
+	}
+	void TaskManager::ReleaseNormalMap(SlotTexSet& a_set)
+	{
+		for (auto& texture : a_set)
+		{
+			if (!texture.textureName.empty())
+			{
+				Shader::TextureLoadManager::GetSingleton().ReleaseNiTexture(texture.textureName);
+				logger::debug("{} : Removed unused NiTexture", texture.textureName);
+			}
+		}
 	}
 }

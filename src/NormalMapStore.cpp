@@ -52,7 +52,7 @@ namespace Mus {
 		std::size_t mapSize = map.size();
 		lock.unlock();
 
-		logger::debug("Removed {} Ram cache / Current remain {} Ram cache", garbages.size(), mapSize);
+		logger::debug("Removed {} RAM cache / Current remain {} RAM cache", garbages.size(), mapSize);
 	}
 
 	void NormalMapStore::AddResource(std::uint64_t a_hash, TextureResourcePtr a_resource)

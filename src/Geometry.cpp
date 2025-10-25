@@ -134,7 +134,7 @@ namespace Mus {
 
 			const std::uint32_t vertexSize = geo.objInfo.info.desc.GetSize();
 
-			float colorConvert = 1.0f / 255.0f;
+			//float colorConvert = 1.0f / 255.0f;
 			for (std::uint32_t i = 0; i < geo.objInfo.info.vertexCount; i++) {
 				std::uint8_t* block = &geo.objInfo.geometryBlockData[i * vertexSize];
 				const std::uint32_t vi = beforeVertexCount + i;

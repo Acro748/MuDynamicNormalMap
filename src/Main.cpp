@@ -129,7 +129,6 @@ namespace {
         logger::trace("Building hook...");
 
         Mus::hook();
-        Mus::TaskManager::GetSingleton().Init(false);
     }
 
     void InitializeInterface()
@@ -179,7 +178,7 @@ namespace {
 
 		Mus::g_quitGameEventDispatcher.addListener(&Mus::NormalMapStore::GetSingleton());
 
-        Mus::TaskManager::GetSingleton().Init(true);
+        Mus::TaskManager::GetSingleton().Init();
         Mus::ObjectNormalMapUpdater::GetSingleton().Init();
     }
 

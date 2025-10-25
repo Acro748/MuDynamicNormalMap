@@ -1088,8 +1088,8 @@ namespace Mus {
 				}
 				else
 				{
-					const std::uint32_t subResolution = 4096 / (1u << divideTaskQ);
-					const std::uint32_t subSize = (width / subResolution) * (height / subResolution);
+					const std::uint32_t subResolution = std::max(1u, 4096u / (1u << divideTaskQ));
+					const std::uint32_t subSize = std::max(1u, (width / subResolution) * (height / subResolution));
 
 					const std::uint32_t numSubTris = (totalTris + subSize - 1) / subSize;
 					const std::uint32_t dispatch = (numSubTris + 64 - 1) / 64;
@@ -1861,7 +1861,7 @@ namespace Mus {
 		}
 		else
 		{
-			const std::uint32_t subResolution = 4096 / (1u << divideTaskQ);
+			const std::uint32_t subResolution = std::max(1u, 4096u / (1u << divideTaskQ));
 			const DirectX::XMUINT2 dispatch = { (std::min(width, subResolution) + 8 - 1) / 8, (std::min(height, subResolution) + 8 - 1) / 8 };
 			const std::uint32_t subXSize = std::max(1u, width / subResolution);
 			const std::uint32_t subYSize = std::max(1u, height / subResolution);
@@ -1940,7 +1940,7 @@ namespace Mus {
 		sl.Lock();
 		for (UINT mipLevel = 0; mipLevel < desc.MipLevels; mipLevel++)
 		{
-			context->Map(resourceData->generateMipsData.texture2D.Get(), mipLevel, D3D11_MAP_READ_WRITE, 0, &mappedResource[mipLevel]);
+			hr = context->Map(resourceData->generateMipsData.texture2D.Get(), mipLevel, D3D11_MAP_READ_WRITE, 0, &mappedResource[mipLevel]);
 		}
 		sl.Unlock();
 
@@ -2323,7 +2323,7 @@ namespace Mus {
 					}
 					else
 					{
-						const std::uint32_t subResolution = 2048 / (1u << divideTaskQ);
+						const std::uint32_t subResolution = std::max(1u, 2048u / (1u << divideTaskQ));
 						const DirectX::XMUINT2 dispatch = { (std::min(mipWidth, subResolution) + 8 - 1) / 8, (std::min(mipHeight, subResolution) + 8 - 1) / 8 };
 						const std::uint32_t subXSize = std::max(1u, mipWidth / subResolution);
 						const std::uint32_t subYSize = std::max(1u, mipHeight / subResolution);
@@ -2433,7 +2433,7 @@ namespace Mus {
 				}
 				else
 				{
-					const std::uint32_t subResolution = 2048 / (1u << divideTaskQ);
+					const std::uint32_t subResolution = std::max(1u, 2048u / (1u << divideTaskQ));
 					const DirectX::XMUINT2 dispatch = { (std::min(mipWidth, subResolution) + 8 - 1) / 8, (std::min(mipHeight, subResolution) + 8 - 1) / 8 };
 					const std::uint32_t subXSize = std::max(1u, mipWidth / subResolution);
 					const std::uint32_t subYSize = std::max(1u, mipHeight / subResolution);
