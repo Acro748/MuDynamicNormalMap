@@ -843,9 +843,9 @@ namespace Mus {
         return skinInstance->skinPartition;
     }
 
-    inline std::vector<std::uint32_t> SubBipedObjectSlots(std::uint32_t bipedSlots)
+    inline std::vector<bSlot> SubBipedObjectSlots(bSlotbit bipedSlots)
     {
-        std::vector<std::uint32_t> slots;
+        std::vector<bSlot> slots;
         for (int i = 0; i < 32; ++i) {
             if (bipedSlots & (1u << i)) {
                 slots.push_back(1 << i);

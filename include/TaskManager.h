@@ -76,6 +76,7 @@ namespace Mus {
 		bool QUpdateNormalMapImpl(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, bSlotbit bipedSlot);
 		void QUpdateNormalMapImpl(RE::FormID a_actorID, std::string a_actorName, GeometryDataPtr a_geoData, UpdateSet a_updateSet);
 
+		void RunManageResource(bool isImminently);
 		bool RemoveNormalMap(RE::Actor* a_actor);
 	protected:
 		void onEvent(const FrameEvent& e) override;
@@ -121,19 +122,25 @@ namespace Mus {
 		std::shared_mutex lastNormalMapLock;
 		struct SlotTexKey {
 			bSlot slot;
-			std::string texturePath;
+			std::string textureName;
 			bool operator==(const SlotTexKey& other) const {
-				return slot == other.slot && texturePath == other.texturePath;
+				return slot == other.slot && textureName == other.textureName;
 			}
 		};
 		struct SlotTexHash {
 			std::size_t operator()(const SlotTexKey k) const {
 				std::size_t h1 = std::hash<std::uint32_t>()(k.slot);
-				std::size_t h2 = std::hash<std::string>()(k.texturePath);
+				std::size_t h2 = std::hash<std::string>()(k.textureName);
 				return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
 			}
 		};
-		concurrency::concurrent_unordered_map<RE::FormID, concurrency::concurrent_unordered_map<SlotTexKey, std::string, SlotTexHash>> lastNormalMap; // ActorID, SlotTexKey, TextureName
+		typedef concurrency::concurrent_unordered_set<SlotTexKey, SlotTexHash> SlotTexSet;
+		concurrency::concurrent_unordered_map<RE::FormID, SlotTexSet> lastNormalMap;
 		concurrency::concurrent_unordered_map<RE::FormID, bool> isActiveActors; // ActorID, isActive
+
+		void ReleaseResourceOnUnloadActors();
+
+		void ReleaseNormalMap(RE::FormID a_actorID, bSlot a_slot);
+		void ReleaseNormalMap(SlotTexSet& a_set);
 	};
 }

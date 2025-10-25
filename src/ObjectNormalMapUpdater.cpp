@@ -1940,7 +1940,7 @@ namespace Mus {
 		sl.Lock();
 		for (UINT mipLevel = 0; mipLevel < desc.MipLevels; mipLevel++)
 		{
-			context->Map(resourceData->generateMipsData.texture2D.Get(), mipLevel, D3D11_MAP_READ_WRITE, 0, &mappedResource[mipLevel]);
+			hr = context->Map(resourceData->generateMipsData.texture2D.Get(), mipLevel, D3D11_MAP_READ_WRITE, 0, &mappedResource[mipLevel]);
 		}
 		sl.Unlock();
 
