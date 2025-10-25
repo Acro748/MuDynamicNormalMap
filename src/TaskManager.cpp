@@ -1,20 +1,14 @@
 #include "TaskManager.h"
 
 namespace Mus {
-	void TaskManager::Init(bool dataLoaded)
+	void TaskManager::Init()
 	{
-		if (!dataLoaded)
-		{
-			if (const auto Menu = RE::UI::GetSingleton(); Menu)
-				Menu->AddEventSink<RE::MenuOpenCloseEvent>(this);
-			if (const auto NiNodeEvent = SKSE::GetNiNodeUpdateEventSource(); NiNodeEvent)
-				NiNodeEvent->AddEventSink<SKSE::NiNodeUpdateEvent>(this);
-		}
-		else
-		{
-			if (const auto inputManager = RE::BSInputDeviceManager::GetSingleton(); inputManager)
-				inputManager->AddEventSink<RE::InputEvent*>(this);
-		}
+		if (const auto Menu = RE::UI::GetSingleton(); Menu)
+			Menu->AddEventSink<RE::MenuOpenCloseEvent>(this);
+		if (const auto NiNodeEvent = SKSE::GetNiNodeUpdateEventSource(); NiNodeEvent)
+			NiNodeEvent->AddEventSink<SKSE::NiNodeUpdateEvent>(this);
+		if (const auto inputManager = RE::BSInputDeviceManager::GetSingleton(); inputManager)
+			inputManager->AddEventSink<RE::InputEvent*>(this);
 	}
 
 	void TaskManager::onEvent(const FrameEvent& e)
@@ -922,7 +916,10 @@ namespace Mus {
 							if (!target)
 								target = RE::PlayerCharacter::GetSingleton();
 							QUpdateNormalMap(target, BipedObjectSlot::kAll);
-							RE::DebugNotification("MDNM : Re-update %s %s...", target->GetName(), GetHexStr(target->formID).c_str());
+							std::string notification = "MDNM : Re-update ";
+							notification += target->GetName();
+							notification += " " + GetHexStr(target->formID);
+							RE::DebugNotification(notification.c_str());
 							isResetTasks = false;
 						}
 					}

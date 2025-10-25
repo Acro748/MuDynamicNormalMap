@@ -19,7 +19,7 @@ namespace Mus {
 			return instance;
 		}
 
-		void Init(bool dataLoaded);
+		void Init();
 
 		enum BipedObjectSlot : std::uint32_t
 		{
