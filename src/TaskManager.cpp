@@ -90,11 +90,11 @@ namespace Mus {
 			PerformanceLog(std::string("updateSlotQueue"), false, false);
 		bool isUpdated = false;
 
-		auto p = RE::PlayerCharacter::GetSingleton();
-		if (IsInvalidActor(p))
+		auto camera = RE::PlayerCamera::GetSingleton();
+		if (!camera)
 			return;
-		auto playerPosition = p->loadedData->data3D->world.translate;
 
+		auto cameraPosition = camera->GetRuntimeData2().pos;
 		concurrency::concurrent_vector<RE::FormID> garbages;
 		concurrency::parallel_for_each(isActiveActors.begin(), isActiveActors.end(), [&](auto& map) {
 			RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
@@ -111,7 +111,7 @@ namespace Mus {
 			}
 			else
 			{
-				isInRange = playerPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) <= Config::GetSingleton().GetUpdateDistance();
+				isInRange = cameraPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) <= Config::GetSingleton().GetUpdateDistance();
 			}
 			if (map.second != isInRange)
 			{

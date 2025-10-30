@@ -282,6 +282,10 @@ namespace Mus {
 				{
                     DetailStrength = std::clamp(GetFloatValue(variableValue), 0.0f, 1.0f);
 				}
+				else if (variableName == "IgnoreMissingNormalMap")
+				{
+                    IgnoreMissingNormalMap = GetBoolValue(variableValue);
+				}
             }
             else if (currentSetting == "[Performance]")
             {

@@ -169,6 +169,9 @@ namespace Mus {
         [[nodiscard]] inline auto GetDetailStrength() const noexcept {
             return DetailStrength;
         }
+        [[nodiscard]] inline auto GetIgnoreMissingNormalMap() const noexcept {
+            return IgnoreMissingNormalMap;
+        }
 
         //Performance
         [[nodiscard]] inline auto GetGPUEnable() const noexcept {
@@ -288,6 +291,7 @@ namespace Mus {
         std::uint32_t TextureHeight = 2048;
         bool TangentZCorrection = true;
         float DetailStrength = 0.5f;
+        bool IgnoreMissingNormalMap = true;
 
         //Performance
         bool GPUEnable = true;

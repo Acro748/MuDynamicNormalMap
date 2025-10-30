@@ -450,9 +450,9 @@ namespace Mus {
 					dstDesc.Height = std::max(dstDesc.Height, Config::GetSingleton().GetTextureHeight());
 				}
 			}
-			if (!newResourceData->srcTexture2D && !newResourceData->detailTexture2D)
+			if (!Config::GetSingleton().GetIgnoreMissingNormalMap() && !newResourceData->srcTexture2D && !newResourceData->detailTexture2D)
 			{
-				logger::error("{}::{:x}::{} : There is no Normalmap!", _func_, a_actorID, update.second.geometryName);
+				logger::error("{}::{:x}::{} : NormalMap is missing", _func_, a_actorID, update.second.geometryName);
 				continue;
 			}
 
@@ -530,6 +530,41 @@ namespace Mus {
 			}
 			sl.Unlock();
 
+			std::uint8_t* dstData = reinterpret_cast<std::uint8_t*>(dstMappedResource.pData);
+
+			const UINT width = dstDesc.Width;
+			const UINT height = dstDesc.Height;
+			//init dst texture
+			{
+				std::vector<std::future<void>> processes;
+				const std::size_t subX = std::max((std::size_t)1, std::min(std::size_t(width), processingThreads->GetThreads() * 4));
+				const std::size_t subY = std::max((std::size_t)1, std::min(std::size_t(height), processingThreads->GetThreads() * 4));
+				const std::size_t unitX = (std::size_t(width) + subX - 1) / subX;
+				const std::size_t unitY = (std::size_t(height) + subY - 1) / subY;
+				for (std::size_t px = 0; px < subX; px++) {
+					for (std::size_t py = 0; py < subY; py++) {
+						std::size_t beginX = px * unitX;
+						std::size_t endX = std::min(beginX + unitX, std::size_t(width));
+						std::size_t beginY = py * unitY;
+						std::size_t endY = std::min(beginY + unitY, std::size_t(height));
+						processes.push_back(processingThreads->submitAsync([&, beginX, endX, beginY, endY]() {
+							for (UINT y = beginY; y < endY; y++) {
+								std::uint8_t* rowData = dstData + y * dstMappedResource.RowPitch;
+								for (UINT x = beginX; x < endX; x++)
+								{
+									std::uint32_t* pixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
+									*pixel = emptyColor.GetReverse();
+								}
+							}
+						}));
+					}
+				}
+				for (auto& process : processes)
+				{
+					process.get();
+				}
+			}
+
 			const bool hasSrcData = (srcData != nullptr);
 			const bool hasDetailData = (detailData != nullptr);
 			const bool hasOverlayData = (overlayData != nullptr);
@@ -539,10 +574,6 @@ namespace Mus {
 				PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, true, false);
 
 			std::uint32_t totalTris = objInfo.indicesCount() / 3;
-
-			const UINT width = dstDesc.Width;
-			const UINT height = dstDesc.Height;
-			std::uint8_t* dstData = reinterpret_cast<std::uint8_t*>(dstMappedResource.pData);
 
 			const float WidthF = (float)width;
 			const float HeightF = (float)height;
@@ -862,9 +893,9 @@ namespace Mus {
 						dstDesc.Height = std::max(dstDesc.Height, Config::GetSingleton().GetTextureHeight());
 					}
 				}
-				if (!newResourceData->srcShaderResourceView && !newResourceData->detailShaderResourceView)
+				if (!Config::GetSingleton().GetIgnoreMissingNormalMap() && !newResourceData->srcShaderResourceView && !newResourceData->detailShaderResourceView)
 				{
-					logger::error("{}::{:x}::{} : There is no Normalmap!", _func_, a_actorID, update.second.geometryName);
+					logger::error("{}::{:x}::{} : NormalMap is missing", _func_, a_actorID, update.second.geometryName);
 					return;
 				}
 
@@ -928,6 +959,10 @@ namespace Mus {
 					logger::error("{}::{:x}::{} : Failed to create dst unordered access view ({})", _func_, a_actorID, update.second.geometryName, hr);
 					return;
 				}
+
+				sl.Lock();
+				context->ClearUnorderedAccessViewUint(newResourceData->dstUnorderedAccessView.Get(), clearValue);
+				sl.Unlock();
 
 				const UINT width = dstDesc.Width;
 				const UINT height = dstDesc.Height;
@@ -1407,6 +1442,133 @@ namespace Mus {
 		}
 		return true;
 	}
+	bool ObjectNormalMapUpdater::CopySubresourceRegion(ID3D11Device* device, ID3D11DeviceContext* context, ID3D11Texture2D* dstTexture, ID3D11Texture2D* srcTexture)
+	{
+		if (!device || !context || !dstTexture || !srcTexture)
+			return false;
+
+		D3D11_TEXTURE2D_DESC dstDesc, srcDesc;
+		dstTexture->GetDesc(&dstDesc);
+		srcTexture->GetDesc(&srcDesc);
+		if (dstDesc.MipLevels != srcDesc.MipLevels)
+			return false;
+
+		for (UINT mipLevel = 0; mipLevel < dstDesc.MipLevels; mipLevel++) {
+			CopySubresourceRegion(device, context, dstTexture, srcTexture, mipLevel, mipLevel);
+		}
+
+		return false;
+	}
+
+	bool ObjectNormalMapUpdater::CopySubresourceFromBuffer(ID3D11Device* device, ID3D11DeviceContext* context, std::vector<std::uint8_t>& buffer, UINT rowPitch, UINT mipLevel, ID3D11Texture2D* dstTexture)
+	{
+		if (!device || !context || buffer.empty() || !dstTexture)
+			return false;
+
+		D3D11_TEXTURE2D_DESC desc;
+		dstTexture->GetDesc(&desc);
+
+		Shader::ShaderLocker sl(context);
+		const UINT width = std::max(1u, desc.Width >> mipLevel);
+		const UINT height = std::max(1u, desc.Height >> mipLevel);
+
+		if (sl.IsSecondGPU() || isNoSplitGPU || (width <= 256 && height <= 256))
+		{
+			if (Config::GetSingleton().GetTextureCopyTime())
+				GPUPerformanceLog(device, context, std::string("CopySubresourceFromBuffer") + "::" + std::to_string(width) + "::" + std::to_string(height)
+								  , false, false);
+
+			sl.Lock();
+			context->UpdateSubresource(dstTexture, mipLevel, nullptr, buffer.data(), rowPitch, 0);
+			sl.Unlock();
+
+			if (Config::GetSingleton().GetTextureCopyTime())
+				GPUPerformanceLog(device, context, std::string("CopySubresourceFromBuffer") + "::" + std::to_string(width) + "::" + std::to_string(height)
+								 , true, false);
+			return true;
+		}
+
+		const std::uint32_t subResolution = 4096 / (1u << divideTaskQ);
+		const std::uint32_t subXSize = std::max(1u, width / subResolution);
+		const std::uint32_t subYSize = std::max(1u, height / subResolution);
+
+		UINT blockWidth = 1;
+		UINT blockHeight = 1;
+		UINT blockSize = 4;
+		if (desc.Format == DXGI_FORMAT_BC7_UNORM || desc.Format == DXGI_FORMAT_BC3_UNORM || desc.Format == DXGI_FORMAT_BC1_UNORM)
+		{
+			blockWidth = 4;
+			blockHeight = 4;
+			blockSize = 16;
+		}
+		else if (desc.Format == DXGI_FORMAT_R8G8B8A8_UNORM)
+		{
+			blockWidth = 1;
+			blockHeight = 1;
+			blockSize = 4;
+		}
+		else
+		{
+			blockWidth = 1;
+			blockHeight = 1;
+			blockSize = 4;
+		}
+
+		std::vector<std::future<void>> gpuTasks;
+		for (std::uint32_t subY = 0; subY < subYSize; subY++)
+		{
+			for (std::uint32_t subX = 0; subX < subXSize; subX++)
+			{
+				D3D11_BOX box = {};
+				box.left = subX * subResolution;
+				box.right = std::min(width, box.left + subResolution);
+				box.top = subY * subResolution;
+				box.bottom = std::min(height, box.top + subResolution);
+				box.front = 0;
+				box.back = 1;
+
+				const UINT blockX = box.left / blockWidth;
+				const UINT blockY = box.top / blockHeight;
+				const std::uint8_t* bufferStart = buffer.data() + (blockY * rowPitch) + (blockX * blockSize);
+
+				gpuTasks.push_back(gpuTask->submitAsync([&, mipLevel, box, bufferStart, subX, subY]() {
+					if (Config::GetSingleton().GetTextureCopyTime())
+						GPUPerformanceLog(device, context, std::string("CopySubresourceFromBuffer") + "::" + std::to_string(width) + "::" + std::to_string(height)
+										  + "::" + std::to_string(subX) + "|" + std::to_string(subY), false, false);
+					sl.Lock();
+					context->UpdateSubresource(
+						dstTexture,
+						mipLevel,
+						&box,
+						bufferStart,
+						rowPitch,
+						0);
+					sl.Unlock();
+
+					if (Config::GetSingleton().GetTextureCopyTime())
+						GPUPerformanceLog(device, context, std::string("CopySubresourceFromBuffer") + "::" + std::to_string(width) + "::" + std::to_string(height)
+										  + "::" + std::to_string(subX) + "|" + std::to_string(subY), true, false);
+				}));
+			}
+		}
+		for (auto& task : gpuTasks) {
+			task.get();
+		}
+		return true;
+	}
+	bool ObjectNormalMapUpdater::CopySubresourceFromBuffer(ID3D11Device* device, ID3D11DeviceContext* context, std::vector<std::vector<std::uint8_t>>& buffers, std::vector<UINT>& rowPitches, ID3D11Texture2D* dstTexture)
+	{
+		if (!device || !context || buffers.empty() || !dstTexture)
+			return false;
+
+		D3D11_TEXTURE2D_DESC desc;
+		dstTexture->GetDesc(&desc);
+
+		for (UINT mipLevel = 0; mipLevel < desc.MipLevels; mipLevel++) {
+			CopySubresourceFromBuffer(device, context, buffers[mipLevel], rowPitches[mipLevel], mipLevel, dstTexture);
+		}
+		return true;
+	}
 
 	void ObjectNormalMapUpdater::PostProcessing(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries)
 	{
@@ -1484,10 +1646,7 @@ namespace Mus {
 							failedCopyResources.insert(i);
 							return;
 						}
-						for (UINT mipLevel = 0; mipLevel < desc.MipLevels; mipLevel++)
-						{
-							CopySubresourceRegion(device, context, results[i].texture->normalmapTexture2D.Get(), resourceDatas[i]->stagingTexture2D.Get(), mipLevel, mipLevel);
-						}
+						CopySubresourceRegion(device, context, results[i].texture->normalmapTexture2D.Get(), resourceDatas[i]->stagingTexture2D.Get());
 					}
 					D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
 					srvDesc.Format = desc.Format;
@@ -1613,10 +1772,7 @@ namespace Mus {
 							failedCopyResources.insert(i);
 							return;
 						}
-						for (UINT mipLevel = 0; mipLevel < desc.MipLevels; mipLevel++)
-						{
-							CopySubresourceRegion(device, context, results[i].texture->normalmapTexture2D.Get(), resourceDatas[i]->stagingTexture2D.Get(), mipLevel, mipLevel);
-						}
+						CopySubresourceRegion(device, context, results[i].texture->normalmapTexture2D.Get(), resourceDatas[i]->stagingTexture2D.Get());
 					}
 					D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
 					srvDesc.Format = desc.Format;
@@ -2574,9 +2730,7 @@ namespace Mus {
 				logger::error("Failed to create staging texture");
 				return false;
 			}
-			for (UINT mipLevel = 0; mipLevel < srcDesc.MipLevels; mipLevel++) {
-				CopySubresourceRegion(device, context, resourceData->textureCompressData.srcStagingTexture.Get(), texInOut.Get(), mipLevel, mipLevel);
-			}
+			CopySubresourceRegion(device, context, resourceData->textureCompressData.srcStagingTexture.Get(), texInOut.Get());
 		}
 
 		std::vector<D3D11_MAPPED_SUBRESOURCE> mappedResource(srcDesc.MipLevels);
@@ -2589,6 +2743,7 @@ namespace Mus {
 
 		std::vector<D3D11_SUBRESOURCE_DATA> initData(srcDesc.MipLevels);
 		std::vector<std::vector<std::uint8_t>> bc7Buffers(srcDesc.MipLevels);
+		std::vector<UINT> rowPitches(srcDesc.MipLevels);
 
 		bc7enc_compress_block_init();
 
@@ -2652,8 +2807,9 @@ namespace Mus {
 			for (auto& process : processes) {
 				process.get();
 			}
+			rowPitches[mipLevel] = bc7Width * 16;
 			initData[mipLevel].pSysMem = bc7Buffers[mipLevel].data();
-			initData[mipLevel].SysMemPitch = bc7Width * 16;
+			initData[mipLevel].SysMemPitch = rowPitches[mipLevel];
 			initData[mipLevel].SysMemSlicePitch = 0;
 		};
 
@@ -2664,7 +2820,7 @@ namespace Mus {
 		}
 		sl.Unlock();
 
-
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D;
 		D3D11_TEXTURE2D_DESC dstDesc = srcDesc;
 		if (sl.IsSecondGPU())
 		{
@@ -2673,8 +2829,7 @@ namespace Mus {
 			dstDesc.BindFlags = 0;
 			dstDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 			dstDesc.MiscFlags = 0;
-
-			hr = device->CreateTexture2D(&dstDesc, initData.data(), texInOut.ReleaseAndGetAddressOf());
+			hr = device->CreateTexture2D(&dstDesc, initData.data(), &texture2D);
 			if (FAILED(hr))
 			{
 				logger::error("Failed to create dst texture 2d");
@@ -2683,54 +2838,23 @@ namespace Mus {
 		}
 		else
 		{
-			stagingDesc.Format = DXGI_FORMAT_BC7_UNORM;
-			stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-			hr = device->CreateTexture2D(&stagingDesc, nullptr, &resourceData->textureCompressData.dstStagingTexture);
-			if (FAILED(hr))
-			{
-				logger::error("Failed to create dst texture 2d");
-				return false;
-			}
-
-			for (UINT mipLevel = 0; mipLevel < stagingDesc.MipLevels; mipLevel++) {
-				const UINT height = std::max(stagingDesc.Height >> mipLevel, 1u);
-				std::size_t blockHeight = std::size_t(height + 3) / 4;
-
-				D3D11_MAPPED_SUBRESOURCE mapped;
-				sl.Lock();
-				context->Map(resourceData->textureCompressData.dstStagingTexture.Get(), mipLevel, D3D11_MAP_WRITE, 0, &mapped);
-				sl.Unlock();
-				if (FAILED(hr))
-				{
-					logger::error("Failed to map copy texture : {}", hr);
-					return false;
-				}
-				const std::size_t rowPitch = mapped.RowPitch;
-
-				for (std::size_t y = 0; y < blockHeight; y++) {
-					memcpy(reinterpret_cast<std::uint8_t*>(mapped.pData) + y * rowPitch, bc7Buffers[mipLevel].data() + y * rowPitch, rowPitch);
-				}
-
-				sl.Lock();
-				context->Unmap(resourceData->textureCompressData.dstStagingTexture.Get(), mipLevel);
-				sl.Unlock();
-			}
-
 			dstDesc.Format = DXGI_FORMAT_BC7_UNORM;
 			dstDesc.Usage = D3D11_USAGE_DEFAULT;
 			dstDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
 			dstDesc.CPUAccessFlags = 0;
-			dstDesc.MiscFlags = 0; 
-			hr = device->CreateTexture2D(&dstDesc, nullptr, texInOut.ReleaseAndGetAddressOf());
+			dstDesc.MiscFlags = 0;
+			hr = device->CreateTexture2D(&dstDesc, nullptr, &texture2D);
 			if (FAILED(hr))
 			{
 				logger::error("Failed to create dst texture 2d");
 				return false;
 			}
-			for (UINT mipLevel = 0; mipLevel < dstDesc.MipLevels; mipLevel++) {
-				CopySubresourceRegion(device, context, texInOut.Get(), resourceData->textureCompressData.dstStagingTexture.Get(), mipLevel, mipLevel);
-			}
+
+			if (!CopySubresourceFromBuffer(device, context, bc7Buffers, rowPitches, texture2D.Get()))
+				return false;
 		}
+
+		texInOut = texture2D;
 
 		if (Config::GetSingleton().GetCompressTime())
 			PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, true, false);
@@ -2776,8 +2900,8 @@ namespace Mus {
 			Shader::ShaderManager::GetSingleton().ShaderSecondContextUnlock();
 		}
 
-		std::vector<D3D11_SUBRESOURCE_DATA> initDatas(desc.MipLevels);
 		std::vector<std::vector<std::uint8_t>> buffers(desc.MipLevels);
+		std::vector<UINT> rowPitches(desc.MipLevels);
 
 		for (UINT mipLevel = 0; mipLevel < desc.MipLevels; mipLevel++) {
 			const UINT height = std::max(desc.Height >> mipLevel, 1u);
@@ -2793,7 +2917,7 @@ namespace Mus {
 				return false;
 			}
 
-			const std::size_t rowPitch = mapped.RowPitch;
+			rowPitches[mipLevel] = mapped.RowPitch;
 
 			if (desc.Format == DXGI_FORMAT_BC7_UNORM || desc.Format == DXGI_FORMAT_BC3_UNORM || desc.Format == DXGI_FORMAT_BC1_UNORM)
 			{
@@ -2808,18 +2932,14 @@ namespace Mus {
 				blockHeight = height;
 			}
 
-			buffers[mipLevel].resize(rowPitch * blockHeight);
+			buffers[mipLevel].resize(rowPitches[mipLevel] * blockHeight);
 			for (std::size_t y = 0; y < blockHeight; y++) {
-				memcpy(buffers[mipLevel].data() + y * rowPitch, reinterpret_cast<std::uint8_t*>(mapped.pData) + y * rowPitch, rowPitch);
+				memcpy(buffers[mipLevel].data() + y * rowPitches[mipLevel], reinterpret_cast<std::uint8_t*>(mapped.pData) + y * rowPitches[mipLevel], rowPitches[mipLevel]);
 			}
 
 			Shader::ShaderManager::GetSingleton().ShaderSecondContextLock();
 			Shader::ShaderManager::GetSingleton().GetSecondContext()->Unmap(resourceData->copySecondToMainData.copyTexture2D.Get(), mipLevel);
 			Shader::ShaderManager::GetSingleton().ShaderSecondContextUnlock();
-
-			initDatas[mipLevel].pSysMem = buffers[mipLevel].data();
-			initDatas[mipLevel].SysMemPitch = rowPitch;
-			initDatas[mipLevel].SysMemSlicePitch = 0;
 		}
 
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D;
@@ -2827,11 +2947,14 @@ namespace Mus {
 		desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
 		desc.CPUAccessFlags = 0;
 		desc.MiscFlags = 0;
-		hr = Shader::ShaderManager::GetSingleton().GetDevice()->CreateTexture2D(&desc, initDatas.data(), &texture2D);
+		hr = Shader::ShaderManager::GetSingleton().GetDevice()->CreateTexture2D(&desc, nullptr, &texture2D);
 		if (FAILED(hr)) {
 			logger::error("Failed to create dst texture : {}", hr);
 			return false;
 		}
+
+		if (!CopySubresourceFromBuffer(Shader::ShaderManager::GetSingleton().GetDevice(), Shader::ShaderManager::GetSingleton().GetContext(), buffers, rowPitches, texture2D.Get()))
+			return false;
 
 		D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 		srvDesc.Format = desc.Format;
