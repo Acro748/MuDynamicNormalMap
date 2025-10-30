@@ -453,15 +453,20 @@ namespace Mus {
 				for (std::uint32_t i = 1; i < gpuCount; i++)
 				{
 					hr = gpuList->GetAdapter(i, gpuDevice.ReleaseAndGetAddressOf());
-					if (SUCCEEDED(hr))
-					{
-						gpuIndex = i;
-						break;
-					}
+					if (FAILED(hr))
+						continue;
+					bool isHardware = false;
+					gpuDevice->GetProperty(DXCoreAdapterProperty::IsHardware, sizeof(isHardware), &isHardware);
+					if (!isHardware)
+						continue;
+					logger::info("Found Hardware GPU Device : {}", i);
+
+					gpuIndex = i;
+					break;
 				}
 				if (gpuIndex < 0)
 				{
-					logger::error("Invalid GPU Index. so use main GPU for compute");
+					logger::error("There is no secondary GPU device. so use main GPU for compute");
 					return false;
 				}
 			}
@@ -471,6 +476,14 @@ namespace Mus {
 				if (FAILED(hr))
 				{
 					logger::error("Invalid GPU Index. so use main GPU for compute : {}", hr);
+					return false;
+				}
+
+				bool isHardware = false;
+				gpuDevice->GetProperty(DXCoreAdapterProperty::IsHardware, sizeof(isHardware), &isHardware);
+				if (!isHardware)
+				{
+					logger::error("Invalid hardware GPU device ({}). so use main GPU for compute", gpuIndex);
 					return false;
 				}
 			}

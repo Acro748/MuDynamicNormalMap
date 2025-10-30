@@ -5,6 +5,7 @@ namespace Mus {
 	const RE::NiMatrix3 emptyRotate = RE::NiMatrix3();
 	const DirectX::XMVECTOR emptyVector = DirectX::XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
 	const RGBA emptyColor = RGBA(0.0f, 0.0f, 0.0f, 0.0f);
+	const UINT clearValue[4] = { 0, 0, 0, 0 };
 
 	extern std::atomic<bool> IsRaceSexMenu;
 	extern std::atomic<bool> IsMainMenu;
