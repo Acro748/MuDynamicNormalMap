@@ -417,6 +417,8 @@ namespace Mus {
 		}
 		bool ShaderManager::CreateDeviceContextWithSecondGPUImpl()
 		{
+			HRESULT hr;
+
 			INT gpuIndex = Config::GetSingleton().GetGPUDeviceIndex();
 			if (gpuIndex == 0)
 			{
@@ -424,8 +426,29 @@ namespace Mus {
 				return false;
 			}
 
+			Microsoft::WRL::ComPtr<IDXGIDevice> dxgiDevice;
+			hr = GetDevice()->QueryInterface(IID_PPV_ARGS(&dxgiDevice));
+			if (FAILED(hr))
+			{
+				logger::error("Unable to get Main GPU device index");
+				return false;
+			}
+
+			Microsoft::WRL::ComPtr<IDXGIAdapter> mainGPUDevice;
+			hr = dxgiDevice->GetAdapter(&mainGPUDevice);
+			if (FAILED(hr))
+			{
+				logger::error("Unable to get Main GPU device index");
+				return false;
+			}
+
+			DXGI_ADAPTER_DESC mainGPUDesc = {};
+			mainGPUDevice->GetDesc(&mainGPUDesc);
+
+			const LUID mainLuid = mainGPUDesc.AdapterLuid;
+
 			Microsoft::WRL::ComPtr<IDXCoreAdapterFactory> factory;
-			HRESULT hr = DXCoreCreateAdapterFactory(IID_PPV_ARGS(&factory));
+			hr = DXCoreCreateAdapterFactory(IID_PPV_ARGS(&factory));
 			if (FAILED(hr))
 			{
 				logger::error("Failed to create IDXCoreAdapterFactory : {}", hr);
@@ -448,44 +471,40 @@ namespace Mus {
 			}
 
 			Microsoft::WRL::ComPtr<IDXCoreAdapter> gpuDevice;
-			if (gpuIndex < 0)
+			bool isFoundMainGPUDevice = false;
+			for (std::uint32_t i = 0; i < gpuCount; i++)
 			{
-				for (std::uint32_t i = 1; i < gpuCount; i++)
-				{
-					hr = gpuList->GetAdapter(i, gpuDevice.ReleaseAndGetAddressOf());
-					if (FAILED(hr))
-						continue;
-					bool isHardware = false;
-					gpuDevice->GetProperty(DXCoreAdapterProperty::IsHardware, sizeof(isHardware), &isHardware);
-					if (!isHardware)
-						continue;
-					logger::info("Found Hardware GPU Device : {}", i);
-
-					gpuIndex = i;
-					break;
-				}
-				if (gpuIndex < 0)
-				{
-					logger::error("There is no secondary GPU device. so use main GPU for compute");
-					return false;
-				}
-			}
-			else
-			{
-				hr = gpuList->GetAdapter(gpuIndex, gpuDevice.GetAddressOf());
+				hr = gpuList->GetAdapter(i, gpuDevice.ReleaseAndGetAddressOf());
 				if (FAILED(hr))
-				{
-					logger::error("Invalid GPU Index. so use main GPU for compute : {}", hr);
-					return false;
-				}
-
+					continue;
 				bool isHardware = false;
 				gpuDevice->GetProperty(DXCoreAdapterProperty::IsHardware, sizeof(isHardware), &isHardware);
 				if (!isHardware)
+					continue;
+				LUID gpuLuid;
+				gpuDevice->GetProperty(DXCoreAdapterProperty::InstanceLuid, &gpuLuid);
+				if (gpuLuid.HighPart == mainLuid.HighPart && gpuLuid.LowPart == mainLuid.LowPart)
 				{
-					logger::error("Invalid hardware GPU device ({}). so use main GPU for compute", gpuIndex);
-					return false;
+					isFoundMainGPUDevice = true;
+					continue;
 				}
+				if (gpuIndex > 0)
+				{
+					std::uint32_t actualIndex = i;
+					if (!isFoundMainGPUDevice)
+						actualIndex += 1;
+					if (gpuIndex != actualIndex)
+						continue;
+				}
+				logger::info("Found Hardware GPU Device : {}", i);
+
+				gpuIndex = i;
+				break;
+			}
+			if (gpuIndex < 0)
+			{
+				logger::error("There is no secondary GPU device. so use main GPU for compute");
+				return false;
 			}
 
 			char description[128] = {};
