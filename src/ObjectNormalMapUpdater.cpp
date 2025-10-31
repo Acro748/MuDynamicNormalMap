@@ -2675,7 +2675,7 @@ namespace Mus {
 			if (Config::GetSingleton().GetCompressTime())
 				PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, false, false);
 
-			isCompressed = Shader::TextureLoadManager::GetSingleton().CompressTexture(device, context, DXGI_FORMAT_BC7_UNORM, isSecondGPU, texInOut);
+			isCompressed = Shader::TextureLoadManager::GetSingleton().CompressTexture(device, context, DXGI_FORMAT_BC7_UNORM, isSecondGPU, 0, texInOut);
 
 			if (Config::GetSingleton().GetCompressTime())
 				PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, true, false);
@@ -2750,8 +2750,8 @@ namespace Mus {
 		bc7enc_compress_block_params params;
 		bc7enc_compress_block_params_init(&params);
 		bc7enc_compress_block_params_init_linear_weights(&params);
-		params.m_mode_mask = 1 << 6;
-		params.m_max_partitions = 1;
+		params.m_mode_mask = 1 << 1 | 1 << 3 | 1 << 4 | 1 << 5 | 1 << 6 | 1 << 7; //mode 1, 3, 4, 5, 6, 7
+		params.m_max_partitions = 4;
 		params.m_uber_level = 0;
 
 		for (UINT mipLevel = 0; mipLevel < srcDesc.MipLevels; mipLevel++)
