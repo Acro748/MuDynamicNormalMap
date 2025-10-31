@@ -186,7 +186,7 @@ namespace Mus {
 			}
 
 			bool ConvertTexture(ID3D11Device* device, ID3D11DeviceContext* context, Microsoft::WRL::ComPtr<ID3D11Texture2D> texture, DXGI_FORMAT newFormat, UINT newWidth, UINT newHeight, DirectX::TEX_FILTER_FLAGS resizeFilter, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& output);
-			bool CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, DXGI_FORMAT newFormat, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut);
+			bool CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, DXGI_FORMAT newFormat, bool cpuReadable, std::uint8_t quality, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut);
 		
 			std::int8_t IsCompressFormat(DXGI_FORMAT format); // -1 non compress, 1 cpu compress, 2 gpu compress
 

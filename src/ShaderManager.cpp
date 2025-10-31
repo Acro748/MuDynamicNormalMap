@@ -464,39 +464,48 @@ namespace Mus {
 			}
 
 			std::uint32_t gpuCount = gpuList->GetAdapterCount();
-			if (gpuIndex > 0 && gpuIndex > gpuCount)
+			if (gpuIndex > 0 && gpuIndex >= gpuCount)
 			{
 				logger::error("Invalid GPU Index. so use main GPU for compute");
 				return false;
 			}
 
 			Microsoft::WRL::ComPtr<IDXCoreAdapter> gpuDevice;
-			bool isFoundMainGPUDevice = false;
+			std::uint32_t hardwareGPUIndex = 1;
 			for (std::uint32_t i = 0; i < gpuCount; i++)
 			{
 				hr = gpuList->GetAdapter(i, gpuDevice.ReleaseAndGetAddressOf());
 				if (FAILED(hr))
+				{
+					logger::warn("Unable to get GPU device({})", i);
 					continue;
+				}
 				bool isHardware = false;
 				gpuDevice->GetProperty(DXCoreAdapterProperty::IsHardware, sizeof(isHardware), &isHardware);
 				if (!isHardware)
+				{
+					logger::warn("Not found hardware GPU({})", i);
 					continue;
+				}
+
+				char description[128] = {};
+				gpuDevice->GetProperty(DXCoreAdapterProperty::DriverDescription, sizeof(description), description);
+
 				LUID gpuLuid;
-				gpuDevice->GetProperty(DXCoreAdapterProperty::InstanceLuid, &gpuLuid);
+				gpuDevice->GetProperty(DXCoreAdapterProperty::InstanceLuid, sizeof(LUID), &gpuLuid);
 				if (gpuLuid.HighPart == mainLuid.HighPart && gpuLuid.LowPart == mainLuid.LowPart)
 				{
-					isFoundMainGPUDevice = true;
+					logger::warn("Found a hardware GPU device : {}({}). but the main GPU device already being used for Skyrim renderer", description, 0);
 					continue;
 				}
-				if (gpuIndex > 0)
+
+				if (gpuIndex > 0 && gpuIndex != hardwareGPUIndex)
 				{
-					std::uint32_t actualIndex = i;
-					if (!isFoundMainGPUDevice)
-						actualIndex += 1;
-					if (gpuIndex != actualIndex)
-						continue;
+					logger::warn("Found a hardware GPU device : {}({}). but doesn't match GPUDeviceIndex", description, hardwareGPUIndex);
+					hardwareGPUIndex++;
+					continue;
 				}
-				logger::info("Found Hardware GPU Device : {}", i);
+				logger::info("Found a hardware GPU device : {}({})", description, hardwareGPUIndex);
 
 				gpuIndex = i;
 				break;
@@ -549,7 +558,7 @@ namespace Mus {
 				return false;
 			}
 
-			logger::info("Create D3D11 device and context with secondary GPU : {}({})", description, gpuIndex);
+			logger::info("Create D3D11 device and context with secondary GPU : {}", description);
 			return true;
 		}
 		bool ShaderManager::CreateDeviceContextWithSecondGPU()
@@ -1072,7 +1081,7 @@ namespace Mus {
 			}
 			return true;
 		}
-		bool TextureLoadManager::CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, DXGI_FORMAT newFormat, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut)
+		bool TextureLoadManager::CompressTexture(ID3D11Device* device, ID3D11DeviceContext* context, DXGI_FORMAT newFormat, bool cpuReadable, std::uint8_t quality, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut)
 		{
 			if (!texInOut || !device || !context)
 				return false;
@@ -1093,7 +1102,7 @@ namespace Mus {
 					ShaderManager::GetSingleton().ShaderSecondContextUnlock();
 				else
 					ShaderManager::GetSingleton().ShaderContextUnlock();
-				};
+			};
 
 			// decoding texture
 			DirectX::ScratchImage image;
@@ -1107,10 +1116,10 @@ namespace Mus {
 			}
 
 			DirectX::ScratchImage compressedImage;
-			DirectX::TEX_COMPRESS_FLAGS flags;
+			DirectX::TEX_COMPRESS_FLAGS flags = DirectX::TEX_COMPRESS_DEFAULT;
 			if (formatType == 1) //CPU format
 			{
-				flags = DirectX::TEX_COMPRESS_DITHER | DirectX::TEX_COMPRESS_PARALLEL;
+				flags |= DirectX::TEX_COMPRESS_DITHER | DirectX::TEX_COMPRESS_PARALLEL;
 				hr = DirectX::Compress(image.GetImages(), image.GetImageCount(), image.GetMetadata(), newFormat, flags, 1.0f, compressedImage);
 				if (FAILED(hr))
 				{
@@ -1120,13 +1129,21 @@ namespace Mus {
 			}
 			else if (formatType == 2) //GPU format
 			{
-				if (newFormat == DXGI_FORMAT_BC7_UNORM)
-					flags = DirectX::TEX_COMPRESS_BC7_QUICK;
-				else
-					flags = DirectX::TEX_COMPRESS_DEFAULT;
+				if (quality == 0)
+				{
+					flags |= DirectX::TEX_COMPRESS_BC7_QUICK;
+				}
+				else if (quality == 1)
+				{
+					// default
+				}
+				else if (quality == 2)
+				{
+					flags |= DirectX::TEX_COMPRESS_BC7_USE_3SUBSETS;
+				}
 
 				ShaderLock();
-				hr = DirectX::Compress(device, image.GetImages(), image.GetImageCount(), image.GetMetadata(), newFormat, flags, DirectX::TEX_THRESHOLD_DEFAULT, compressedImage);
+				hr = DirectX::Compress(device, image.GetImages(), image.GetImageCount(), image.GetMetadata(), newFormat, flags, 1.0f, compressedImage);
 				ShaderUnlock();
 				if (FAILED(hr))
 				{
