@@ -1012,9 +1012,9 @@ namespace Mus {
 							if (Shader::TextureLoadManager::GetSingleton().PrintTexture(texturePath, texture.Get()))
 							{
 								logger::info("Print texture done : {}", texturePath);
-								RE::DebugNotification("MDNM : Print texture done (%s)", texturePath.c_str());
 							}
 						}
+						RE::DebugNotification("MDNM : Print texture done");
 					}
 				}
 			}

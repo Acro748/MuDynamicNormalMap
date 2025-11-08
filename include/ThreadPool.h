@@ -5,7 +5,7 @@ namespace Mus {
     {
     public:
         ThreadPool_ParallelModule() = delete;
-        ThreadPool_ParallelModule(std::uint32_t threadSize);
+        ThreadPool_ParallelModule(std::uint32_t threadSize, std::uint64_t a_coreMask);
         ~ThreadPool_ParallelModule();
 
         template<typename F, typename... Args>
@@ -27,6 +27,8 @@ namespace Mus {
 
         inline std::size_t GetThreads() const { return workers.size(); };
     private:
+        const std::uint64_t coreMask = 0;
+
         std::vector<std::thread> workers;
         std::queue<std::function<void()>> tasks;
         std::mutex queueMutex;
@@ -39,13 +41,14 @@ namespace Mus {
     extern std::unique_ptr<ThreadPool_ParallelModule> memoryManageThreads;
     extern std::unique_ptr<ThreadPool_ParallelModule> updateThreads;
     extern std::unique_ptr<ThreadPool_ParallelModule> processingThreads;
+    extern std::unique_ptr<ThreadPool_ParallelModule> backGroundHasherThreads;
 
     class ThreadPool_GPUTaskModule
         : public IEventListener<FrameEvent>
     {
     public:
         ThreadPool_GPUTaskModule() = delete;
-        ThreadPool_GPUTaskModule(std::uint32_t a_threadSize, std::clock_t a_taskQTick, bool a_directTaskQ, bool a_waitPreTask);
+        ThreadPool_GPUTaskModule(std::uint32_t a_threadSize, std::uint64_t a_coreMask, std::clock_t a_taskQTick, bool a_directTaskQ, bool a_waitPreTask);
         ~ThreadPool_GPUTaskModule();
 
         template<typename F, typename... Args>
@@ -70,6 +73,8 @@ namespace Mus {
         void onEvent(const FrameEvent& e) override;
 
     private:
+        const std::uint64_t coreMask = 0;
+
         std::vector<std::thread> workers;
         std::queue<std::function<void()>> tasks;
         std::mutex queueMutex;

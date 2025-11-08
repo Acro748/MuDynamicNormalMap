@@ -326,6 +326,10 @@ namespace Mus {
                 {
                     TextureCompress = GetIntValue(variableValue);
                 }
+                else if (variableName == "TextureCompressQuality")
+                {
+                    TextureCompressQuality = GetUIntValue(variableValue);
+                }
                 else if (variableName == "DiskCache")
                 {
                     DiskCache = GetBoolValue(variableValue);
@@ -509,6 +513,7 @@ namespace Mus {
 		bool waitPreTask = false;
         std::clock_t taskQTickMS = 1000.0f;
         bool directTaskQ = false;
+        bool usePCores = false;
         if (Config::GetSingleton().GetAutoTaskQ() > 0)
         {
             switch (Config::GetSingleton().GetAutoTaskQ()) {
@@ -527,6 +532,7 @@ namespace Mus {
                 actorThreadCount = 4;
                 updateThreadCount = 4;
                 processingThreadCount = coreCount;
+                usePCores = true;
                 gpuTaskThreadCount = 4;
                 break;
             case Config::AutoTaskQList::Faster:
@@ -543,6 +549,7 @@ namespace Mus {
                 actorThreadCount = 1;
                 updateThreadCount = 2;
                 processingThreadCount = coreCount;
+                usePCores = true;
                 gpuTaskThreadCount = 1;
                 break;
             case Config::AutoTaskQList::Balanced:
@@ -558,7 +565,8 @@ namespace Mus {
 
                 actorThreadCount = 1;
                 updateThreadCount = 2;
-				processingThreadCount = std::max(1, std::max(coreCount / 2, coreCount - 4));
+                processingThreadCount = std::max(1, std::max(coreCount / 2, coreCount - 4)); 
+                usePCores = false;
                 gpuTaskThreadCount = 1;
                 break;
             case Config::AutoTaskQList::BetterPerformance:
@@ -575,6 +583,7 @@ namespace Mus {
                 actorThreadCount = 1;
                 updateThreadCount = 2;
                 processingThreadCount = std::max(1, coreCount / 2);
+                usePCores = false;
                 gpuTaskThreadCount = 1;
                 break;
             case Config::AutoTaskQList::BestPerformance:
@@ -591,6 +600,7 @@ namespace Mus {
                 actorThreadCount = 1;
                 updateThreadCount = 1;
                 processingThreadCount = std::max(1, coreCount / 2);
+                usePCores = false;
                 gpuTaskThreadCount = 1;
                 break;
             }
@@ -599,22 +609,62 @@ namespace Mus {
         if (isSecondGPUEnabled)
             vramSaveMode = false;
 
-        gpuTask = std::make_unique<ThreadPool_GPUTaskModule>(gpuTaskThreadCount, taskQTickMS, directTaskQ, waitPreTask);
+        std::uint64_t coreMask = 0;
+        if (!usePCores)
+        {
+            std::int32_t eCoreCount = 0;
+            DWORD len = 0;
+            GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &len);
+            std::vector<BYTE> buffer(len);
+            if (GetLogicalProcessorInformationEx(RelationProcessorCore, reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buffer.data()), &len))
+            {
+                BYTE* ptr = buffer.data();
+                while (ptr < buffer.data() + len)
+                {
+                    auto info = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(ptr);
+                    if (info->Relationship == RelationProcessorCore)
+                    {
+                        if (info->Processor.EfficiencyClass > 0)
+                        {
+                            coreMask += info->Processor.GroupMask[0].Mask;
+                            eCoreCount++;
+                        }
+                    }
+                    ptr += info->Size;
+                }
+            }
+            if (coreMask == 0 || eCoreCount == 0)
+            {
+                coreMask = 0;
+                usePCores = true;
+            }
+            else
+            {
+                actorThreadCount = std::min(actorThreadCount, eCoreCount);
+                memoryManageThreadCount = std::min(memoryManageThreadCount, eCoreCount);
+                updateThreadCount = std::min(updateThreadCount, eCoreCount);
+                processingThreadCount = eCoreCount;
+            }
+        }
+        gpuTask = std::make_unique<ThreadPool_GPUTaskModule>(gpuTaskThreadCount, coreMask, taskQTickMS, directTaskQ, waitPreTask);
         g_frameEventDispatcher.addListener(gpuTask.get());
 
         if (isSecondGPUEnabled)
             actorThreadCount = 2;
-        actorThreads = std::make_unique<ThreadPool_ParallelModule>(actorThreadCount);
-        logger::info("set actorThreads {}", actorThreadCount);
 
-        memoryManageThreads = std::make_unique<ThreadPool_ParallelModule>(memoryManageThreadCount);
-        logger::info("set memoryManageThreads {}", memoryManageThreadCount);
+        actorThreads = std::make_unique<ThreadPool_ParallelModule>(actorThreadCount, coreMask);
+        logger::info("set actorThreads {} on {}", actorThreadCount, usePCores ? "all cores" : "all E-cores");
 
-        updateThreads = std::make_unique<ThreadPool_ParallelModule>(updateThreadCount);
-        logger::info("set updateThreads {}", updateThreadCount);
+        memoryManageThreads = std::make_unique<ThreadPool_ParallelModule>(memoryManageThreadCount, coreMask);
+        logger::info("set memoryManageThreads {} on {}", memoryManageThreadCount, usePCores ? "all cores" : "all E-cores");
 
-        processingThreads = std::make_unique<ThreadPool_ParallelModule>(processingThreadCount);
-        logger::info("set processingThreads {}", processingThreadCount);
+        updateThreads = std::make_unique<ThreadPool_ParallelModule>(updateThreadCount, coreMask);
+        logger::info("set updateThreads {} on {}", updateThreadCount, usePCores ? "all cores" : "all E-cores");
+
+        processingThreads = std::make_unique<ThreadPool_ParallelModule>(processingThreadCount, coreMask);
+        logger::info("set processingThreads {} on {}", processingThreadCount, usePCores ? "all cores" : "all E-cores");
+
+        backGroundHasherThreads = std::make_unique<ThreadPool_ParallelModule>(1u, coreMask);
 
         weldDistance = std::max(floatPrecision, Config::GetSingleton().GetWeldDistance());
         weldDistanceMult = 1.0f / weldDistance;

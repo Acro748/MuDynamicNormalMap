@@ -146,6 +146,11 @@ namespace util {
 
 using EventResult = RE::BSEventNotifyControl;
 
+//#include "bc7e_ispc_avx2.h"
+#include "bc7e_ispc_avx.h"
+#include "bc7e_ispc_sse4.h"
+#include "bc7e_ispc_sse2.h"
+
 #include "B/BSFaceGenBaseMorphExtraData.h"
 
 #include "NiOverride/NiOverride.h"

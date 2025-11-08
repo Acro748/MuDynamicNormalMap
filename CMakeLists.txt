@@ -6,7 +6,7 @@ message("Using toolchain file ${CMAKE_TOOLCHAIN_FILE}.")
 ########################################################################################################################
 project(
         MuDynamicNormalMap
-        VERSION 2.0.3
+        VERSION 2.0.4
         DESCRIPTION "MuDynamicNormalMap VR by Acro."
         LANGUAGES CXX
 )
@@ -23,7 +23,10 @@ configure_file(
 )
 
 set(headers
-        extern/bc7enc_rdo/bc7enc.h
+        include/bc7e_ispc_avx.h
+        #include/bc7e_ispc_avx2.h
+        include/bc7e_ispc_sse2.h
+        include/bc7e_ispc_sse4.h
         include/Interface/Interface.h
         include/Interface/InterfaceImpl.h
         include/Utility.hpp
@@ -46,7 +49,6 @@ set(headers
 )
 
 set(sources
-        extern/bc7enc_rdo/bc7enc.cpp
         src/nifUtil.cpp
         src/Config.cpp
         src/PapyrusScripts.cpp
@@ -83,7 +85,6 @@ find_package(DirectXTex CONFIG REQUIRED)
 find_package(detours)
 find_package(xxhash CONFIG REQUIRED)
 find_package(lz4 CONFIG REQUIRED)
-find_package(bc7enc)
 
 add_commonlibsse_plugin(${PROJECT_NAME} SOURCES ${headers} ${sources})
 add_library("${PROJECT_NAME}::${PROJECT_NAME}" ALIAS "${PROJECT_NAME}")
@@ -112,7 +113,6 @@ target_include_directories(
         ${DETOURS_INCLUDE_DIRS}
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/ExtraRE/include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/extern/bc7enc_rdo>
 )
 
 target_link_libraries(
@@ -126,7 +126,15 @@ target_link_libraries(
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/vcpkg_installed/x64-windows-static-md/lib/xxhash.lib>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/vcpkg_installed/x64-windows-static-md/lib/detours.lib>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/vcpkg_installed/x64-windows-static-md/lib/DirectXTex.lib>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/vcpkg_installed/x64-windows-static-md/lib/DirectXTex.lib>
+)
+
+target_sources(
+    ${PROJECT_NAME}
+    PRIVATE
+         #$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/extern/bc7enc_rdo/bc7e_avx2.obj>
+         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/extern/bc7enc_rdo/bc7e_avx.obj>
+         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/extern/bc7enc_rdo/bc7e_sse4.obj>
+         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/extern/bc7enc_rdo/bc7e_sse2.obj>
 )
 
 target_precompile_headers(

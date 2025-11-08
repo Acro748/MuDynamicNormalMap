@@ -136,14 +136,11 @@ namespace Mus {
 			if (Config::GetSingleton().GetActorVertexHasherTime1())
 				PerformanceLog(funcName, false, true);
 
-			if (!backGroundHasher)
-				backGroundHasher = std::make_unique<ThreadPool_ParallelModule>(1);
-
 			blockActorsLock.lock();
 			blockActors.clear();
 			blockActorsLock.unlock();
 
-			backGroundHasher->submitAsync([&, actorHashFunc, funcName]() {
+			backGroundHasherThreads->submitAsync([&, actorHashFunc, funcName]() {
 				isDetecting.store(true);
 
 				actorHashLock.lock_shared();

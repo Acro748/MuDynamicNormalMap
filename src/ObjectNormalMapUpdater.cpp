@@ -1,5 +1,4 @@
 #include "ObjectNormalMapUpdater.h"
-#include "bc7enc.h"
 
 namespace Mus {
 	void ObjectNormalMapUpdater::onEvent(const FrameEvent& e)
@@ -64,7 +63,7 @@ namespace Mus {
 		});
 	}
 
-	void ObjectNormalMapUpdater::Init()
+	bool ObjectNormalMapUpdater::Init()
 	{
 		if (Config::GetSingleton().GetGPUEnable())
 		{
@@ -88,19 +87,23 @@ namespace Mus {
 				if (!device)
 				{
 					logger::error("{} : Invalid device", __func__);
-					return;
+					return false;
 				}
 				auto hr = device->CreateSamplerState(&samplerDesc, &samplerState);
 				if (FAILED(hr))
 				{
 					logger::error("{} : Failed to create samplerState ({})", __func__, hr);
-					return;
+					return false;
 				}
 			}
-			Shader::ShaderManager::GetSingleton().GetComputeShader(GetDevice(), UpdateNormalMapShaderName.data());
-			Shader::ShaderManager::GetSingleton().GetComputeShader(GetDevice(), MergeTextureShaderName.data());
-			Shader::ShaderManager::GetSingleton().GetComputeShader(GetDevice(), GenerateMipsShaderName.data());
+			if (auto shader = Shader::ShaderManager::GetSingleton().GetComputeShader(GetDevice(), UpdateNormalMapShaderName.data()); !shader)
+				return false;
+			if (auto shader = Shader::ShaderManager::GetSingleton().GetComputeShader(GetDevice(), MergeTextureShaderName.data()); !shader)
+				return false;
+			if (auto shader = Shader::ShaderManager::GetSingleton().GetComputeShader(GetDevice(), GenerateMipsShaderName.data()); !shader)
+				return false;
 		}
+		return true;
 	}
 
 	void ObjectNormalMapUpdater::LoadCacheResource(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet& a_updateSet, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results)
@@ -2675,7 +2678,20 @@ namespace Mus {
 			if (Config::GetSingleton().GetCompressTime())
 				PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, false, false);
 
-			isCompressed = Shader::TextureLoadManager::GetSingleton().CompressTexture(device, context, DXGI_FORMAT_BC7_UNORM, isSecondGPU, 0, texInOut);
+			std::uint8_t quality = 0;
+			if (Config::GetSingleton().GetTextureCompressQuality() < 3)
+			{
+				quality = 0;
+			}
+			else if (Config::GetSingleton().GetTextureCompressQuality() < 6)
+			{
+				quality = 1;
+			}
+			else
+			{
+				quality = 2;
+			}
+			isCompressed = Shader::TextureLoadManager::GetSingleton().CompressTexture(device, context, DXGI_FORMAT_BC7_UNORM, isSecondGPU, quality, texInOut);
 
 			if (Config::GetSingleton().GetCompressTime())
 				PerformanceLog(std::string(__func__) + "::" + resourceData->textureName, true, false);
@@ -2694,6 +2710,9 @@ namespace Mus {
 	bool ObjectNormalMapUpdater::CompressTextureBC7(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut)
 	{
 		if (!device || !context || !texInOut)
+			return false;
+
+		if (GetSIMDType() == SIMDType::noSIMD)
 			return false;
 
 		Shader::ShaderLocker sl(context);
@@ -2745,14 +2764,35 @@ namespace Mus {
 		std::vector<std::vector<std::uint8_t>> bc7Buffers(srcDesc.MipLevels);
 		std::vector<UINT> rowPitches(srcDesc.MipLevels);
 
-		bc7enc_compress_block_init();
-
-		bc7enc_compress_block_params params;
-		bc7enc_compress_block_params_init(&params);
-		bc7enc_compress_block_params_init_linear_weights(&params);
-		params.m_mode_mask = 1 << 1 | 1 << 3 | 1 << 4 | 1 << 5 | 1 << 6 | 1 << 7; //mode 1, 3, 4, 5, 6, 7
-		params.m_max_partitions = 4;
-		params.m_uber_level = 0;
+		ispc::bc7e_sse2_compress_block_params params;
+		
+		switch (Config::GetSingleton().GetTextureCompressQuality()) {
+		case 0:
+			ispc::bc7e_sse2_compress_block_params_init_ultrafast(&params, false);
+			break;
+		case 1:
+			ispc::bc7e_sse2_compress_block_params_init_veryfast(&params, false);
+			break;
+		case 2:
+			ispc::bc7e_sse2_compress_block_params_init_fast(&params, false);
+			break;
+		case 3:
+			ispc::bc7e_sse2_compress_block_params_init_basic(&params, false);
+			break;
+		default:
+		case 4:
+			ispc::bc7e_sse2_compress_block_params_init(&params, false);
+			break;
+		case 5:
+			ispc::bc7e_sse2_compress_block_params_init_slow(&params, false);
+			break;
+		case 6:
+			ispc::bc7e_sse2_compress_block_params_init_veryslow(&params, false);
+			break;
+		case 7:
+			ispc::bc7e_sse2_compress_block_params_init_slowest(&params, false);
+			break;
+		}
 
 		for (UINT mipLevel = 0; mipLevel < srcDesc.MipLevels; mipLevel++)
 		{
@@ -2761,11 +2801,12 @@ namespace Mus {
 			UINT bc7Width = (width + 4 - 1) / 4;
 			UINT bc7Height = (height + 4 - 1) / 4;
 			bc7Buffers[mipLevel].resize((std::size_t)bc7Width * bc7Height * 16);
+			rowPitches[mipLevel] = bc7Width * 16;
 
 			std::uint8_t* srcData = reinterpret_cast<std::uint8_t*>(mappedResource[mipLevel].pData);
 			std::vector<std::future<void>> processes;
-			const std::size_t subX = std::max((std::size_t)1, std::min(std::size_t(bc7Width), processingThreads->GetThreads() * 4));
-			const std::size_t subY = std::max((std::size_t)1, std::min(std::size_t(bc7Height), processingThreads->GetThreads() * 4));
+			const std::size_t subX = std::max((std::size_t)1, std::min(std::size_t(bc7Width), processingThreads->GetThreads()));
+			const std::size_t subY = std::max((std::size_t)1, std::min(std::size_t(bc7Height), processingThreads->GetThreads()));
 			const std::size_t unitX = (std::size_t(bc7Width) + subX - 1) / subX;
 			const std::size_t unitY = (std::size_t(bc7Height) + subY - 1) / subY;
 			for (UINT sby = 0; sby < subY; sby++) {
@@ -2775,30 +2816,51 @@ namespace Mus {
 					const std::size_t endX = std::min(beginX + unitX, std::size_t(bc7Width));
 					const std::size_t beginY = sby * unitY;
 					const std::size_t endY = std::min(beginY + unitY, std::size_t(bc7Height));
-					processes.push_back(processingThreads->submitAsync([&, beginX, endX, beginY, endY]() {
+					const std::size_t blockCount = (endX > beginX ? endX - beginX : 0) * (endY > beginY ? endY - beginY : 0);
+					processes.push_back(processingThreads->submitAsync([&, beginX, endX, beginY, endY, blockCount]() {
+						std::vector<std::uint32_t> pixels(blockCount * 16);
+						std::size_t pixelIndex = 0;
 						for (UINT by = beginY; by < endY; by++) {
 							for (UINT bx = beginX; bx < endX; bx++) {
-								const std::size_t currentBlockIndex = (std::size_t)by * bc7Width + bx;
-								std::vector<std::uint8_t> block(64);
+#pragma unroll(4)
 								for (UINT y = 0; y < 4; y++) {
+#pragma unroll(4)
 									for (UINT x = 0; x < 4; x++) {
 										UINT px = bx * 4 + x;
 										UINT py = by * 4 + y;
 										UINT clampedPx = std::min(px, width - 1);
 										UINT clampedPy = std::min(py, height - 1);
 
-										std::uint32_t* dstPixel = reinterpret_cast<std::uint32_t*>(srcData + clampedPy * mappedResource[mipLevel].RowPitch + clampedPx * 4);
-										RGBA rgba;
-										rgba.SetReverse(*dstPixel);
-										std::uint8_t* dst = block.data() + (y * 4 + x) * 4;
-										dst[0] = rgba.R();
-										dst[1] = rgba.G();
-										dst[2] = rgba.B();
-										dst[3] = rgba.A();
+										const std::uint32_t* dstPixel = reinterpret_cast<std::uint32_t*>(srcData + clampedPy * mappedResource[mipLevel].RowPitch + clampedPx * 4);
+										pixels[pixelIndex] = *dstPixel;
+										pixelIndex++;
 									}
 								}
-								std::uint8_t* outputPtr = bc7Buffers[mipLevel].data() + currentBlockIndex * 16;
-								bc7enc_compress_block(outputPtr, block.data(), &params);
+							}
+						}
+						std::vector<std::uint64_t> outBlocks(blockCount * 2); //16 bytes
+						switch (GetSIMDType()) {
+						/*case SIMDType::avx2:
+							ispc::bc7e_avx2_compress_blocks(blockCount, outBlocks.data(), pixels.data(), reinterpret_cast<ispc::bc7e_avx2_compress_block_params*>(&params));
+							break;*/
+						case SIMDType::avx:
+							ispc::bc7e_avx_compress_blocks(blockCount, outBlocks.data(), pixels.data(), reinterpret_cast<ispc::bc7e_avx_compress_block_params*>(&params));
+							break;
+						case SIMDType::sse4:
+							ispc::bc7e_sse4_compress_blocks(blockCount, outBlocks.data(), pixels.data(), reinterpret_cast<ispc::bc7e_sse4_compress_block_params*>(&params));
+							break;
+						case SIMDType::sse2:
+							ispc::bc7e_sse2_compress_blocks(blockCount, outBlocks.data(), pixels.data(), reinterpret_cast<ispc::bc7e_sse2_compress_block_params*>(&params));
+							break;
+						}
+						std::uint64_t* dst = reinterpret_cast<std::uint64_t*>(bc7Buffers[mipLevel].data());
+						std::size_t blockIndex = 0;
+						for (UINT by = beginY; by < endY; by++) {
+							for (UINT bx = beginX; bx < endX; bx++) {
+								const std::size_t dstIndex = ((std::size_t)by * bc7Width + bx) * 2;
+								dst[dstIndex + 0] = outBlocks[blockIndex * 2 + 0];
+								dst[dstIndex + 1] = outBlocks[blockIndex * 2 + 1];
+								blockIndex++;
 							}
 						}
 					}));
@@ -2807,7 +2869,6 @@ namespace Mus {
 			for (auto& process : processes) {
 				process.get();
 			}
-			rowPitches[mipLevel] = bc7Width * 16;
 			initData[mipLevel].pSysMem = bc7Buffers[mipLevel].data();
 			initData[mipLevel].SysMemPitch = rowPitches[mipLevel];
 			initData[mipLevel].SysMemSlicePitch = 0;

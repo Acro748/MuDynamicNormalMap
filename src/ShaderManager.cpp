@@ -419,7 +419,7 @@ namespace Mus {
 		{
 			HRESULT hr;
 
-			INT gpuIndex = Config::GetSingleton().GetGPUDeviceIndex();
+			const std::int32_t gpuIndex = Config::GetSingleton().GetGPUDeviceIndex();
 			if (gpuIndex == 0)
 			{
 				logger::info("Use main GPU for compute");
@@ -455,45 +455,59 @@ namespace Mus {
 				return false;
 			}
 
-			Microsoft::WRL::ComPtr<IDXCoreAdapterList> gpuList;
-			constexpr GUID gpuFilter = { 0x8c47866b, 0x7583, 0x450d, 0xf0, 0xf0, 0x6b, 0xad, 0xa8, 0x95, 0xaf, 0x4b }; //DXCORE_ADAPTER_ATTRIBUTE_D3D11_GRAPHICS
-			hr = factory->CreateAdapterList(1u, &gpuFilter, gpuList.GetAddressOf());
-			if (FAILED(hr)) {
-				logger::error("Failed to create DXCoreAdapterList : {}", hr);
-				return false;
+			constexpr GUID gpuFilter[2] = {
+				{0x8c47866b, 0x7583, 0x450d, 0xf0, 0xf0, 0x6b, 0xad, 0xa8, 0x95, 0xaf, 0x4b}, //DXCORE_ADAPTER_ATTRIBUTE_D3D11_GRAPHICS
+				{0x0c9ece4d, 0x2f6e, 0x4f01, 0x8c, 0x96, 0xe8, 0x9e, 0x33, 0x1b, 0x47, 0xb1}  //DXCORE_ADAPTER_ATTRIBUTE_D3D12_GRAPHICS
+			};
+			struct LUIDHash {
+				std::size_t operator()(const LUID& luid) const noexcept {
+					return (static_cast<std::size_t>(luid.LowPart) ^ (static_cast<std::size_t>(luid.HighPart) << 1));
+				}
+			};
+
+			struct LUIDEqual {
+				bool operator()(const LUID& a, const LUID& b) const noexcept {
+					return (a.HighPart == b.HighPart && a.LowPart == b.LowPart);
+				}
+			};
+			std::unordered_map<LUID, Microsoft::WRL::ComPtr<IDXCoreAdapter>, LUIDHash, LUIDEqual> gpuDeviceList;
+			for (std::uint8_t filterIndex = 0; filterIndex < 2; filterIndex++) {
+				Microsoft::WRL::ComPtr<IDXCoreAdapterList> gpuList;
+				hr = factory->CreateAdapterList(1u, &gpuFilter[filterIndex], gpuList.GetAddressOf());
+				if (FAILED(hr)) {
+					logger::error("Failed to create DXCoreAdapterList : {}", hr);
+					continue;
+				}
+				for (std::uint32_t i = 0; i < gpuList->GetAdapterCount(); i++)
+				{
+					Microsoft::WRL::ComPtr<IDXCoreAdapter> gpuDevice;
+					hr = gpuList->GetAdapter(i, gpuDevice.ReleaseAndGetAddressOf());
+					if (FAILED(hr))
+						continue;
+					bool isHardware = false;
+					gpuDevice->GetProperty(DXCoreAdapterProperty::IsHardware, sizeof(isHardware), &isHardware);
+					if (!isHardware)
+						continue;
+					LUID gpuLuid;
+					gpuDevice->GetProperty(DXCoreAdapterProperty::InstanceLuid, sizeof(LUID), &gpuLuid);
+					gpuDeviceList.insert(std::make_pair(gpuLuid, gpuDevice));
+				}
 			}
 
-			std::uint32_t gpuCount = gpuList->GetAdapterCount();
-			if (gpuIndex > 0 && gpuIndex >= gpuCount)
+			if (gpuIndex > 0 && gpuIndex >= gpuDeviceList.size())
 			{
 				logger::error("Invalid GPU Index. so use main GPU for compute");
 				return false;
 			}
 
-			Microsoft::WRL::ComPtr<IDXCoreAdapter> gpuDevice;
+			bool foundGPUDevice = false;
 			std::uint32_t hardwareGPUIndex = 1;
-			for (std::uint32_t i = 0; i < gpuCount; i++)
+			for (auto& [luid, gpuDevice] : gpuDeviceList)
 			{
-				hr = gpuList->GetAdapter(i, gpuDevice.ReleaseAndGetAddressOf());
-				if (FAILED(hr))
-				{
-					logger::warn("Unable to get GPU device({})", i);
-					continue;
-				}
-				bool isHardware = false;
-				gpuDevice->GetProperty(DXCoreAdapterProperty::IsHardware, sizeof(isHardware), &isHardware);
-				if (!isHardware)
-				{
-					logger::warn("Not found hardware GPU({})", i);
-					continue;
-				}
-
 				char description[128] = {};
 				gpuDevice->GetProperty(DXCoreAdapterProperty::DriverDescription, sizeof(description), description);
 
-				LUID gpuLuid;
-				gpuDevice->GetProperty(DXCoreAdapterProperty::InstanceLuid, sizeof(LUID), &gpuLuid);
-				if (gpuLuid.HighPart == mainLuid.HighPart && gpuLuid.LowPart == mainLuid.LowPart)
+				if (mainLuid.HighPart == luid.HighPart && mainLuid.LowPart == luid.LowPart)
 				{
 					logger::warn("Found a hardware GPU device : {}({}). but the main GPU device already being used for Skyrim renderer", description, 0);
 					continue;
@@ -507,58 +521,53 @@ namespace Mus {
 				}
 				logger::info("Found a hardware GPU device : {}({})", description, hardwareGPUIndex);
 
-				gpuIndex = i;
+				Microsoft::WRL::ComPtr<IDXGIFactory4> dxgiFactory;
+				hr = CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory));
+				if (FAILED(hr)) {
+					logger::error("Failed to create DXGIFactory4 : {}", hr);
+					hardwareGPUIndex++;
+					continue;
+				}
+
+				Microsoft::WRL::ComPtr<IDXGIAdapter> gpu;
+				hr = dxgiFactory->EnumAdapterByLuid(luid, IID_PPV_ARGS(&gpu));
+				if (FAILED(hr)) {
+					logger::error("Failed to get DXGIAdapter with secondary GPU : {}", hr);
+					hardwareGPUIndex++;
+					continue;
+				}
+
+				D3D_FEATURE_LEVEL featureLevels[] = {
+					D3D_FEATURE_LEVEL_11_0
+				};
+				D3D_FEATURE_LEVEL featureLevelCreated;
+				hr = D3D11CreateDevice(
+					gpu.Get(),
+					D3D_DRIVER_TYPE_UNKNOWN,
+					nullptr,
+					D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+					featureLevels,
+					ARRAYSIZE(featureLevels),
+					D3D11_SDK_VERSION,
+					secondDevice_.ReleaseAndGetAddressOf(),
+					&featureLevelCreated,
+					secondContext_.ReleaseAndGetAddressOf()
+				);
+				if (FAILED(hr)) {
+					logger::error("The GPU device ({}) does not support DirectX 11: {}", description, hr);
+					hardwareGPUIndex++;
+					continue;
+				}
+
+				foundGPUDevice = true;
+				logger::info("Create D3D11 device and context with secondary GPU : {}", description);
 				break;
 			}
-			if (gpuIndex < 0)
+			if (!foundGPUDevice)
 			{
 				logger::error("There is no secondary GPU device. so use main GPU for compute");
 				return false;
 			}
-
-			char description[128] = {};
-			gpuDevice->GetProperty(DXCoreAdapterProperty::DriverDescription, sizeof(description), description);
-			logger::info("Selected secondary GPU for compute : {}", description);
-
-			LUID gpuLuid;
-			gpuDevice->GetProperty(DXCoreAdapterProperty::InstanceLuid, sizeof(gpuLuid), &gpuLuid);
-
-			Microsoft::WRL::ComPtr<IDXGIFactory4> dxgiFactory;
-			hr = CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory));
-			if (FAILED(hr)) {
-				logger::error("Failed to create DXGIFactory4 : {}", hr);
-				return false;
-			}
-
-			Microsoft::WRL::ComPtr<IDXGIAdapter> gpu;
-			hr = dxgiFactory->EnumAdapterByLuid(gpuLuid, IID_PPV_ARGS(&gpu));
-			if (FAILED(hr)) {
-				logger::error("Failed to get DXGIAdapter with secondary GPU : {}", hr);
-				return false;
-			}
-
-			D3D_FEATURE_LEVEL featureLevels[] = {
-				D3D_FEATURE_LEVEL_11_0
-			};
-			D3D_FEATURE_LEVEL featureLevelCreated;
-			hr = D3D11CreateDevice(
-				gpu.Get(),
-				D3D_DRIVER_TYPE_UNKNOWN,
-				nullptr,
-				D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-				featureLevels,
-				ARRAYSIZE(featureLevels),
-				D3D11_SDK_VERSION,
-				secondDevice_.ReleaseAndGetAddressOf(),
-				&featureLevelCreated,
-				secondContext_.ReleaseAndGetAddressOf()
-			);
-			if (FAILED(hr)) {
-				logger::error("The GPU device ({}) does not support DirectX 11: {}", description, hr);
-				return false;
-			}
-
-			logger::info("Create D3D11 device and context with secondary GPU : {}", description);
 			return true;
 		}
 		bool ShaderManager::CreateDeviceContextWithSecondGPU()
@@ -841,10 +850,20 @@ namespace Mus {
 				return false;
 			if (!stringStartsWith(filePath, "Textures"))
 				filePath = "Textures\\" + filePath;
-			if (!stringStartsWith(filePath, "Data"))
-				filePath = "Data\\" + filePath;
+			filePath = stringRemoveStarts(filePath, "Data\\");
+
+			RE::BSResourceNiBinaryStream file(filePath);
+			if (!file.good())
+				return false;
+
+			RE::BSResourceNiBinaryStream::BufferInfo bufferInfo;
+			file.get_info(bufferInfo);
+
+			std::vector<std::uint8_t> buffer(bufferInfo.totalSize);
+			Read(&file, buffer.data(), bufferInfo.totalSize);
+
 			DirectX::ScratchImage image;
-			HRESULT hr = LoadFromDDSFile(string2wstring(filePath).c_str(), DirectX::DDS_FLAGS::DDS_FLAGS_NONE, nullptr, image);
+			HRESULT hr = LoadFromDDSMemory(buffer.data(), buffer.size(), DirectX::DDS_FLAGS::DDS_FLAGS_NONE, nullptr, image);
 			if (FAILED(hr)) {
 				logger::error("Failed to get texture from {} file", filePath);
 				return false;

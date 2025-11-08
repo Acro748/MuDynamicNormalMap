@@ -5,9 +5,10 @@ namespace Mus {
     std::unique_ptr<ThreadPool_ParallelModule> memoryManageThreads;
     std::unique_ptr<ThreadPool_ParallelModule> updateThreads;
     std::unique_ptr<ThreadPool_ParallelModule> processingThreads;
+    std::unique_ptr<ThreadPool_ParallelModule> backGroundHasherThreads;
 
-    ThreadPool_ParallelModule::ThreadPool_ParallelModule(std::uint32_t threadSize)
-        : stop(false)
+    ThreadPool_ParallelModule::ThreadPool_ParallelModule(std::uint32_t threadSize, std::uint64_t a_coreMask)
+        : coreMask(a_coreMask), stop(false)
     {
         std::uint32_t coreCount = std::max(1u, threadSize);
         for (std::uint32_t i = 0; i < coreCount; i++) {
@@ -24,6 +25,8 @@ namespace Mus {
 
     void ThreadPool_ParallelModule::workerLoop() {
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+        if (coreMask != 0)
+            SetThreadAffinityMask(GetCurrentThread(), coreMask);
         while (true) {
             std::function<void()> task;
             {
@@ -42,8 +45,9 @@ namespace Mus {
 
     std::unique_ptr<ThreadPool_GPUTaskModule> gpuTask;
 
-    ThreadPool_GPUTaskModule::ThreadPool_GPUTaskModule(std::uint32_t a_threadSize, std::clock_t a_taskQTick, bool a_directTaskQ, bool a_waitPreTask)
-        : stop(false), taskQTick(a_taskQTick)
+    ThreadPool_GPUTaskModule::ThreadPool_GPUTaskModule(std::uint32_t a_threadSize, std::uint64_t a_coreMask, std::clock_t a_taskQTick, bool a_directTaskQ, bool a_waitPreTask)
+        : coreMask(a_coreMask)
+        , stop(false), taskQTick(a_taskQTick)
         , directTaskQ(a_directTaskQ)
 		, waitPreTask(a_waitPreTask)
         , runTask(true), running(false)
@@ -66,6 +70,8 @@ namespace Mus {
 
     void ThreadPool_GPUTaskModule::workerLoop(std::uint32_t threadNum) {
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+        if (coreMask != 0)
+            SetThreadAffinityMask(GetCurrentThread(), coreMask);
         while (true) {
             std::function<void()> task;
             {
