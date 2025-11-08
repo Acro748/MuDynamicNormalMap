@@ -180,6 +180,21 @@ namespace {
 
         Mus::TaskManager::GetSingleton().Init();
         Mus::ObjectNormalMapUpdater::GetSingleton().Init();
+
+        switch (Mus::GetSIMDType()) {
+        /*case Mus::SIMDType::avx2:
+            ispc::bc7e_avx2_compress_block_init();
+            break;*/
+        case Mus::SIMDType::avx:
+            ispc::bc7e_avx_compress_block_init();
+            break;
+        case Mus::SIMDType::sse4:
+            ispc::bc7e_sse4_compress_block_init();
+            break;
+        case Mus::SIMDType::sse2:
+            ispc::bc7e_sse2_compress_block_init();
+            break;
+        }
     }
 
     void kNewGameFunction()

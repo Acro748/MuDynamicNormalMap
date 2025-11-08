@@ -13,7 +13,7 @@ namespace Mus {
 			return instance;
 		}
 
-		void Init();
+		bool Init();
 		bool CreateGeometryResourceData(RE::FormID a_actorID, GeometryDataPtr a_data);
 
 		void ClearGeometryResourceData();

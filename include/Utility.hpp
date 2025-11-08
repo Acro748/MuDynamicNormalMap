@@ -888,4 +888,48 @@ namespace Mus {
                      desc.Texture2D.MostDetailedMip, desc.Texture2D.MipLevels,
                      desc.Texture2DArray.FirstArraySlice, desc.Texture2DArray.ArraySize);
     }
+
+    inline std::uint32_t Read(RE::BSResourceNiBinaryStream* stream, void* dst, std::uint32_t len) {
+        using func_t = decltype(&Read);
+        REL::VariantID offset(69647, 71027, 0x00CBCBE0);
+        REL::Relocation<func_t> func{ offset };
+        return func(stream, dst, len);
+    }
+
+    enum SIMDType {
+        noSIMD,
+        sse2,
+        sse4,
+        avx,
+        avx2
+    };
+    inline SIMDType GetSIMDType() {
+        static SIMDType SIMDType_ = SIMDType::noSIMD;
+        if (SIMDType_ != SIMDType::noSIMD)
+            return SIMDType_;
+
+        int info[4] = {};
+
+        //AVX2 is not fast enough, so ignore it
+        /*__cpuid(info, 0);
+        int nIds = info[0];
+        if (nIds >= 7) 
+        {
+            __cpuidex(info, 7, 0);
+            if (info[1] & (1 << 5))
+                SIMDType_ = SIMDType::avx2;
+        }*/
+        if(SIMDType_ == SIMDType::noSIMD)
+        {   
+            __cpuid(info, 1);
+            if ((info[2] & (1 << 28)) != 0)
+                SIMDType_ = SIMDType::avx;
+            else if ((info[2] & (1 << 19)) != 0)
+                SIMDType_ = SIMDType::sse4;
+            else
+                SIMDType_ = SIMDType::sse2;
+        }
+        logger::info("Set SIMD type : {}", magic_enum::enum_name(SIMDType_).data());
+        return SIMDType_;
+    }
 }

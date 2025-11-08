@@ -202,6 +202,9 @@ namespace Mus {
         [[nodiscard]] inline auto GetTextureCompress() const noexcept {
             return TextureCompress;
         }
+        [[nodiscard]] inline auto GetTextureCompressQuality() const noexcept {
+            return TextureCompressQuality;
+        }
         [[nodiscard]] inline auto GetDiskCache() const noexcept {
             return DiskCache;
         }
@@ -304,6 +307,7 @@ namespace Mus {
         std::uint8_t AutoTaskQ = AutoTaskQList::Disable;
         std::clock_t TaskQTickMS = 100;
         std::int8_t TextureCompress = 0; //-1 auto compress, 0 no compress, 1 cpu bc7, 2 gpu bc7
+        std::uint8_t TextureCompressQuality = 1;
         bool DiskCache = true;
         std::string DiskCacheFolder = "Data\\SKSE\\Plugins\\MuDynamicNormalMap\\DiskCache";
         std::uint32_t DiskCacheLimitMB = 500;
@@ -315,7 +319,6 @@ namespace Mus {
         bool RealtimeDetectOnBackGround = false;
         float DetectDistance = 512.0f * 512.0f;
         std::clock_t DetectTickMS = 1000; //1sec
-
 
     public:
         inline std::string getCurrentSettingValue(std::string s)

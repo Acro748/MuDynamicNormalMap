@@ -67,8 +67,6 @@ namespace Mus {
 
 		std::atomic<bool> isDetecting = false;
 
-		std::unique_ptr<ThreadPool_ParallelModule> backGroundHasher = nullptr;
-
 		std::shared_mutex blockActorsLock;
 		concurrency::concurrent_unordered_map<RE::FormID, bool> blockActors;
 		inline void SetBlocked(RE::FormID id, bool blocked) {
