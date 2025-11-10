@@ -252,7 +252,7 @@ namespace Mus {
 		for (auto& update : updateSet_) {
 			const auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
 				return geosInfo.geometry == update.first;
-											});
+			});
 			if (found == a_data->geometries.end())
 			{
 				continue;
@@ -540,27 +540,22 @@ namespace Mus {
 			//init dst texture
 			{
 				std::vector<std::future<void>> processes;
-				const std::size_t subX = std::max((std::size_t)1, std::min(std::size_t(width), processingThreads->GetThreads() * 4));
-				const std::size_t subY = std::max((std::size_t)1, std::min(std::size_t(height), processingThreads->GetThreads() * 4));
-				const std::size_t unitX = (std::size_t(width) + subX - 1) / subX;
-				const std::size_t unitY = (std::size_t(height) + subY - 1) / subY;
-				for (std::size_t px = 0; px < subX; px++) {
-					for (std::size_t py = 0; py < subY; py++) {
-						std::size_t beginX = px * unitX;
-						std::size_t endX = std::min(beginX + unitX, std::size_t(width));
-						std::size_t beginY = py * unitY;
-						std::size_t endY = std::min(beginY + unitY, std::size_t(height));
-						processes.push_back(processingThreads->submitAsync([&, beginX, endX, beginY, endY]() {
-							for (UINT y = beginY; y < endY; y++) {
-								std::uint8_t* rowData = dstData + y * dstMappedResource.RowPitch;
-								for (UINT x = beginX; x < endX; x++)
-								{
-									std::uint32_t* pixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
-									*pixel = emptyColor.GetReverse();
-								}
+				const std::uint32_t threads = processingThreads->GetThreads();
+				const std::uint32_t subY = std::min(height, std::min(width, threads) * std::min(height, threads));
+				const std::uint32_t unitY = (height + subY - 1) / subY;
+				for (std::uint32_t sy = 0; sy < subY; sy++) {
+					std::uint32_t beginY = sy * unitY;
+					std::uint32_t endY = std::min(beginY + unitY, height);
+					processes.push_back(processingThreads->submitAsync([&, beginY, endY]() {
+						for (UINT y = beginY; y < endY; y++) {
+							std::uint8_t* rowData = dstData + y * dstMappedResource.RowPitch;
+							for (UINT x = 0; x < width; x++)
+							{
+								std::uint32_t* pixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
+								*pixel = emptyColor.GetReverse();
 							}
-						}));
-					}
+						}
+					}));
 				}
 				for (auto& process : processes)
 				{
@@ -1406,39 +1401,38 @@ namespace Mus {
 		}
 
 		const std::uint32_t subResolution = 4096 / (1u << divideTaskQ);
-		const std::uint32_t subXSize = std::max(1u, dstWidth / subResolution);
-		const std::uint32_t subYSize = std::max(1u, dstHeight / subResolution);
+		const std::uint32_t subY = std::min(dstHeight, 
+											   std::max(1u, dstWidth / subResolution) 
+											   * std::max(1u, dstHeight / subResolution));
+		const UINT unitY = (dstHeight + subY - 1) / subY;
 		std::vector<std::future<void>> gpuTasks;
-		for (std::uint32_t subY = 0; subY < subYSize; subY++)
+		for (std::uint32_t sy = 0; sy < subY; sy++)
 		{
-			for (std::uint32_t subX = 0; subX < subXSize; subX++)
-			{
-				D3D11_BOX box = {};
-				box.left = subX * subResolution;
-				box.right = std::min(dstWidth, box.left + subResolution);
-				box.top = subY * subResolution;
-				box.bottom = std::min(dstHeight, box.top + subResolution);
-				box.front = 0;
-				box.back = 1;
+			D3D11_BOX box = {};
+			box.left = 0;
+			box.right = dstWidth;
+			box.top = sy * unitY;
+			box.bottom = std::min(dstHeight, box.top + unitY);
+			box.front = 0;
+			box.back = 1;
 
-				gpuTasks.push_back(gpuTask->submitAsync([&, box, dstWidth, dstHeight, subX, subY]() {
-					if (Config::GetSingleton().GetTextureCopyTime())
-						GPUPerformanceLog(device, context, std::string("CopySubresourceRegion") + "::" + std::to_string(dstWidth) + "::" + std::to_string(dstHeight)
-										  + "::" + std::to_string(subX) + "|" + std::to_string(subY), false, false);
+			gpuTasks.push_back(gpuTask->submitAsync([&, box, dstWidth, dstHeight, sy]() {
+				if (Config::GetSingleton().GetTextureCopyTime())
+					GPUPerformanceLog(device, context, std::string("CopySubresourceRegion") + "::" + std::to_string(dstWidth) + "::" + std::to_string(dstHeight)
+									  + "::" + std::to_string(sy), false, false);
 
-					sl.Lock();
-					context->CopySubresourceRegion(
-						dstTexture, dstMipMapLevel,
-						box.left, box.top, 0,
-						srcTexture, srcMipMapLevel,
-						&box);
-					sl.Unlock();
+				sl.Lock();
+				context->CopySubresourceRegion(
+					dstTexture, dstMipMapLevel,
+					box.left, box.top, 0,
+					srcTexture, srcMipMapLevel,
+					&box);
+				sl.Unlock();
 
-					if (Config::GetSingleton().GetTextureCopyTime())
-						GPUPerformanceLog(device, context, std::string("CopySubresourceRegion") + "::" + std::to_string(dstWidth) + "::" + std::to_string(dstHeight)
-										  + "::" + std::to_string(subX) + "|" + std::to_string(subY), true, false);
-				}));
-			}
+				if (Config::GetSingleton().GetTextureCopyTime())
+					GPUPerformanceLog(device, context, std::string("CopySubresourceRegion") + "::" + std::to_string(dstWidth) + "::" + std::to_string(dstHeight)
+									  + "::" + std::to_string(sy), true, false);
+			}));
 		}
 		for (auto& task : gpuTasks) {
 			task.get();
@@ -1492,8 +1486,10 @@ namespace Mus {
 		}
 
 		const std::uint32_t subResolution = 4096 / (1u << divideTaskQ);
-		const std::uint32_t subXSize = std::max(1u, width / subResolution);
-		const std::uint32_t subYSize = std::max(1u, height / subResolution);
+		const std::uint32_t subY = std::min(height,
+											   std::max(1u, width / subResolution) 
+											   * std::max(1u, height / subResolution));
+		const UINT unitY = (height + subY - 1) / subY;
 
 		UINT blockWidth = 1;
 		UINT blockHeight = 1;
@@ -1518,41 +1514,38 @@ namespace Mus {
 		}
 
 		std::vector<std::future<void>> gpuTasks;
-		for (std::uint32_t subY = 0; subY < subYSize; subY++)
+		for (std::uint32_t sy = 0; sy < subY; sy++)
 		{
-			for (std::uint32_t subX = 0; subX < subXSize; subX++)
-			{
-				D3D11_BOX box = {};
-				box.left = subX * subResolution;
-				box.right = std::min(width, box.left + subResolution);
-				box.top = subY * subResolution;
-				box.bottom = std::min(height, box.top + subResolution);
-				box.front = 0;
-				box.back = 1;
+			D3D11_BOX box = {};
+			box.left = 0;
+			box.right = width;
+			box.top = sy * unitY;
+			box.bottom = std::min(height, box.top + unitY);
+			box.front = 0;
+			box.back = 1;
 
-				const UINT blockX = box.left / blockWidth;
-				const UINT blockY = box.top / blockHeight;
-				const std::uint8_t* bufferStart = buffer.data() + (blockY * rowPitch) + (blockX * blockSize);
+			const UINT blockX = box.left / blockWidth;
+			const UINT blockY = box.top / blockHeight;
+			const std::uint8_t* bufferStart = buffer.data() + (blockY * rowPitch) + (blockX * blockSize);
 
-				gpuTasks.push_back(gpuTask->submitAsync([&, mipLevel, box, bufferStart, subX, subY]() {
-					if (Config::GetSingleton().GetTextureCopyTime())
-						GPUPerformanceLog(device, context, std::string("CopySubresourceFromBuffer") + "::" + std::to_string(width) + "::" + std::to_string(height)
-										  + "::" + std::to_string(subX) + "|" + std::to_string(subY), false, false);
-					sl.Lock();
-					context->UpdateSubresource(
-						dstTexture,
-						mipLevel,
-						&box,
-						bufferStart,
-						rowPitch,
-						0);
-					sl.Unlock();
+			gpuTasks.push_back(gpuTask->submitAsync([&, mipLevel, box, bufferStart, sy]() {
+				if (Config::GetSingleton().GetTextureCopyTime())
+					GPUPerformanceLog(device, context, std::string("CopySubresourceFromBuffer") + "::" + std::to_string(width) + "::" + std::to_string(height)
+									  + "::" + std::to_string(sy), false, false);
+				sl.Lock();
+				context->UpdateSubresource(
+					dstTexture,
+					mipLevel,
+					&box,
+					bufferStart,
+					rowPitch,
+					0);
+				sl.Unlock();
 
-					if (Config::GetSingleton().GetTextureCopyTime())
-						GPUPerformanceLog(device, context, std::string("CopySubresourceFromBuffer") + "::" + std::to_string(width) + "::" + std::to_string(height)
-										  + "::" + std::to_string(subX) + "|" + std::to_string(subY), true, false);
-				}));
-			}
+				if (Config::GetSingleton().GetTextureCopyTime())
+					GPUPerformanceLog(device, context, std::string("CopySubresourceFromBuffer") + "::" + std::to_string(width) + "::" + std::to_string(height)
+									  + "::" + std::to_string(sy), true, false);
+			}));
 		}
 		for (auto& task : gpuTasks) {
 			task.get();
@@ -1848,37 +1841,31 @@ namespace Mus {
 		std::uint8_t* dst_pData = reinterpret_cast<std::uint8_t*>(dstMappedResource.pData);
 		std::uint8_t* src_pData = reinterpret_cast<std::uint8_t*>(srcMappedResource.pData);
 		std::vector<std::future<void>> processes;
-		const std::size_t subX = std::max((std::size_t)1, std::min(std::size_t(width), processingThreads->GetThreads() * 4));
-		const std::size_t subY = std::max((std::size_t)1, std::min(std::size_t(height), processingThreads->GetThreads() * 4));
-		const std::size_t unitX = (std::size_t(width) + subX - 1) / subX;
-		const std::size_t unitY = (std::size_t(height) + subY - 1) / subY;
-		for (std::size_t px = 0; px < subX; px++) {
-			for (std::size_t py = 0; py < subY; py++) {
-				std::size_t beginX = px * unitX;
-				std::size_t endX = std::min(beginX + unitX, std::size_t(width));
-				std::size_t beginY = py * unitY;
-				std::size_t endY = std::min(beginY + unitY, std::size_t(height));
-				processes.push_back(processingThreads->submitAsync([&, beginX, endX, beginY, endY]() {
-					for (UINT y = beginY; y < endY; y++) {
+		const std::uint32_t threads = processingThreads->GetThreads() * 4;
+		const std::uint32_t subY = std::min(height, std::min(width, threads) * std::min(height, threads));
+		const std::uint32_t unitY = (height + subY - 1) / subY;
+		for (std::uint32_t sy = 0; sy < subY; sy++) {
+			std::uint32_t beginY = sy * unitY;
+			std::uint32_t endY = beginY + unitY;
+			processes.push_back(processingThreads->submitAsync([&, beginY, endY]() {
+				for (UINT y = beginY; y < endY; y++) {
+					for (UINT x = 0; x < width; x++) {
 						std::uint8_t* dstRowData = dst_pData + y * dstMappedResource.RowPitch;
 						std::uint8_t* srcRowData = src_pData + y * srcMappedResource.RowPitch;
-						for (UINT x = beginX; x < endX; x++)
-						{
-							std::uint32_t* dstPixel = reinterpret_cast<uint32_t*>(dstRowData + x * 4);
-							std::uint32_t* srcPixel = reinterpret_cast<uint32_t*>(srcRowData + x * 4);
-							RGBA dstPixelColor, srcPixelColor;
-							dstPixelColor.SetReverse(*dstPixel);
-							srcPixelColor.SetReverse(*srcPixel);
-							if (dstPixelColor.a < 1.0f && srcPixelColor.a < 1.0f)
-								continue;
+						std::uint32_t* dstPixel = reinterpret_cast<uint32_t*>(dstRowData + x * 4);
+						std::uint32_t* srcPixel = reinterpret_cast<uint32_t*>(srcRowData + x * 4);
+						RGBA dstPixelColor, srcPixelColor;
+						dstPixelColor.SetReverse(*dstPixel);
+						srcPixelColor.SetReverse(*srcPixel);
+						if (dstPixelColor.a < 1.0f && srcPixelColor.a < 1.0f)
+							continue;
 
-							RGBA dstColor = RGBA::lerp(srcPixelColor, dstPixelColor, dstPixelColor.a);
-							dstColor.a = 1.0f;
-							*dstPixel = dstColor.GetReverse();
-						}
+						RGBA dstColor = RGBA::lerp(srcPixelColor, dstPixelColor, dstPixelColor.a);
+						dstColor.a = 1.0f;
+						*dstPixel = dstColor.GetReverse();
 					}
-				}));
-			}
+				}
+			}));
 		}
 		for (auto& process : processes)
 		{
@@ -2021,49 +2008,46 @@ namespace Mus {
 		else
 		{
 			const std::uint32_t subResolution = std::max(1u, 4096u / (1u << divideTaskQ));
-			const DirectX::XMUINT2 dispatch = { (std::min(width, subResolution) + 8 - 1) / 8, (std::min(height, subResolution) + 8 - 1) / 8 };
-			const std::uint32_t subXSize = std::max(1u, width / subResolution);
-			const std::uint32_t subYSize = std::max(1u, height / subResolution);
+			const std::uint32_t subY = std::min(height, std::max(1u, width / subResolution) * std::max(1u, height / subResolution));
+			const std::uint32_t unitY = (height + subY - 1) / subY;
+			const DirectX::XMUINT2 dispatch = { (width + 8 - 1) / 8, (std::min(height, unitY) + 8 - 1) / 8 };
 
 			std::vector<std::future<void>> gpuTasks;
-			for (std::uint32_t subY = 0; subY < subYSize; subY++)
+			for (std::uint32_t sy = 0; sy < subY; sy++)
 			{
-				for (std::uint32_t subX = 0; subX < subXSize; subX++)
-				{
-					auto cbData_ = cbData;
-					cbData_.widthStart = subResolution * subX;
-					cbData_.heightStart = subResolution * subY;
-					D3D11_SUBRESOURCE_DATA cbInitData = {};
-					cbInitData.pSysMem = &cbData_;
-					Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
-					hr = device->CreateBuffer(&cbDesc, &cbInitData, &constBuffer);
-					if (FAILED(hr)) {
-						logger::error("{} : Failed to create const buffer ({})", _func_, hr);
-						return false;
-					}
-
-					gpuTasks.push_back(gpuTask->submitAsync([&, constBuffer, subX, subY]() {
-						if (Config::GetSingleton().GetMergeTime())
-							GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
-											  + "::" + std::to_string(subX) + "|" + std::to_string(subY), false, false);
-
-						ShaderBackup sb;
-						sl.Lock();
-						sb.Backup(context);
-						context->CSSetShader(shader.Get(), nullptr, 0);
-						context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
-						context->CSSetShaderResources(0, 1, &srcSrv);
-						context->CSSetUnorderedAccessViews(0, 1, resourceData->mergeTextureData.uav.GetAddressOf(), nullptr);
-						context->Dispatch(dispatch.x, dispatch.y, 1);
-						sb.Revert(context);
-						sl.Unlock();
-
-						if (Config::GetSingleton().GetMergeTime())
-							GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
-											  + "::" + std::to_string(subX) + "|" + std::to_string(subY), true, false);
-					}));
-					resourceData->mergeTextureData.constBuffers.push_back(constBuffer);
+				auto cbData_ = cbData;
+				cbData_.widthStart = 0;
+				cbData_.heightStart = unitY * sy;
+				D3D11_SUBRESOURCE_DATA cbInitData = {};
+				cbInitData.pSysMem = &cbData_;
+				Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
+				hr = device->CreateBuffer(&cbDesc, &cbInitData, &constBuffer);
+				if (FAILED(hr)) {
+					logger::error("{} : Failed to create const buffer ({})", _func_, hr);
+					return false;
 				}
+
+				gpuTasks.push_back(gpuTask->submitAsync([&, constBuffer, sy]() {
+					if (Config::GetSingleton().GetMergeTime())
+						GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
+										  + "::" + std::to_string(sy), false, false);
+
+					ShaderBackup sb;
+					sl.Lock();
+					sb.Backup(context);
+					context->CSSetShader(shader.Get(), nullptr, 0);
+					context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
+					context->CSSetShaderResources(0, 1, &srcSrv);
+					context->CSSetUnorderedAccessViews(0, 1, resourceData->mergeTextureData.uav.GetAddressOf(), nullptr);
+					context->Dispatch(dispatch.x, dispatch.y, 1);
+					sb.Revert(context);
+					sl.Unlock();
+
+					if (Config::GetSingleton().GetMergeTime())
+						GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
+										  + "::" + std::to_string(sy), true, false);
+				}));
+				resourceData->mergeTextureData.constBuffers.push_back(constBuffer);
 			}
 			for (auto& task : gpuTasks)
 			{
@@ -2120,60 +2104,55 @@ namespace Mus {
 		for (std::uint8_t i = 0; i < 2; i++)
 		{
 			std::vector<std::future<void>> processes;
-			const std::size_t subX = std::max((std::size_t)1, std::min(std::size_t(width), processingThreads->GetThreads() * 16));
-			const std::size_t subY = std::max((std::size_t)1, std::min(std::size_t(height), processingThreads->GetThreads() * 16));
-			const std::size_t unitX = (std::size_t(width) + subX - 1) / subX;
-			const std::size_t unitY = (std::size_t(height) + subY - 1) / subY;
+			const std::uint32_t threads = processingThreads->GetThreads() * 16;
+			const std::uint32_t subY = std::min(height, std::min(width, threads) * std::min(height, threads));
+			const std::uint32_t unitY = (height + subY - 1) / subY;
 			std::uint8_t* pData = reinterpret_cast<std::uint8_t*>(mappedResource[0].pData);
 			struct ColorMap {
 				std::uint32_t* src = nullptr;
 				RGBA resultsColor;
 			};
 			concurrency::concurrent_vector<ColorMap> resultsColorMap;
-			for (std::size_t px = 0; px < subX; px++) {
-				for (std::size_t py = 0; py < subY; py++) {
-					const std::size_t beginX = px * unitX;
-					const std::size_t endX = std::min(beginX + unitX, std::size_t(width));
-					const std::size_t beginY = py * unitY;
-					const std::size_t endY = std::min(beginY + unitY, std::size_t(height));
-					processes.push_back(processingThreads->submitAsync([&, beginX, endX, beginY, endY]() {
-						for (UINT y = beginY; y < endY; y++) {
-							std::uint8_t* rowData = pData + y * mappedResource[0].RowPitch;
-							for (UINT x = beginX; x < endX; x++)
+			for (std::uint32_t sy = 0; sy < subY; sy++) {
+				const std::uint32_t beginY = sy * unitY;
+				const std::uint32_t endY = std::min(beginY + unitY, height);
+				processes.push_back(processingThreads->submitAsync([&, beginY, endY]() {
+					for (UINT y = beginY; y < endY; y++) {
+						std::uint8_t* rowData = pData + y * mappedResource[0].RowPitch;
+						for (UINT x = 0; x < width; x++)
+						{
+							std::uint32_t* pixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
+							RGBA color;
+							color.SetReverse(*pixel);
+							if (color.A() == 0xFF)
+								continue;
+
+							RGBA averageColor(0.0f, 0.0f, 0.0f, 0.0f);
+							std::uint8_t validCount = 0;
+							for (std::uint8_t i = 0; i < 8; i++)
 							{
-								std::uint32_t* pixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
-								RGBA color;
-								color.SetReverse(*pixel);
-								if (color.A() == 0xFF)
+								DirectX::XMINT2 nearCoord = { (INT)x + offsets[i].x, (INT)y + offsets[i].y };
+								if (nearCoord.x < 0 || nearCoord.y < 0 ||
+									nearCoord.x >= width || nearCoord.y >= height)
 									continue;
 
-								RGBA averageColor(0.0f, 0.0f, 0.0f, 0.0f);
-								std::uint8_t validCount = 0;
-								for (std::uint8_t i = 0; i < 8; i++)
+								std::uint8_t* nearRowData = pData + nearCoord.y * mappedResource[0].RowPitch;
+								std::uint32_t* nearPixel = reinterpret_cast<uint32_t*>(nearRowData + nearCoord.x * 4);
+								RGBA nearColor;
+								nearColor.SetReverse(*nearPixel);
+								if (nearColor.A() == 0xFF)
 								{
-									DirectX::XMINT2 nearCoord = { (INT)x + offsets[i].x, (INT)y + offsets[i].y };
-									if (nearCoord.x < 0 || nearCoord.y < 0 ||
-										nearCoord.x >= width || nearCoord.y >= height)
-										continue;
-
-									std::uint8_t* nearRowData = pData + nearCoord.y * mappedResource[0].RowPitch;
-									std::uint32_t* nearPixel = reinterpret_cast<uint32_t*>(nearRowData + nearCoord.x * 4);
-									RGBA nearColor;
-									nearColor.SetReverse(*nearPixel);
-									if (nearColor.A() == 0xFF)
-									{
-										averageColor += nearColor;
-										validCount++;
-									}
+									averageColor += nearColor;
+									validCount++;
 								}
-								if (validCount == 0)
-									continue;
-								RGBA resultsColor = averageColor / validCount;
-								resultsColorMap.push_back(ColorMap{ pixel, resultsColor });
 							}
+							if (validCount == 0)
+								continue;
+							RGBA resultsColor = averageColor / validCount;
+							resultsColorMap.push_back(ColorMap{ pixel, resultsColor });
 						}
-					}));
-				}
+					}
+				}));
 			}
 			for (auto& process : processes)
 			{
@@ -2216,79 +2195,74 @@ namespace Mus {
 			std::uint8_t* dst_pData = reinterpret_cast<std::uint8_t*>(mappedResource[mipLevel].pData);
 			std::uint8_t* src_pData = reinterpret_cast<std::uint8_t*>(mappedResource[srcMipLevel].pData);
 			std::vector<std::future<void>> processes;
-			const std::size_t subX = std::max((std::size_t)1, std::min(std::size_t(mipWidth), processingThreads->GetThreads() * 8));
-			const std::size_t subY = std::max((std::size_t)1, std::min(std::size_t(mipHeight), processingThreads->GetThreads() * 8));
-			const std::size_t unitX = (std::size_t(mipWidth) + subX - 1) / subX;
-			const std::size_t unitY = (std::size_t(mipHeight) + subY - 1) / subY;
-			for (std::size_t px = 0; px < subX; px++) {
-				for (std::size_t py = 0; py < subY; py++) {
-					std::size_t beginX = px * unitX;
-					std::size_t endX = std::min(beginX + unitX, std::size_t(mipWidth));
-					std::size_t beginY = py * unitY;
-					std::size_t endY = std::min(beginY + unitY, std::size_t(mipHeight));
-					processes.push_back(processingThreads->submitAsync([&, beginX, endX, beginY, endY]() {
-						for (UINT y = beginY; y < endY; y++) {
-							std::uint8_t* dstRowData = dst_pData + y * mappedResource[mipLevel].RowPitch;
-							for (UINT x = beginX; x < endX; x++)
+			const std::uint32_t threads = processingThreads->GetThreads() * 8;
+			const std::uint32_t subY = std::min(mipHeight, std::min(mipWidth, threads) * std::min(mipHeight, threads));
+			const UINT unitY = (height + subY - 1) / subY;
+			for (std::uint32_t sy = 0; sy < subY; sy++) {
+				std::uint32_t beginY = sy * unitY;
+				std::uint32_t endY = std::min(beginY + unitY, mipHeight);
+				processes.push_back(processingThreads->submitAsync([&, beginY, endY]() {
+					for (UINT y = beginY; y < endY; y++) {
+						std::uint8_t* dstRowData = dst_pData + y * mappedResource[mipLevel].RowPitch;
+						for (UINT x = 0; x < mipWidth; x++)
+						{
+							std::uint32_t* pixel = reinterpret_cast<uint32_t*>(dstRowData + x * 4);
+							RGBA averageColor(0.0f, 0.0f, 0.0f, 0.0f);
+							std::uint8_t validCount = 0;
+#pragma unroll(4)
+							for (std::uint8_t i = 0; i < 4; i++)
 							{
-								std::uint32_t* pixel = reinterpret_cast<uint32_t*>(dstRowData + x * 4);
-								RGBA averageColor(0.0f, 0.0f, 0.0f, 0.0f);
-								std::uint8_t validCount = 0;
-#pragma unroll(4)
-								for (std::uint8_t i = 0; i < 4; i++)
+								DirectX::XMUINT2 srcCoord = { x * 2 + sampleOffsets[i].x, y * 2 + sampleOffsets[i].y };
+								if (srcCoord.x >= srcMipWidth || srcCoord.y >= srcMipHeight)
+									continue;
+								std::uint8_t* srcRowData = src_pData + mappedResource[srcMipLevel].RowPitch;
+								std::uint32_t* srcPixel = reinterpret_cast<uint32_t*>(srcRowData + srcCoord.x * 4);
+								RGBA srcColor;
+								srcColor.SetReverse(*srcPixel);
+								if (srcColor.A() == 0xFF)
 								{
-									DirectX::XMUINT2 srcCoord = { x * 2 + sampleOffsets[i].x, y * 2 + sampleOffsets[i].y };
-									if (srcCoord.x >= srcMipWidth || srcCoord.y >= srcMipHeight)
-										continue;
-									std::uint8_t* srcRowData = src_pData + mappedResource[srcMipLevel].RowPitch;
-									std::uint32_t* srcPixel = reinterpret_cast<uint32_t*>(srcRowData + srcCoord.x * 4);
-									RGBA srcColor;
-									srcColor.SetReverse(*srcPixel);
-									if (srcColor.A() == 0xFF)
-									{
-										averageColor += srcColor;
-										validCount++;
-									}
+									averageColor += srcColor;
+									validCount++;
 								}
-								if (validCount == 0)
-								{
+							}
+							if (validCount == 0)
+							{
 #pragma unroll(8)
-									for (std::uint8_t i = 0; i < 8; i++)
-									{
-										DirectX::XMINT2 nearCoord = { (INT)x + offsets[i].x, (INT)y + offsets[i].y };
-										if (nearCoord.x < 0 || nearCoord.y < 0 ||
-											nearCoord.x >= mipWidth || nearCoord.y >= mipHeight)
-											continue;
+								for (std::uint8_t i = 0; i < 8; i++)
+								{
+									DirectX::XMINT2 nearCoord = { (INT)x + offsets[i].x, (INT)y + offsets[i].y };
+									if (nearCoord.x < 0 || nearCoord.y < 0 ||
+										nearCoord.x >= mipWidth || nearCoord.y >= mipHeight)
+										continue;
 #pragma unroll(4)
-										for (std::uint8_t j = 0; j < 4; j++)
+									for (std::uint8_t j = 0; j < 4; j++)
+									{
+										DirectX::XMUINT2 srcCoord = { nearCoord.x * 2 + sampleOffsets[j].x, nearCoord.y * 2 + sampleOffsets[j].y };
+										if (srcCoord.x >= srcMipWidth || srcCoord.y >= srcMipHeight)
+											continue;
+										std::uint8_t* srcRowData = src_pData + srcCoord.y * mappedResource[srcMipLevel].RowPitch;
+										std::uint32_t* srcPixel = reinterpret_cast<uint32_t*>(srcRowData + srcCoord.x * 4);
+										RGBA srcColor;
+										srcColor.SetReverse(*srcPixel);
+										if (srcColor.A() == 0xFF)
 										{
-											DirectX::XMUINT2 srcCoord = { nearCoord.x * 2 + sampleOffsets[j].x, nearCoord.y * 2 + sampleOffsets[j].y };
-											if (srcCoord.x >= srcMipWidth || srcCoord.y >= srcMipHeight)
-												continue;
-											std::uint8_t* srcRowData = src_pData + srcCoord.y * mappedResource[srcMipLevel].RowPitch;
-											std::uint32_t* srcPixel = reinterpret_cast<uint32_t*>(srcRowData + srcCoord.x * 4);
-											RGBA srcColor;
-											srcColor.SetReverse(*srcPixel);
-											if (srcColor.A() == 0xFF)
-											{
-												averageColor += srcColor;
-												validCount++;
-											}
+											averageColor += srcColor;
+											validCount++;
 										}
 									}
 								}
-								if (validCount == 0)
-								{
-									*pixel = emptyColor.GetReverse();
-									continue;
-								}
-								RGBA resultsColor = averageColor / validCount;
-								resultsColor.a = 1.0f;
-								*pixel = resultsColor.GetReverse();
 							}
+							if (validCount == 0)
+							{
+								*pixel = emptyColor.GetReverse();
+								continue;
+							}
+							RGBA resultsColor = averageColor / validCount;
+							resultsColor.a = 1.0f;
+							*pixel = resultsColor.GetReverse();
 						}
-					}));
-				}
+					}
+				}));
 			}
 			for (auto& process : processes)
 			{
@@ -2483,49 +2457,48 @@ namespace Mus {
 					else
 					{
 						const std::uint32_t subResolution = std::max(1u, 2048u / (1u << divideTaskQ));
-						const DirectX::XMUINT2 dispatch = { (std::min(mipWidth, subResolution) + 8 - 1) / 8, (std::min(mipHeight, subResolution) + 8 - 1) / 8 };
-						const std::uint32_t subXSize = std::max(1u, mipWidth / subResolution);
-						const std::uint32_t subYSize = std::max(1u, mipHeight / subResolution);
+						const std::uint32_t subY = std::min(mipHeight,
+														  std::max(1u, mipWidth / subResolution)
+														  * std::max(1u, mipHeight / subResolution));
+						const std::uint32_t unitY = (mipHeight + subY - 1) / subY;
+						const DirectX::XMUINT2 dispatch = { (mipWidth + 8 - 1) / 8, (std::min(mipHeight, unitY) + 8 - 1) / 8 };
 
 						std::vector<std::future<void>> gpuTasks;
-						for (std::uint32_t subY = 0; subY < subYSize; subY++)
+						for (std::uint32_t sy = 0; sy < subY; sy++)
 						{
-							for (std::uint32_t subX = 0; subX < subXSize; subX++)
-							{
-								auto cbData_ = cbData;
-								cbData_.widthStart = subResolution * subX;
-								cbData_.heightStart = subResolution * subY;
-								D3D11_SUBRESOURCE_DATA cbInitData = {};
-								cbInitData.pSysMem = &cbData_;
-								Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
-								hr = device->CreateBuffer(&cbDesc, &cbInitData, &constBuffer);
-								if (FAILED(hr)) {
-									logger::error("{} : Failed to create const buffer ({})", _func_, hr);
-									return false;
-								}
-								resourceData->generateMipsData.constBuffers.push_back(constBuffer);
-
-								gpuTasks.push_back(gpuTask->submitAsync([&, constBuffer, subX, subY, mipWidth, mipHeight, dispatch, srcSRV, dstUAV]() {
-									if (Config::GetSingleton().GetGenerateMipsTime())
-										GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(mipLevel)
-														  + "::" + std::to_string(mipWidth) + "|" + std::to_string(mipHeight) + "::" + std::to_string(subX) + "|" + std::to_string(subY)
-														  , false, false);
-									ShaderBackup sb;
-									sl.Lock();
-									sb.Backup(context);
-									context->CSSetShader(shader.Get(), nullptr, 0);
-									context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
-									context->CSSetShaderResources(0, 1, srcSRV.GetAddressOf());
-									context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
-									context->Dispatch(dispatch.x, dispatch.y, 1);
-									sb.Revert(context);
-									sl.Unlock();
-									if (Config::GetSingleton().GetGenerateMipsTime())
-										GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(mipLevel)
-														  + "::" + std::to_string(mipWidth) + "|" + std::to_string(mipHeight) + "::" + std::to_string(subX) + "|" + std::to_string(subY)
-														  , true, false);
-								}));
+							auto cbData_ = cbData;
+							cbData_.widthStart = 0;
+							cbData_.heightStart = unitY * sy;
+							D3D11_SUBRESOURCE_DATA cbInitData = {};
+							cbInitData.pSysMem = &cbData_;
+							Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
+							hr = device->CreateBuffer(&cbDesc, &cbInitData, &constBuffer);
+							if (FAILED(hr)) {
+								logger::error("{} : Failed to create const buffer ({})", _func_, hr);
+								return false;
 							}
+							resourceData->generateMipsData.constBuffers.push_back(constBuffer);
+
+							gpuTasks.push_back(gpuTask->submitAsync([&, constBuffer, sy, mipWidth, mipHeight, dispatch, srcSRV, dstUAV]() {
+								if (Config::GetSingleton().GetGenerateMipsTime())
+									GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(mipLevel)
+													  + "::" + std::to_string(mipWidth) + "|" + std::to_string(mipHeight) + "::" + std::to_string(sy)
+													  , false, false);
+								ShaderBackup sb;
+								sl.Lock();
+								sb.Backup(context);
+								context->CSSetShader(shader.Get(), nullptr, 0);
+								context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
+								context->CSSetShaderResources(0, 1, srcSRV.GetAddressOf());
+								context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
+								context->Dispatch(dispatch.x, dispatch.y, 1);
+								sb.Revert(context);
+								sl.Unlock();
+								if (Config::GetSingleton().GetGenerateMipsTime())
+									GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(mipLevel)
+													  + "::" + std::to_string(mipWidth) + "|" + std::to_string(mipHeight) + "::" + std::to_string(sy)
+													  , true, false);
+							}));
 						}
 						for (auto& task : gpuTasks)
 						{
@@ -2593,49 +2566,48 @@ namespace Mus {
 				else
 				{
 					const std::uint32_t subResolution = std::max(1u, 2048u / (1u << divideTaskQ));
-					const DirectX::XMUINT2 dispatch = { (std::min(mipWidth, subResolution) + 8 - 1) / 8, (std::min(mipHeight, subResolution) + 8 - 1) / 8 };
-					const std::uint32_t subXSize = std::max(1u, mipWidth / subResolution);
-					const std::uint32_t subYSize = std::max(1u, mipHeight / subResolution);
+					const std::uint32_t subY = std::min(mipHeight,
+														std::max(1u, mipWidth / subResolution)
+														* std::max(1u, mipHeight / subResolution));
+					const std::uint32_t unitY = (mipHeight + subY - 1) / subY;
+					const DirectX::XMUINT2 dispatch = { (mipWidth + 8 - 1) / 8, (std::min(mipHeight, unitY) + 8 - 1) / 8 };
 
 					std::vector<std::future<void>> gpuTasks;
-					for (std::uint32_t subY = 0; subY < subYSize; subY++)
+					for (std::uint32_t sy = 0; sy < subY; sy++)
 					{
-						for (std::uint32_t subX = 0; subX < subXSize; subX++)
-						{
-							auto cbData_ = cbData;
-							cbData_.widthStart = subResolution * subX;
-							cbData_.heightStart = subResolution * subY;
-							D3D11_SUBRESOURCE_DATA cbInitData = {};
-							cbInitData.pSysMem = &cbData_;
-							Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
-							hr = device->CreateBuffer(&cbDesc, &cbInitData, &constBuffer);
-							if (FAILED(hr)) {
-								logger::error("{} : Failed to create const buffer ({})", _func_, hr);
-								return false;
-							}
-							resourceData->generateMipsData.constBuffers.push_back(constBuffer);
-
-							gpuTasks.push_back(gpuTask->submitAsync([&, constBuffer, subX, subY, mipWidth, mipHeight, dispatch, srcUAV, dstUAV]() {
-								if (Config::GetSingleton().GetGenerateMipsTime())
-									GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(mipLevel)
-													  + "::" + std::to_string(mipWidth) + "|" + std::to_string(mipHeight) + "::" + std::to_string(subX) + "|" + std::to_string(subY)
-													  , false, false);
-								ShaderBackup sb;
-								sl.Lock();
-								sb.Backup(context);
-								context->CSSetShader(shader.Get(), nullptr, 0);
-								context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
-								context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
-								context->CSSetUnorderedAccessViews(1, 1, srcUAV.GetAddressOf(), nullptr);
-								context->Dispatch(dispatch.x, dispatch.y, 1);
-								sb.Revert(context);
-								sl.Unlock();
-								if (Config::GetSingleton().GetGenerateMipsTime())
-									GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(mipLevel)
-													  + "::" + std::to_string(mipWidth) + "|" + std::to_string(mipHeight) + "::" + std::to_string(subX) + "|" + std::to_string(subY)
-													  , true, false);
-							}));
+						auto cbData_ = cbData;
+						cbData_.widthStart = 0;
+						cbData_.heightStart = unitY * sy;
+						D3D11_SUBRESOURCE_DATA cbInitData = {};
+						cbInitData.pSysMem = &cbData_;
+						Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
+						hr = device->CreateBuffer(&cbDesc, &cbInitData, &constBuffer);
+						if (FAILED(hr)) {
+							logger::error("{} : Failed to create const buffer ({})", _func_, hr);
+							return false;
 						}
+						resourceData->generateMipsData.constBuffers.push_back(constBuffer);
+
+						gpuTasks.push_back(gpuTask->submitAsync([&, constBuffer, sy, mipWidth, mipHeight, dispatch, srcUAV, dstUAV]() {
+							if (Config::GetSingleton().GetGenerateMipsTime())
+								GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(mipLevel)
+												  + "::" + std::to_string(mipWidth) + "|" + std::to_string(mipHeight) + "::" + std::to_string(sy)
+												  , false, false);
+							ShaderBackup sb;
+							sl.Lock();
+							sb.Backup(context);
+							context->CSSetShader(shader.Get(), nullptr, 0);
+							context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
+							context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
+							context->CSSetUnorderedAccessViews(1, 1, srcUAV.GetAddressOf(), nullptr);
+							context->Dispatch(dispatch.x, dispatch.y, 1);
+							sb.Revert(context);
+							sl.Unlock();
+							if (Config::GetSingleton().GetGenerateMipsTime())
+								GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(mipLevel)
+												  + "::" + std::to_string(mipWidth) + "|" + std::to_string(mipHeight) + "::" + std::to_string(sy)
+												  , true, false);
+						}));
 					}
 					for (auto& task : gpuTasks)
 					{
@@ -2796,75 +2768,63 @@ namespace Mus {
 
 		for (UINT mipLevel = 0; mipLevel < srcDesc.MipLevels; mipLevel++)
 		{
-			UINT width = std::max(1u, srcDesc.Width >> mipLevel);
-			UINT height = std::max(1u, srcDesc.Height >> mipLevel);
-			UINT bc7Width = (width + 4 - 1) / 4;
-			UINT bc7Height = (height + 4 - 1) / 4;
+			const UINT mipWidth = std::max(1u, srcDesc.Width >> mipLevel);
+			const UINT mipHeight = std::max(1u, srcDesc.Height >> mipLevel);
+			const UINT bc7Width = (mipWidth + 4 - 1) / 4;
+			const UINT bc7Height = (mipHeight + 4 - 1) / 4;
 			bc7Buffers[mipLevel].resize((std::size_t)bc7Width * bc7Height * 16);
 			rowPitches[mipLevel] = bc7Width * 16;
 
 			std::uint8_t* srcData = reinterpret_cast<std::uint8_t*>(mappedResource[mipLevel].pData);
 			std::vector<std::future<void>> processes;
-			const std::size_t subX = std::max((std::size_t)1, std::min(std::size_t(bc7Width), processingThreads->GetThreads()));
-			const std::size_t subY = std::max((std::size_t)1, std::min(std::size_t(bc7Height), processingThreads->GetThreads()));
-			const std::size_t unitX = (std::size_t(bc7Width) + subX - 1) / subX;
-			const std::size_t unitY = (std::size_t(bc7Height) + subY - 1) / subY;
-			for (UINT sby = 0; sby < subY; sby++) {
-				for (UINT sbx = 0; sbx < subX; sbx++)
-				{
-					const std::size_t beginX = sbx * unitX;
-					const std::size_t endX = std::min(beginX + unitX, std::size_t(bc7Width));
-					const std::size_t beginY = sby * unitY;
-					const std::size_t endY = std::min(beginY + unitY, std::size_t(bc7Height));
-					const std::size_t blockCount = (endX > beginX ? endX - beginX : 0) * (endY > beginY ? endY - beginY : 0);
-					processes.push_back(processingThreads->submitAsync([&, beginX, endX, beginY, endY, blockCount]() {
-						std::vector<std::uint32_t> pixels(blockCount * 16);
-						std::size_t pixelIndex = 0;
-						for (UINT by = beginY; by < endY; by++) {
-							for (UINT bx = beginX; bx < endX; bx++) {
+			const std::uint32_t threads = std::max(std::size_t(1), processingThreads->GetThreads());
+			const std::uint32_t rowSub = std::max(1u, (bc7Height + threads - 1) / threads);
+			for (std::uint32_t threadNum = 0; threadNum < threads; threadNum++) {
+				const std::uint32_t beginY = threadNum * rowSub;
+				const std::uint32_t endY = std::min(beginY + rowSub, bc7Height);
+				const std::uint32_t blockCount = (beginY < endY ? (endY - beginY) : 0) * bc7Width;
+				if (blockCount == 0)
+					break;
+				processes.push_back(processingThreads->submitAsync([&, beginY, endY, blockCount]() {
+					std::vector<std::uint32_t> pixels(blockCount * 16);
+					std::size_t pixelIndex = 0;
+					for (UINT by = beginY; by < endY; by++) {
+						for (UINT bx = 0; bx < bc7Width; bx++) {
 #pragma unroll(4)
-								for (UINT y = 0; y < 4; y++) {
+							for (UINT y = 0; y < 4; y++) {
 #pragma unroll(4)
-									for (UINT x = 0; x < 4; x++) {
-										UINT px = bx * 4 + x;
-										UINT py = by * 4 + y;
-										UINT clampedPx = std::min(px, width - 1);
-										UINT clampedPy = std::min(py, height - 1);
-
-										const std::uint32_t* dstPixel = reinterpret_cast<std::uint32_t*>(srcData + clampedPy * mappedResource[mipLevel].RowPitch + clampedPx * 4);
-										pixels[pixelIndex] = *dstPixel;
-										pixelIndex++;
-									}
+								for (UINT x = 0; x < 4; x++) {
+									UINT px = bx * 4 + x;
+									UINT py = by * 4 + y;
+									UINT clampedPx = std::min(px, mipWidth - 1);
+									UINT clampedPy = std::min(py, mipHeight - 1);
+									const std::uint32_t* dstPixel = reinterpret_cast<std::uint32_t*>(srcData + clampedPy * mappedResource[mipLevel].RowPitch + clampedPx * 4);
+									pixels[pixelIndex] = *dstPixel;
+									pixelIndex++;
 								}
 							}
 						}
-						std::vector<std::uint64_t> outBlocks(blockCount * 2); //16 bytes
-						switch (GetSIMDType()) {
-						/*case SIMDType::avx2:
-							ispc::bc7e_avx2_compress_blocks(blockCount, outBlocks.data(), pixels.data(), reinterpret_cast<ispc::bc7e_avx2_compress_block_params*>(&params));
-							break;*/
-						case SIMDType::avx:
-							ispc::bc7e_avx_compress_blocks(blockCount, outBlocks.data(), pixels.data(), reinterpret_cast<ispc::bc7e_avx_compress_block_params*>(&params));
-							break;
-						case SIMDType::sse4:
-							ispc::bc7e_sse4_compress_blocks(blockCount, outBlocks.data(), pixels.data(), reinterpret_cast<ispc::bc7e_sse4_compress_block_params*>(&params));
-							break;
-						case SIMDType::sse2:
-							ispc::bc7e_sse2_compress_blocks(blockCount, outBlocks.data(), pixels.data(), reinterpret_cast<ispc::bc7e_sse2_compress_block_params*>(&params));
-							break;
-						}
-						std::uint64_t* dst = reinterpret_cast<std::uint64_t*>(bc7Buffers[mipLevel].data());
-						std::size_t blockIndex = 0;
-						for (UINT by = beginY; by < endY; by++) {
-							for (UINT bx = beginX; bx < endX; bx++) {
-								const std::size_t dstIndex = ((std::size_t)by * bc7Width + bx) * 2;
-								dst[dstIndex + 0] = outBlocks[blockIndex * 2 + 0];
-								dst[dstIndex + 1] = outBlocks[blockIndex * 2 + 1];
-								blockIndex++;
-							}
-						}
-					}));
-				}
+					}
+
+					std::vector<std::uint64_t> outBlocks(blockCount * 2); //16 bytes
+					switch (GetSIMDType()) {
+					case SIMDType::avx2:
+						ispc::bc7e_avx2_compress_blocks(blockCount, outBlocks.data(), pixels.data(), reinterpret_cast<ispc::bc7e_avx2_compress_block_params*>(&params));
+						break;
+					case SIMDType::avx:
+						ispc::bc7e_avx_compress_blocks(blockCount, outBlocks.data(), pixels.data(), reinterpret_cast<ispc::bc7e_avx_compress_block_params*>(&params));
+						break;
+					case SIMDType::sse4:
+						ispc::bc7e_sse4_compress_blocks(blockCount, outBlocks.data(), pixels.data(), reinterpret_cast<ispc::bc7e_sse4_compress_block_params*>(&params));
+						break;
+					case SIMDType::sse2:
+						ispc::bc7e_sse2_compress_blocks(blockCount, outBlocks.data(), pixels.data(), reinterpret_cast<ispc::bc7e_sse2_compress_block_params*>(&params));
+						break;
+					}
+
+					std::uint64_t* dst = reinterpret_cast<std::uint64_t*>(bc7Buffers[mipLevel].data());
+					std::memcpy(dst + beginY * bc7Width * 2, outBlocks.data(), blockCount * 16);
+				}));
 			}
 			for (auto& process : processes) {
 				process.get();

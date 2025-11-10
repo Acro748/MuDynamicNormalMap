@@ -6,7 +6,7 @@ message("Using toolchain file ${CMAKE_TOOLCHAIN_FILE}.")
 ########################################################################################################################
 project(
         MuDynamicNormalMap
-        VERSION 2.0.4
+        VERSION 2.0.5
         DESCRIPTION "MuDynamicNormalMap by Acro."
         LANGUAGES CXX
 )
@@ -24,7 +24,7 @@ configure_file(
 
 set(headers
         include/bc7e_ispc_avx.h
-        #include/bc7e_ispc_avx2.h
+        include/bc7e_ispc_avx2.h
         include/bc7e_ispc_sse2.h
         include/bc7e_ispc_sse4.h
         include/Interface/Interface.h
@@ -131,10 +131,10 @@ target_link_libraries(
 target_sources(
     ${PROJECT_NAME}
     PRIVATE
-         #$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/extern/bc7enc_rdo/bc7e_avx2.obj>
-         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/extern/bc7enc_rdo/bc7e_avx.obj>
-         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/extern/bc7enc_rdo/bc7e_sse4.obj>
-         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/extern/bc7enc_rdo/bc7e_sse2.obj>
+         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/bc7e_avx.obj>
+         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/bc7e_avx2.obj>
+         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/bc7e_sse2.obj>
+         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/bc7e_sse4.obj>
 )
 
 target_precompile_headers(

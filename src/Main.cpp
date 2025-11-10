@@ -182,9 +182,9 @@ namespace {
         Mus::ObjectNormalMapUpdater::GetSingleton().Init();
 
         switch (Mus::GetSIMDType()) {
-        /*case Mus::SIMDType::avx2:
+        case Mus::SIMDType::avx2:
             ispc::bc7e_avx2_compress_block_init();
-            break;*/
+            break;
         case Mus::SIMDType::avx:
             ispc::bc7e_avx_compress_block_init();
             break;

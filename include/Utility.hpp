@@ -910,15 +910,13 @@ namespace Mus {
 
         int info[4] = {};
 
-        //AVX2 is not fast enough, so ignore it
-        /*__cpuid(info, 0);
-        int nIds = info[0];
-        if (nIds >= 7) 
+        __cpuid(info, 0);
+        if (info[0] >= 7)
         {
             __cpuidex(info, 7, 0);
-            if (info[1] & (1 << 5))
+            if ((info[1] & (1 << 5)) != 0)
                 SIMDType_ = SIMDType::avx2;
-        }*/
+        }
         if(SIMDType_ == SIMDType::noSIMD)
         {   
             __cpuid(info, 1);
