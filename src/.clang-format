@@ -1,0 +1,20 @@
+---
+AccessModifierOffset: -4
+BasedOnStyle: LLVM
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterControlStatement: true
+  AfterFunction: true
+  AfterClass: true
+  AfterStruct: true
+  AfterNamespace: true
+  BeforeElse: true
+ColumnLimit: 0
+IndentWidth: '4'
+NamespaceIndentation: All
+TabWidth: '4'
+UseTab: Never
+PointerAlignment: Left
+
+
+...

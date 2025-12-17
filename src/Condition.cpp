@@ -167,7 +167,8 @@ namespace Mus {
 			item.conditionFunction = std::make_shared<ConditionFragment::IsInFaction>();
 			break;
 		case ConditionType::IsFactionRankGreaterOrEquel:
-			item.conditionFunction = std::make_shared<ConditionFragment::IsFactionRankGreaterOrEquel>();
+		case ConditionType::IsFactionRankGreaterOrEqual:
+			item.conditionFunction = std::make_shared<ConditionFragment::IsFactionRankGreaterOrEqual>();
 			break;
 		case ConditionType::HasHeadPart:
 			item.conditionFunction = std::make_shared<ConditionFragment::HasHeadPart>();
@@ -278,12 +279,12 @@ namespace Mus {
 			return actor->IsInFaction(faction);
 		}
 
-		void IsFactionRankGreaterOrEquel::Initial(ConditionManager::ConditionItem& item)
+		void IsFactionRankGreaterOrEqual::Initial(ConditionManager::ConditionItem& item)
 		{
 			form = GetFormByID(item.id, item.pluginName);
 			rank = item.arg.empty() ? 0 : GetUInt(item.arg);
 		}
-		bool IsFactionRankGreaterOrEquel::Condition(RE::Actor* actor)
+		bool IsFactionRankGreaterOrEqual::Condition(RE::Actor* actor)
 		{
 			if (!actor || !form)
 				return false;

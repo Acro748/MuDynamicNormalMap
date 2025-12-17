@@ -44,6 +44,4 @@ namespace Mus {
 	extern float boundaryWeldDistance;
 	extern float boundaryWeldDistanceMult;
 	extern std::chrono::microseconds waitSleepTime;
-
-	constexpr std::uint32_t pixelGroup = 2048 * 2048;
 }

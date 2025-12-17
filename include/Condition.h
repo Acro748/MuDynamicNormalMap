@@ -26,6 +26,7 @@ namespace Mus {
 			IsRace,
 			IsInFaction,
 			IsFactionRankGreaterOrEquel,
+			IsFactionRankGreaterOrEqual,
 			HasHeadPart,
 			HasHeadPartEditorID,
 
@@ -167,9 +168,9 @@ namespace Mus {
 			RE::TESForm* form = nullptr;
 		};
 
-		class IsFactionRankGreaterOrEquel : public ConditionBase {
+		class IsFactionRankGreaterOrEqual : public ConditionBase {
 		public:
-			IsFactionRankGreaterOrEquel() = default;
+			IsFactionRankGreaterOrEqual() = default;
 			void Initial(ConditionManager::ConditionItem& item) override;
 			bool Condition(RE::Actor* acto) override;
 		private:

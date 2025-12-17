@@ -67,7 +67,7 @@ namespace Mus {
 			ObjectInfo objInfo;
 			std::uint64_t hash;
 		};
-		std::vector<GeometriesInfo> geometries;
+		concurrency::concurrent_vector<GeometriesInfo> geometries;
 		std::uint32_t mainGeometryIndex = 0;
 
 	private:

@@ -493,7 +493,7 @@ namespace Mus {
 									}
 									else
 										slot = pslot - 30;
-									if (normalmap.slot == slot && IsSameString(normalmap.texturePath, texturePath))
+									if (normalmap.slot == slot && IsSameString(normalmap.texturePath, texturePath) && !IsSameString(normalmap.geoName, geo->name.c_str()))
 										return true;
 								}
 								return false;
