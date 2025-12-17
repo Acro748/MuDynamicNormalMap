@@ -582,14 +582,14 @@ namespace Mus {
 
                 actorThreadCount = 1;
                 updateThreadCount = 2;
-                processingThreadCount = std::max(1, coreCount / 2);
+                processingThreadCount = std::max(1, std::min(4, coreCount / 2));
                 usePCores = false;
                 gpuTaskThreadCount = 1;
                 break;
             case Config::AutoTaskQList::BestPerformance:
                 taskQTickMS = Config::GetSingleton().GetTaskQTickMS();
                 directTaskQ = false;
-                divideTaskQ = 2;
+                divideTaskQ = 1;
                 vramSaveMode = true;
 
                 isNoSplitGPU = false;
@@ -599,7 +599,7 @@ namespace Mus {
 
                 actorThreadCount = 1;
                 updateThreadCount = 1;
-                processingThreadCount = std::max(1, coreCount / 2);
+                processingThreadCount = 2;
                 usePCores = false;
                 gpuTaskThreadCount = 1;
                 break;

@@ -49,7 +49,7 @@ namespace Mus {
 		for (auto& garbage : garbages) {
 			map.unsafe_erase(garbage);
 		}
-		std::size_t mapSize = map.size();
+		const std::size_t mapSize = map.size();
 		lock.unlock();
 
 		logger::debug("Removed {} RAM cache / Current remain {} RAM cache", garbages.size(), mapSize);
@@ -78,7 +78,8 @@ namespace Mus {
 		lock.unlock_shared();
 		if (resource)
 			logger::debug("Found exist resource {:x}", a_hash);
-		if (!resource) {
+		else 
+		{
 			resource = GetDiskCache(a_hash);
 			if (resource) {
 				isDiskCache = true;

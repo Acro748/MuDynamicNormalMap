@@ -31,9 +31,12 @@ namespace Mus {
 				ResourceDataMapLock.lock_shared();
 				ResourceDataMap.push_back(map);
 				ResourceDataMapLock.unlock_shared();
-			}
-			if (ResourceDataMap.size() > 0)
-				logger::debug("Current remain texture resource {}", ResourceDataMap.size());
+            }
+            ResourceDataMapLock.lock_shared();
+            const std::size_t mapSize = ResourceDataMap.size();
+            ResourceDataMapLock.unlock_shared();
+            if (mapSize > 0)
+                logger::debug("Current remain texture resource {}", mapSize);
 		});
 	}
 
@@ -57,9 +60,10 @@ namespace Mus {
 				}
 			}
 			ResourceDataMapLock.lock_shared();
-			if (GeometryResourceDataMap.size() > 0)
-				logger::debug("Current remain geometry resource {}", GeometryResourceDataMap.size());
+			const std::size_t mapSize = GeometryResourceDataMap.size();
 			ResourceDataMapLock.unlock_shared();
+			if (mapSize > 0)
+				logger::debug("Current remain geometry resource {}", mapSize);
 		});
 	}
 
@@ -106,13 +110,13 @@ namespace Mus {
 		return true;
 	}
 
-	void ObjectNormalMapUpdater::LoadCacheResource(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet& a_updateSet, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results)
+	void ObjectNormalMapUpdater::LoadCacheResource(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet& a_updateSet, MergedTextureGeometries& mergedTextureGeometries, ResourceDatas& resourceDatas, UpdateResult& results)
 	{
 		//hash update with geo hash + texture hash
 		for (auto& update : a_updateSet) {
 			const auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
 				return geosInfo.geometry == update.first;
-											});
+			});
 			if (found == a_data->geometries.end())
 			{
 				logger::error("{}::{:x} : Geometry {} not found in data", __func__, a_actorID, update.second.geometryName);
@@ -402,407 +406,414 @@ namespace Mus {
 		logger::debug("{}::{:x} : updating... {}", _func_, a_actorID, a_updateSet.size());
 		Shader::ShaderLocker sl(context);
 
-		std::unordered_set<RE::BSGeometry*> mergedTextureGeometries;
-		concurrency::concurrent_vector<TextureResourceDataPtr> resourceDatas;
+		MergedTextureGeometries mergedTextureGeometries;
+        ResourceDatas resourceDatas;
 		LoadCacheResource(a_actorID, a_data, a_updateSet, mergedTextureGeometries, resourceDatas, results);
 
-		CRITICAL_SECTION resultLock;
-		InitializeCriticalSectionAndSpinCount(&resultLock, 4000);
-		for (const auto& update : a_updateSet)
-		{
-			if (Config::GetSingleton().GetUpdateNormalMapTime1())
-				PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, false, false);
+        CRITICAL_SECTION resultLock;
+        InitializeCriticalSectionAndSpinCount(&resultLock, 4000);
+        std::vector<std::future<void>> updateTasks;
+        for (const auto& update : a_updateSet)
+        {
+            auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
+                return geosInfo.geometry == update.first;
+            });
+            if (found == a_data->geometries.end())
+            {
+                logger::error("{}::{:x} : Geometry {} not found in data", _func_, a_actorID, update.second.geometryName);
+                continue;
+            }
+            const GeometryData::ObjectInfo* objInfo = &found->objInfo;
+            const auto hash = found->hash;
+            auto updateTaskFunc = [&, update, objInfo, hash]() {
+                if (Config::GetSingleton().GetUpdateNormalMapTime1())
+                    PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, false, false);
+                TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
+                newResourceData->geometry = update.first;
+                newResourceData->textureName = update.second.textureName;
 
-			auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
-				return geosInfo.geometry == update.first;
-			});
-			if (found == a_data->geometries.end())
-			{
-				logger::error("{}::{:x} : Geometry {} not found in data", _func_, a_actorID, update.second.geometryName);
-				continue;
-			}
-			GeometryData::ObjectInfo& objInfo = found->objInfo;
-			TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
-			newResourceData->geometry = update.first;
-			newResourceData->textureName = update.second.textureName;
+                D3D11_TEXTURE2D_DESC srcStagingDesc = {}, detailStagingDesc = {}, overlayStagingDesc = {}, maskStagingDesc = {}, dstDesc = {};
 
-			D3D11_TEXTURE2D_DESC srcStagingDesc = {}, detailStagingDesc = {}, overlayStagingDesc = {}, maskStagingDesc = {}, dstDesc = {};
+                if (!update.second.srcTexturePath.empty())
+                {
+                    if (!IsDetailNormalMap(update.second.srcTexturePath))
+                    {
+                        logger::info("{}::{:x}::{} : {} src texture loading...)", _func_, a_actorID, update.second.geometryName, update.second.srcTexturePath);
 
-			if (!update.second.srcTexturePath.empty())
-			{
-				if (!IsDetailNormalMap(update.second.srcTexturePath))
-				{
-					logger::info("{}::{:x}::{} : {} src texture loading...)", _func_, a_actorID, update.second.geometryName, update.second.srcTexturePath);
+                        if (LoadTextureCPU(device, context, update.second.srcTexturePath, srcStagingDesc, newResourceData->srcTexture2D))
+                        {
+                            dstDesc = srcStagingDesc;
+                            dstDesc.Width = Config::GetSingleton().GetTextureWidth();
+                            dstDesc.Height = Config::GetSingleton().GetTextureHeight();
+                        }
+                    }
+                }
+                if (!update.second.detailTexturePath.empty())
+                {
+                    logger::info("{}::{:x}::{} : {} detail texture loading...)", _func_, a_actorID, update.second.geometryName, update.second.detailTexturePath);
 
-					if (LoadTextureCPU(device, context, update.second.srcTexturePath, srcStagingDesc, newResourceData->srcTexture2D))
-					{
-						dstDesc = srcStagingDesc;
-						dstDesc.Width = Config::GetSingleton().GetTextureWidth();
-						dstDesc.Height = Config::GetSingleton().GetTextureHeight();
-					}
-				}
-			}
-			if (!update.second.detailTexturePath.empty())
-			{
-				logger::info("{}::{:x}::{} : {} detail texture loading...)", _func_, a_actorID, update.second.geometryName, update.second.detailTexturePath);
+                    if (LoadTextureCPU(device, context, update.second.detailTexturePath, detailStagingDesc, newResourceData->detailTexture2D))
+                    {
+                        dstDesc = detailStagingDesc;
+                        dstDesc.Width = std::max(dstDesc.Width, Config::GetSingleton().GetTextureWidth());
+                        dstDesc.Height = std::max(dstDesc.Height, Config::GetSingleton().GetTextureHeight());
+                    }
+                }
+                if (!Config::GetSingleton().GetIgnoreMissingNormalMap() && !newResourceData->srcTexture2D && !newResourceData->detailTexture2D)
+                {
+                    logger::error("{}::{:x}::{} : NormalMap is missing", _func_, a_actorID, update.second.geometryName);
+                    return;
+                }
 
-				if (LoadTextureCPU(device, context, update.second.detailTexturePath, detailStagingDesc, newResourceData->detailTexture2D))
-				{
-					dstDesc = detailStagingDesc;
-					dstDesc.Width = std::max(dstDesc.Width, Config::GetSingleton().GetTextureWidth());
-					dstDesc.Height = std::max(dstDesc.Height, Config::GetSingleton().GetTextureHeight());
-				}
-			}
-			if (!Config::GetSingleton().GetIgnoreMissingNormalMap() && !newResourceData->srcTexture2D && !newResourceData->detailTexture2D)
-			{
-				logger::error("{}::{:x}::{} : NormalMap is missing", _func_, a_actorID, update.second.geometryName);
-				continue;
-			}
+                if (!update.second.overlayTexturePath.empty())
+                {
+                    logger::info("{}::{:x}::{} : {} overlay texture loading...)", _func_, a_actorID, update.second.geometryName, update.second.overlayTexturePath);
+                    LoadTextureCPU(device, context, update.second.overlayTexturePath, overlayStagingDesc, newResourceData->overlayTexture2D);
+                }
 
-			if (!update.second.overlayTexturePath.empty())
-			{
-				logger::info("{}::{:x}::{} : {} overlay texture loading...)", _func_, a_actorID, update.second.geometryName, update.second.overlayTexturePath);
-				LoadTextureCPU(device, context, update.second.overlayTexturePath, overlayStagingDesc, newResourceData->overlayTexture2D);
-			}
+                if (!update.second.maskTexturePath.empty())
+                {
+                    logger::info("{}::{:x}::{} : {} mask texture loading...)", _func_, a_actorID, update.second.geometryName, update.second.maskTexturePath);
+                    LoadTextureCPU(device, context, update.second.maskTexturePath, maskStagingDesc, newResourceData->maskTexture2D);
+                }
 
-			if (!update.second.maskTexturePath.empty())
-			{
-				logger::info("{}::{:x}::{} : {} mask texture loading...)", _func_, a_actorID, update.second.geometryName, update.second.maskTexturePath);
-				LoadTextureCPU(device, context, update.second.maskTexturePath, maskStagingDesc, newResourceData->maskTexture2D);
-			}
+                dstDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+                dstDesc.Usage = D3D11_USAGE_STAGING;
+                dstDesc.BindFlags = 0;
+                dstDesc.MiscFlags = 0;
+                dstDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ | D3D11_CPU_ACCESS_WRITE;
+                dstDesc.ArraySize = 1;
+                dstDesc.SampleDesc.Count = 1;
+                if (Config::GetSingleton().GetUseMipMap())
+                {
+                    UINT widthMips = log2(dstDesc.Width) + 1;
+                    UINT heightMips = log2(dstDesc.Width) + 1;
+                    dstDesc.MipLevels = std::max(widthMips, heightMips);
+                }
+                else
+                {
+                    dstDesc.MipLevels = 1;
+                }
 
-			dstDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-			dstDesc.Usage = D3D11_USAGE_STAGING;
-			dstDesc.BindFlags = 0;
-			dstDesc.MiscFlags = 0;
-			dstDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ | D3D11_CPU_ACCESS_WRITE;
-			dstDesc.ArraySize = 1;
-			dstDesc.SampleDesc.Count = 1;
-			if (Config::GetSingleton().GetUseMipMap())
-			{
-				UINT widthMips = log2(dstDesc.Width) + 1;
-				UINT heightMips = log2(dstDesc.Width) + 1;
-				dstDesc.MipLevels = std::max(widthMips, heightMips);
-			}
-			else
-			{
-				dstDesc.MipLevels = 1;
-			}
+                Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTexture2D;
+                hr = device->CreateTexture2D(&dstDesc, nullptr, &dstTexture2D);
+                if (FAILED(hr))
+                {
+                    logger::error("{}::{:x}::{} : Failed to create dst staging texture ({})", _func_, a_actorID, update.second.geometryName, hr);
+                    return;
+                }
 
-			Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTexture2D;
-			hr = device->CreateTexture2D(&dstDesc, nullptr, &dstTexture2D);
-			if (FAILED(hr))
-			{
-				logger::error("{}::{:x}::{} : Failed to create dst staging texture ({})", _func_, a_actorID, update.second.geometryName, hr);
-				continue;
-			}
+                D3D11_MAPPED_SUBRESOURCE dstMappedResource, srcMappedResource, detailMappedResource, overlayMappedResource, maskMappedResource;
+                std::uint8_t* srcData = nullptr;
+                std::uint8_t* detailData = nullptr;
+                std::uint8_t* overlayData = nullptr;
+                std::uint8_t* maskData = nullptr;
 
-			logger::info("{}::{:x}::{} : {} {} {} {} baking normalmap...", _func_, a_actorID, update.second.geometryName,
-						 objInfo.vertexCount(),
-						 objInfo.uvCount(),
-						 objInfo.normalCount(),
-						 objInfo.indicesCount());
+                sl.Lock();
+                hr = context->Map(dstTexture2D.Get(), 0, D3D11_MAP_WRITE, 0, &dstMappedResource);
+                if (newResourceData->srcTexture2D)
+                {
+                    hr = context->Map(newResourceData->srcTexture2D.Get(), 0, D3D11_MAP_READ, 0, &srcMappedResource);
+                    srcData = reinterpret_cast<std::uint8_t*>(srcMappedResource.pData);
+                }
+                if (newResourceData->detailTexture2D)
+                {
+                    hr = context->Map(newResourceData->detailTexture2D.Get(), 0, D3D11_MAP_READ, 0, &detailMappedResource);
+                    detailData = reinterpret_cast<std::uint8_t*>(detailMappedResource.pData);
+                }
+                if (newResourceData->overlayTexture2D)
+                {
+                    hr = context->Map(newResourceData->overlayTexture2D.Get(), 0, D3D11_MAP_READ, 0, &overlayMappedResource);
+                    overlayData = reinterpret_cast<std::uint8_t*>(overlayMappedResource.pData);
+                }
+                if (newResourceData->maskTexture2D)
+                {
+                    hr = context->Map(newResourceData->maskTexture2D.Get(), 0, D3D11_MAP_READ, 0, &maskMappedResource);
+                    maskData = reinterpret_cast<std::uint8_t*>(maskMappedResource.pData);
+                }
+                sl.Unlock();
 
-			D3D11_MAPPED_SUBRESOURCE dstMappedResource, srcMappedResource, detailMappedResource, overlayMappedResource, maskMappedResource;
-			std::uint8_t* srcData = nullptr;
-			std::uint8_t* detailData = nullptr;
-			std::uint8_t* overlayData = nullptr;
-			std::uint8_t* maskData = nullptr;
+                std::uint8_t* dstData = reinterpret_cast<std::uint8_t*>(dstMappedResource.pData);
 
-			sl.Lock();
-			hr = context->Map(dstTexture2D.Get(), 0, D3D11_MAP_WRITE, 0, &dstMappedResource);
-			if (newResourceData->srcTexture2D)
-			{
-				hr = context->Map(newResourceData->srcTexture2D.Get(), 0, D3D11_MAP_READ, 0, &srcMappedResource);
-				srcData = reinterpret_cast<std::uint8_t*>(srcMappedResource.pData);
-			}
-			if (newResourceData->detailTexture2D)
-			{
-				hr = context->Map(newResourceData->detailTexture2D.Get(), 0, D3D11_MAP_READ, 0, &detailMappedResource);
-				detailData = reinterpret_cast<std::uint8_t*>(detailMappedResource.pData);
-			}
-			if (newResourceData->overlayTexture2D)
-			{
-				hr = context->Map(newResourceData->overlayTexture2D.Get(), 0, D3D11_MAP_READ, 0, &overlayMappedResource);
-				overlayData = reinterpret_cast<std::uint8_t*>(overlayMappedResource.pData);
-			}
-			if (newResourceData->maskTexture2D)
-			{
-				hr = context->Map(newResourceData->maskTexture2D.Get(), 0, D3D11_MAP_READ, 0, &maskMappedResource);
-				maskData = reinterpret_cast<std::uint8_t*>(maskMappedResource.pData);
-			}
-			sl.Unlock();
+                const UINT width = dstDesc.Width;
+                const UINT height = dstDesc.Height;
+                // init dst texture
+                {
+                    std::vector<std::future<void>> processes;
+                    const std::uint32_t threads = processingThreads->GetThreads() * 8;
+                    const std::uint32_t subY = std::min(height, std::min(width, threads) * std::min(height, threads));
+                    const std::uint32_t unitY = (height + subY - 1) / subY;
+                    for (std::uint32_t sy = 0; sy < subY; sy++)
+                    {
+                        std::uint32_t beginY = sy * unitY;
+                        std::uint32_t endY = std::min(beginY + unitY, height);
+                        processes.push_back(processingThreads->submitAsync([&, beginY, endY]() {
+                            for (UINT y = beginY; y < endY; y++)
+                            {
+                                std::uint8_t* rowData = dstData + y * dstMappedResource.RowPitch;
+                                for (UINT x = 0; x < width; x++)
+                                {
+                                    std::uint32_t* pixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
+                                    *pixel = emptyColor.GetReverse();
+                                }
+                            }
+                        }));
+                    }
+                    for (auto& process : processes)
+                    {
+                        process.get();
+                    }
+                }
 
-			std::uint8_t* dstData = reinterpret_cast<std::uint8_t*>(dstMappedResource.pData);
+                const bool hasSrcData = (srcData != nullptr);
+                const bool hasDetailData = (detailData != nullptr);
+                const bool hasOverlayData = (overlayData != nullptr);
+                const bool hasMaskData = (maskData != nullptr);
 
-			const UINT width = dstDesc.Width;
-			const UINT height = dstDesc.Height;
-			//init dst texture
-			{
-				std::vector<std::future<void>> processes;
-				const std::uint32_t threads = processingThreads->GetThreads();
-				const std::uint32_t subY = std::min(height, std::min(width, threads) * std::min(height, threads));
-				const std::uint32_t unitY = (height + subY - 1) / subY;
-				for (std::uint32_t sy = 0; sy < subY; sy++) {
-					std::uint32_t beginY = sy * unitY;
-					std::uint32_t endY = std::min(beginY + unitY, height);
-					processes.push_back(processingThreads->submitAsync([&, beginY, endY]() {
-						for (UINT y = beginY; y < endY; y++) {
-							std::uint8_t* rowData = dstData + y * dstMappedResource.RowPitch;
-							for (UINT x = 0; x < width; x++)
-							{
-								std::uint32_t* pixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
-								*pixel = emptyColor.GetReverse();
-							}
-						}
-					}));
-				}
-				for (auto& process : processes)
-				{
-					process.get();
-				}
-			}
+                if (Config::GetSingleton().GetUpdateNormalMapTime1())
+                    PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, true, false);
 
-			const bool hasSrcData = (srcData != nullptr);
-			const bool hasDetailData = (detailData != nullptr);
-			const bool hasOverlayData = (overlayData != nullptr);
-			const bool hasMaskData = (maskData != nullptr);
+                std::uint32_t totalTris = objInfo->indicesCount() / 3;
 
-			if (Config::GetSingleton().GetUpdateNormalMapTime1())
-				PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, true, false);
+                const float WidthF = (float)width;
+                const float HeightF = (float)height;
+                const float invWidth = 1.0f / WidthF;
+                const float invHeight = 1.0f / HeightF;
+                const float srcWidthF = hasSrcData ? (float)srcStagingDesc.Width : 0.0f;
+                const float srcHeightF = hasSrcData ? (float)srcStagingDesc.Height : 0.0f;
+                const float detailWidthF = hasDetailData ? (float)detailStagingDesc.Width : 0.0f;
+                const float detailHeightF = hasDetailData ? (float)detailStagingDesc.Height : 0.0f;
+                const float overlayWidthF = hasOverlayData ? (float)overlayStagingDesc.Width : 0.0f;
+                const float overlayHeightF = hasOverlayData ? (float)overlayStagingDesc.Height : 0.0f;
+                const float maskWidthF = hasMaskData ? (float)maskStagingDesc.Width : 0.0f;
+                const float maskHeightF = hasMaskData ? (float)maskStagingDesc.Height : 0.0f;
 
-			std::uint32_t totalTris = objInfo.indicesCount() / 3;
+                const DirectX::XMVECTOR halfVec = DirectX::XMVectorReplicate(0.5f);
+                const bool tangentZCorrection = Config::GetSingleton().GetTangentZCorrection();
+                const float detailStrength = update.second.detailStrength;
 
-			const float WidthF = (float)width;
-			const float HeightF = (float)height;
-			const float invWidth = 1.0f / WidthF;
-			const float invHeight = 1.0f / HeightF;
-			const float srcWidthF = hasSrcData ? (float)srcStagingDesc.Width : 0.0f;
-			const float srcHeightF = hasSrcData ? (float)srcStagingDesc.Height : 0.0f;
-			const float detailWidthF = hasDetailData ? (float)detailStagingDesc.Width : 0.0f;
-			const float detailHeightF = hasDetailData ? (float)detailStagingDesc.Height : 0.0f;
-			const float overlayWidthF = hasOverlayData ? (float)overlayStagingDesc.Width : 0.0f;
-			const float overlayHeightF = hasOverlayData ? (float)overlayStagingDesc.Height : 0.0f;
-			const float maskWidthF = hasMaskData ? (float)maskStagingDesc.Width : 0.0f;
-			const float maskHeightF = hasMaskData ? (float)maskStagingDesc.Height : 0.0f;
+                std::vector<std::future<void>> processes;
+                std::size_t sub = std::min((std::size_t)totalTris, processingThreads->GetThreads() * 16);
+                std::size_t unit = (totalTris + sub - 1) / sub;
 
-			const DirectX::XMVECTOR halfVec = DirectX::XMVectorReplicate(0.5f);
-			const bool tangentZCorrection = Config::GetSingleton().GetTangentZCorrection();
-			const float detailStrength = update.second.detailStrength;
+                if (Config::GetSingleton().GetUpdateNormalMapTime2())
+                    PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, false, false);
 
-			std::vector<std::future<void>> processes;
-			std::size_t sub = std::min((std::size_t)totalTris, processingThreads->GetThreads() * 16);
-			std::size_t unit = (totalTris + sub - 1) / sub;
+                for (std::size_t p = 0; p < sub; p++)
+                {
+                    std::size_t begin = p * unit;
+                    std::size_t end = std::min(begin + unit, (std::size_t)totalTris);
+                    processes.push_back(processingThreads->submitAsync([&, begin, end]() {
+                        for (std::size_t i = begin; i < end; i++)
+                        {
+                            const std::uint32_t index = objInfo->indicesStart + i * 3;
 
-			if (Config::GetSingleton().GetUpdateNormalMapTime2())
-				PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, false, false);
+                            const std::uint32_t index0 = a_data->indices[index + 0];
+                            const std::uint32_t index1 = a_data->indices[index + 1];
+                            const std::uint32_t index2 = a_data->indices[index + 2];
 
-			for (std::size_t p = 0; p < sub; p++) {
-				std::size_t begin = p * unit;
-				std::size_t end = std::min(begin + unit, (std::size_t)totalTris);
-				processes.push_back(processingThreads->submitAsync([&, begin, end]() {
-					for (std::size_t i = begin; i < end; i++) {
-						const std::uint32_t index = objInfo.indicesStart + i * 3;
+                            const DirectX::XMFLOAT2& u0 = a_data->uvs[index0];
+                            const DirectX::XMFLOAT2& u1 = a_data->uvs[index1];
+                            const DirectX::XMFLOAT2& u2 = a_data->uvs[index2];
 
-						const std::uint32_t index0 = a_data->indices[index + 0];
-						const std::uint32_t index1 = a_data->indices[index + 1];
-						const std::uint32_t index2 = a_data->indices[index + 2];
+                            const DirectX::XMVECTOR n0v = DirectX::XMLoadFloat3(&a_data->normals[index0]);
+                            const DirectX::XMVECTOR n1v = DirectX::XMLoadFloat3(&a_data->normals[index1]);
+                            const DirectX::XMVECTOR n2v = DirectX::XMLoadFloat3(&a_data->normals[index2]);
 
-						const DirectX::XMFLOAT2& u0 = a_data->uvs[index0];
-						const DirectX::XMFLOAT2& u1 = a_data->uvs[index1];
-						const DirectX::XMFLOAT2& u2 = a_data->uvs[index2];
+                            const DirectX::XMVECTOR t0v = DirectX::XMLoadFloat3(&a_data->tangents[index0]);
+                            const DirectX::XMVECTOR t1v = DirectX::XMLoadFloat3(&a_data->tangents[index1]);
+                            const DirectX::XMVECTOR t2v = DirectX::XMLoadFloat3(&a_data->tangents[index2]);
 
-						const DirectX::XMVECTOR n0v = DirectX::XMLoadFloat3(&a_data->normals[index0]);
-						const DirectX::XMVECTOR n1v = DirectX::XMLoadFloat3(&a_data->normals[index1]);
-						const DirectX::XMVECTOR n2v = DirectX::XMLoadFloat3(&a_data->normals[index2]);
+                            const DirectX::XMVECTOR b0v = DirectX::XMLoadFloat3(&a_data->bitangents[index0]);
+                            const DirectX::XMVECTOR b1v = DirectX::XMLoadFloat3(&a_data->bitangents[index1]);
+                            const DirectX::XMVECTOR b2v = DirectX::XMLoadFloat3(&a_data->bitangents[index2]);
 
-						const DirectX::XMVECTOR t0v = DirectX::XMLoadFloat3(&a_data->tangents[index0]);
-						const DirectX::XMVECTOR t1v = DirectX::XMLoadFloat3(&a_data->tangents[index1]);
-						const DirectX::XMVECTOR t2v = DirectX::XMLoadFloat3(&a_data->tangents[index2]);
+                            // uvToPixel
+                            const DirectX::XMINT2 p0 = {static_cast<int>(u0.x * width), static_cast<int>(u0.y * height)};
+                            const DirectX::XMINT2 p1 = {static_cast<int>(u1.x * width), static_cast<int>(u1.y * height)};
+                            const DirectX::XMINT2 p2 = {static_cast<int>(u2.x * width), static_cast<int>(u2.y * height)};
 
-						const DirectX::XMVECTOR b0v = DirectX::XMLoadFloat3(&a_data->bitangents[index0]);
-						const DirectX::XMVECTOR b1v = DirectX::XMLoadFloat3(&a_data->bitangents[index1]);
-						const DirectX::XMVECTOR b2v = DirectX::XMLoadFloat3(&a_data->bitangents[index2]);
+                            const std::int32_t minX = std::max(0, std::min({p0.x, p1.x, p2.x}));
+                            const std::int32_t minY = std::max(0, std::min({p0.y, p1.y, p2.y}));
+                            const std::int32_t maxX = std::min((std::int32_t)width - 1, std::max({p0.x, p1.x, p2.x}) + 1);
+                            const std::int32_t maxY = std::min((std::int32_t)height - 1, std::max({p0.y, p1.y, p2.y}) + 1);
 
-						//uvToPixel
-						const DirectX::XMINT2 p0 = { static_cast<int>(u0.x * width), static_cast<int>(u0.y * height) };
-						const DirectX::XMINT2 p1 = { static_cast<int>(u1.x * width), static_cast<int>(u1.y * height) };
-						const DirectX::XMINT2 p2 = { static_cast<int>(u2.x * width), static_cast<int>(u2.y * height) };
+                            for (std::int32_t y = minY; y < maxY; y++)
+                            {
+                                const float mY = (float)y * invHeight;
 
-						const std::int32_t minX = std::max(0, std::min({ p0.x, p1.x, p2.x }));
-						const std::int32_t minY = std::max(0, std::min({ p0.y, p1.y, p2.y }));
-						const std::int32_t maxX = std::min((std::int32_t)width - 1, std::max({ p0.x, p1.x, p2.x }) + 1);
-						const std::int32_t maxY = std::min((std::int32_t)height - 1, std::max({ p0.y, p1.y, p2.y }) + 1);
+                                uint8_t* srcRowData = nullptr;
+                                if (hasSrcData)
+                                {
+                                    const float srcY = mY * srcHeightF;
+                                    srcRowData = srcData + (UINT)srcY * srcMappedResource.RowPitch;
+                                }
 
-						for (std::int32_t y = minY; y < maxY; y++)
-						{
-							const float mY = (float)y * invHeight;
+                                uint8_t* detailRowData = nullptr;
+                                if (hasDetailData)
+                                {
+                                    const float detailY = mY * detailHeightF;
+                                    detailRowData = detailData + (UINT)detailY * detailMappedResource.RowPitch;
+                                }
 
-							uint8_t* srcRowData = nullptr;
-							if (hasSrcData)
-							{
-								const float srcY = mY * srcHeightF;
-								srcRowData = srcData + (UINT)srcY * srcMappedResource.RowPitch;
-							}
+                                uint8_t* overlayRowData = nullptr;
+                                if (hasOverlayData)
+                                {
+                                    const float overlayY = mY * overlayHeightF;
+                                    overlayRowData = overlayData + (UINT)overlayY * overlayMappedResource.RowPitch;
+                                }
 
-							uint8_t* detailRowData = nullptr;
-							if (hasDetailData)
-							{
-								const float detailY = mY * detailHeightF;
-								detailRowData = detailData + (UINT)detailY * detailMappedResource.RowPitch;
-							}
+                                uint8_t* maskRowData = nullptr;
+                                if (hasMaskData)
+                                {
+                                    const float maskY = mY * maskHeightF;
+                                    maskRowData = maskData + (UINT)maskY * maskMappedResource.RowPitch;
+                                }
 
-							uint8_t* overlayRowData = nullptr;
-							if (hasOverlayData)
-							{
-								const float overlayY = mY * overlayHeightF;
-								overlayRowData = overlayData + (UINT)overlayY * overlayMappedResource.RowPitch;
-							}
+                                std::uint8_t* rowData = dstData + y * dstMappedResource.RowPitch;
+                                for (std::int32_t x = minX; x < maxX; x++)
+                                {
+                                    DirectX::XMFLOAT3 bary;
+                                    if (!ComputeBarycentric((float)x + 0.5f, (float)y + 0.5f, p0, p1, p2, bary))
+                                        continue;
 
-							uint8_t* maskRowData = nullptr;
-							if (hasMaskData)
-							{
-								const float maskY = mY * maskHeightF;
-								maskRowData = maskData + (UINT)maskY * maskMappedResource.RowPitch;
-							}
+                                    const float mX = x * invWidth;
 
-							std::uint8_t* rowData = dstData + y * dstMappedResource.RowPitch;
-							for (std::int32_t x = minX; x < maxX; x++)
-							{
-								DirectX::XMFLOAT3 bary;
-								if (!ComputeBarycentric((float)x + 0.5f, (float)y + 0.5f, p0, p1, p2, bary))
-									continue;
+                                    RGBA dstColor;
+                                    RGBA overlayColor(1.0f, 1.0f, 1.0f, 0.0f);
+                                    if (hasOverlayData)
+                                    {
+                                        const float overlayX = mX * overlayWidthF;
+                                        const std::uint32_t* overlayPixel = reinterpret_cast<std::uint32_t*>(overlayRowData + (UINT)overlayX * 4);
+                                        overlayColor.SetReverse(*overlayPixel);
+                                    }
+                                    if (overlayColor.a < 1.0f)
+                                    {
+                                        RGBA maskColor(1.0f, 1.0f, 1.0f, 0.0f);
+                                        if (hasMaskData && hasSrcData)
+                                        {
+                                            const float maskX = mX * maskWidthF;
+                                            const std::uint32_t* maskPixel = reinterpret_cast<std::uint32_t*>(maskRowData + (UINT)maskX * 4);
+                                            maskColor.SetReverse(*maskPixel);
+                                        }
+                                        if (maskColor.a < 1.0f)
+                                        {
+                                            RGBA detailColor(0.5f, 0.5f, 1.0f, 0.5f);
+                                            if (hasDetailData)
+                                            {
+                                                const float detailX = mX * detailWidthF;
+                                                const std::uint32_t* detailPixel = reinterpret_cast<std::uint32_t*>(detailRowData + (UINT)detailX * 4);
+                                                detailColor.SetReverse(*detailPixel);
+                                                detailColor = RGBA::lerp(RGBA(0.5f, 0.5f, 1.0f, detailColor.a), detailColor, detailStrength);
+                                            }
 
-								const float mX = x * invWidth;
+                                            const float denomal = (bary.x + bary.y + floatPrecision);
+                                            const DirectX::XMVECTOR n01 = SlerpVector(n0v, n1v, bary.y / denomal);
+                                            const DirectX::XMVECTOR n = SlerpVector(n01, n2v, bary.z);
 
-								RGBA dstColor;
-								RGBA overlayColor(1.0f, 1.0f, 1.0f, 0.0f);
-								if (hasOverlayData)
-								{
-									const float overlayX = mX * overlayWidthF;
-									const std::uint32_t* overlayPixel = reinterpret_cast<std::uint32_t*>(overlayRowData + (UINT)overlayX * 4);
-									overlayColor.SetReverse(*overlayPixel);
-								}
-								if (overlayColor.a < 1.0f)
-								{
-									RGBA maskColor(1.0f, 1.0f, 1.0f, 0.0f);
-									if (hasMaskData && hasSrcData)
-									{
-										const float maskX = mX * maskWidthF;
-										const std::uint32_t* maskPixel = reinterpret_cast<std::uint32_t*>(maskRowData + (UINT)maskX * 4);
-										maskColor.SetReverse(*maskPixel);
-									}
-									if (maskColor.a < 1.0f)
-									{
-										RGBA detailColor(0.5f, 0.5f, 1.0f, 0.5f);
-										if (hasDetailData)
-										{
-											const float detailX = mX * detailWidthF;
-											const std::uint32_t* detailPixel = reinterpret_cast<std::uint32_t*>(detailRowData + (UINT)detailX * 4);
-											detailColor.SetReverse(*detailPixel);
-											detailColor = RGBA::lerp(RGBA(0.5f, 0.5f, 1.0f, detailColor.a), detailColor, detailStrength);
-										}
+                                            DirectX::XMVECTOR normalResult = emptyVector;
+                                            if (detailColor.a > 0.0f)
+                                            {
+                                                const DirectX::XMVECTOR t01 = SlerpVector(t0v, t1v, bary.y / denomal);
+                                                const DirectX::XMVECTOR t = SlerpVector(t01, t2v, bary.z);
 
-										const float denomal = (bary.x + bary.y + floatPrecision);
-										const DirectX::XMVECTOR n01 = SlerpVector(n0v, n1v, bary.y / denomal);
-										const DirectX::XMVECTOR n = SlerpVector(n01, n2v, bary.z);
+                                                const DirectX::XMVECTOR b01 = SlerpVector(b0v, b1v, bary.y / denomal);
+                                                const DirectX::XMVECTOR b = SlerpVector(b01, b2v, bary.z);
 
-										DirectX::XMVECTOR normalResult = emptyVector;
-										if (detailColor.a > 0.0f)
-										{
-											const DirectX::XMVECTOR t01 = SlerpVector(t0v, t1v, bary.y / denomal);
-											const DirectX::XMVECTOR t = SlerpVector(t01, t2v, bary.z);
+                                                const DirectX::XMVECTOR ft = DirectX::XMVector3Normalize(
+                                                    DirectX::XMVectorSubtract(t, DirectX::XMVectorScale(n, DirectX::XMVectorGetX(DirectX::XMVector3Dot(n, t)))));
+                                                const DirectX::XMVECTOR fb = DirectX::XMVector3Normalize(DirectX::XMVector3Cross(n, ft));
 
-											const DirectX::XMVECTOR b01 = SlerpVector(b0v, b1v, bary.y / denomal);
-											const DirectX::XMVECTOR b = SlerpVector(b01, b2v, bary.z);
+                                                const DirectX::XMMATRIX tbn = DirectX::XMMATRIX(ft, fb, n, DirectX::XMVectorSet(0, 0, 0, 1));
 
-											const DirectX::XMVECTOR ft = DirectX::XMVector3Normalize(
-												DirectX::XMVectorSubtract(t, DirectX::XMVectorScale(n, DirectX::XMVectorGetX(DirectX::XMVector3Dot(n, t)))));
-											const DirectX::XMVECTOR fb = DirectX::XMVector3Normalize(DirectX::XMVector3Cross(n, ft));
+                                                const DirectX::XMFLOAT4 detailColorF(
+                                                    detailColor.r * 2.0f - 1.0f,
+                                                    detailColor.g * 2.0f - 1.0f,
+                                                    detailColor.b * 2.0f - 1.0f,
+                                                    0.0f);
+                                                const DirectX::XMVECTOR detailNormalVec = DirectX::XMVectorSet(
+                                                    detailColorF.x,
+                                                    detailColorF.y,
+                                                    tangentZCorrection ? std::sqrt(std::max(0.0f, 1.0f - detailColorF.x * detailColorF.x - detailColorF.y * detailColorF.y)) : detailColorF.z,
+                                                    0.0f);
 
-											const DirectX::XMMATRIX tbn = DirectX::XMMATRIX(ft, fb, n, DirectX::XMVectorSet(0, 0, 0, 1));
+                                                const DirectX::XMVECTOR detailNormal = DirectX::XMVector3Normalize(
+                                                    DirectX::XMVector3TransformNormal(detailNormalVec, tbn));
+                                                normalResult = DirectX::XMVector3Normalize(
+                                                    DirectX::XMVectorLerp(n, detailNormal, detailColor.a));
+                                            }
+                                            else
+                                            {
+                                                normalResult = n;
+                                            }
+                                            const DirectX::XMVECTOR normalVec = DirectX::XMVectorMultiplyAdd(normalResult, halfVec, halfVec);
+                                            dstColor = RGBA(DirectX::XMVectorGetX(normalVec), DirectX::XMVectorGetZ(normalVec), DirectX::XMVectorGetY(normalVec));
+                                        }
+                                        if (maskColor.a > 0.0f && hasSrcData)
+                                        {
+                                            const float srcX = mX * srcWidthF;
+                                            const std::uint32_t* srcPixel = reinterpret_cast<std::uint32_t*>(srcRowData + (UINT)srcX * 4);
+                                            RGBA srcColor;
+                                            srcColor.SetReverse(*srcPixel);
+                                            dstColor = RGBA::lerp(dstColor, srcColor, maskColor.a);
+                                        }
+                                    }
+                                    if (overlayColor.a > 0.0f)
+                                    {
+                                        dstColor = RGBA::lerp(dstColor, overlayColor, overlayColor.a);
+                                    }
 
-											const DirectX::XMFLOAT4 detailColorF(
-												detailColor.r * 2.0f - 1.0f,
-												detailColor.g * 2.0f - 1.0f,
-												detailColor.b * 2.0f - 1.0f,
-												0.0f
-											);
-											const DirectX::XMVECTOR detailNormalVec = DirectX::XMVectorSet(
-												detailColorF.x,
-												detailColorF.y,
-												tangentZCorrection ? std::sqrt(std::max(0.0f, 1.0f - detailColorF.x * detailColorF.x - detailColorF.y * detailColorF.y)) : detailColorF.z,
-												0.0f);
+                                    std::uint32_t* dstPixel = reinterpret_cast<std::uint32_t*>(rowData + x * 4);
+                                    *dstPixel = dstColor.GetReverse() | 0xFF000000;
+                                }
+                            }
+                        }
+                    }));
+                }
+                for (auto& process : processes)
+                {
+                    process.get();
+                }
+                if (Config::GetSingleton().GetUpdateNormalMapTime2())
+                    PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, true, false);
 
-											const DirectX::XMVECTOR detailNormal = DirectX::XMVector3Normalize(
-												DirectX::XMVector3TransformNormal(detailNormalVec, tbn));
-											normalResult = DirectX::XMVector3Normalize(
-												DirectX::XMVectorLerp(n, detailNormal, detailColor.a));
-										}
-										else
-										{
-											normalResult = n;
-										}
-										const DirectX::XMVECTOR normalVec = DirectX::XMVectorMultiplyAdd(normalResult, halfVec, halfVec);
-										dstColor = RGBA(DirectX::XMVectorGetX(normalVec), DirectX::XMVectorGetZ(normalVec), DirectX::XMVectorGetY(normalVec));
-									}
-									if (maskColor.a > 0.0f && hasSrcData)
-									{
-										const float srcX = mX * srcWidthF;
-										const std::uint32_t* srcPixel = reinterpret_cast<std::uint32_t*>(srcRowData + (UINT)srcX * 4);
-										RGBA srcColor;
-										srcColor.SetReverse(*srcPixel);
-										dstColor = RGBA::lerp(dstColor, srcColor, maskColor.a);
-									}
-								}
-								if (overlayColor.a > 0.0f)
-								{
-									dstColor = RGBA::lerp(dstColor, overlayColor, overlayColor.a);
-								}
+                sl.Lock();
+                context->Unmap(dstTexture2D.Get(), 0);
+                if (hasSrcData)
+                    context->Unmap(newResourceData->srcTexture2D.Get(), 0);
+                if (hasDetailData)
+                    context->Unmap(newResourceData->detailTexture2D.Get(), 0);
+                if (hasOverlayData)
+                    context->Unmap(newResourceData->overlayTexture2D.Get(), 0);
+                if (hasMaskData)
+                    context->Unmap(newResourceData->maskTexture2D.Get(), 0);
+                sl.Unlock();
 
-								std::uint32_t* dstPixel = reinterpret_cast<std::uint32_t*>(rowData + x * 4);
-								*dstPixel = dstColor.GetReverse() | 0xFF000000;
-							}
-						}
-					}
-				}));
-			}
-			for (auto& process : processes)
-			{
-				process.get();
-			}
-			if (Config::GetSingleton().GetUpdateNormalMapTime2())
-				PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, true, false);
+                NormalMapResult newNormalMapResult;
+                newNormalMapResult.slot = update.second.slot;
+                newNormalMapResult.geometry = update.first;
+                newNormalMapResult.vertexCount = objInfo->vertexCount();
+                newNormalMapResult.geoName = update.second.geometryName;
+                newNormalMapResult.texturePath = update.second.srcTexturePath.empty() ? update.second.detailTexturePath : update.second.srcTexturePath;
+                newNormalMapResult.textureName = update.second.textureName;
+                newNormalMapResult.texture = std::make_shared<TextureResource>();
+                newNormalMapResult.texture->normalmapTexture2D = dstTexture2D;
+                newNormalMapResult.texture->normalmapShaderResourceView = nullptr;
+                newNormalMapResult.hash = hash;
 
-			sl.Lock();
-			context->Unmap(dstTexture2D.Get(), 0);
-			if (hasSrcData)
-				context->Unmap(newResourceData->srcTexture2D.Get(), 0);
-			if (hasDetailData)
-				context->Unmap(newResourceData->detailTexture2D.Get(), 0);
-			if (hasOverlayData)
-				context->Unmap(newResourceData->overlayTexture2D.Get(), 0);
-			if (hasMaskData)
-				context->Unmap(newResourceData->maskTexture2D.Get(), 0);
-			sl.Unlock();
-
-			NormalMapResult newNormalMapResult;
-			newNormalMapResult.slot = update.second.slot;
-			newNormalMapResult.geometry = update.first;
-			newNormalMapResult.vertexCount = objInfo.vertexCount();
-			newNormalMapResult.geoName = update.second.geometryName;
-			newNormalMapResult.texturePath = update.second.srcTexturePath.empty() ? update.second.detailTexturePath : update.second.srcTexturePath;
-			newNormalMapResult.textureName = update.second.textureName;
-			newNormalMapResult.texture = std::make_shared<TextureResource>();
-			newNormalMapResult.texture->normalmapTexture2D = dstTexture2D;
-			newNormalMapResult.texture->normalmapShaderResourceView = nullptr;
-			newNormalMapResult.hash = found->hash;
-
-			EnterCriticalSection(&resultLock);
-			results.push_back(newNormalMapResult);
-			resourceDatas.push_back(newResourceData);
-			LeaveCriticalSection(&resultLock);
-		}
+                EnterCriticalSection(&resultLock);
+                results.push_back(newNormalMapResult);
+                resourceDatas.push_back(newResourceData);
+                LeaveCriticalSection(&resultLock);
+            };
+            updateTasks.push_back(updateThreads->submitAsync([updateTaskFunc] {
+                updateTaskFunc();
+            }));
+        }
+		for (auto& updateTask : updateTasks)
+        {
+            updateTask.get();
+        }
 		PostProcessing(device, context, resourceDatas, results, mergedTextureGeometries);
 		return results;
 	}
@@ -829,6 +840,12 @@ namespace Mus {
 			return results;
 		}
 
+		if (!a_data)
+		{
+			logger::error("{}::{:x} : Invalid GeometryData", _func_, a_actorID);
+			return results;
+		}
+
 		Shader::ShaderLocker sl(context);
 
 		const GeometryResourceDataPtr geoData = GetGeometryResourceData(a_actorID);
@@ -839,8 +856,8 @@ namespace Mus {
 		}
 		logger::debug("{}::{:x} : updating... {}", _func_, a_actorID, a_updateSet.size());
 
-		std::unordered_set<RE::BSGeometry*> mergedTextureGeometries;
-		concurrency::concurrent_vector<TextureResourceDataPtr> resourceDatas;
+		MergedTextureGeometries mergedTextureGeometries;
+        ResourceDatas resourceDatas;
 		LoadCacheResource(a_actorID, a_data, a_updateSet, mergedTextureGeometries, resourceDatas, results);
 
 		CRITICAL_SECTION resultLock;
@@ -848,19 +865,20 @@ namespace Mus {
 		std::vector<std::future<void>> updateTasks;
 		for (const auto& update : a_updateSet)
 		{
-			auto updateTaskFunc = [&, update]() {
+            const auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
+                return geosInfo.geometry == update.first;
+            });
+            if (found == a_data->geometries.end())
+            {
+                logger::error("{}::{:x} : Geometry {} not found in data", _func_, a_actorID, update.second.geometryName);
+                continue;
+            }
+            const GeometryData::ObjectInfo* objInfo = &found->objInfo;
+            const auto hash = found->hash;
+            auto updateTaskFunc = [&, update, objInfo, hash]() {
 				if (Config::GetSingleton().GetUpdateNormalMapTime1())
 					PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, false, false);
 
-				const auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
-					return geosInfo.geometry == update.first;
-				});
-				if (found == a_data->geometries.end())
-				{
-					logger::error("{}::{:x} : Geometry {} not found in data", _func_, a_actorID, update.second.geometryName);
-					return;
-				}
-				const GeometryData::ObjectInfo& objInfo = found->objInfo;
 				TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
 				newResourceData->geometry = update.first;
 				newResourceData->textureName = update.second.textureName;
@@ -987,8 +1005,8 @@ namespace Mus {
 				ConstBufferData cbData = {};
 				cbData.texWidth = dstDesc.Width;
 				cbData.texHeight = dstDesc.Height;
-				cbData.indicesStart = objInfo.indicesStart;
-				cbData.indicesEnd = objInfo.indicesEnd;
+				cbData.indicesStart = objInfo->indicesStart;
+                cbData.indicesEnd = objInfo->indicesEnd;
 				cbData.hasSrcTexture = newResourceData->srcShaderResourceView ? 1 : 0;
 				cbData.hasDetailTexture = newResourceData->detailShaderResourceView ? 1 : 0;
 				cbData.hasOverlayTexture = newResourceData->overlayShaderResourceView ? 1 : 0;
@@ -1077,7 +1095,7 @@ namespace Mus {
 					Microsoft::WRL::ComPtr<ID3D11SamplerState> samplerState;
 				};
 
-				const std::uint32_t totalTris = objInfo.indicesCount() / 3;
+				const std::uint32_t totalTris = objInfo->indicesCount() / 3;
 				if (sl.IsSecondGPU() || isNoSplitGPU)
 				{
 					const std::uint32_t dispatch = (totalTris + 64 - 1) / 64;
@@ -1129,7 +1147,7 @@ namespace Mus {
 					std::vector<std::future<void>> gpuTasks;
 					for (std::size_t subIndex = 0; subIndex < subSize; subIndex++)
 					{
-						const std::uint32_t trisStart = objInfo.indicesStart + subIndex * numSubTris * 3;
+                        const std::uint32_t trisStart = objInfo->indicesStart + subIndex * numSubTris * 3;
 						auto cbData_ = cbData;
 						cbData_.indicesStart = trisStart;
 						D3D11_SUBRESOURCE_DATA cbInitData = {};
@@ -1178,14 +1196,14 @@ namespace Mus {
 				NormalMapResult newNormalMapResult;
 				newNormalMapResult.slot = update.second.slot;
 				newNormalMapResult.geometry = update.first;
-				newNormalMapResult.vertexCount = objInfo.vertexCount();
+                newNormalMapResult.vertexCount = objInfo->vertexCount();
 				newNormalMapResult.geoName = update.second.geometryName;
 				newNormalMapResult.texturePath = update.second.srcTexturePath.empty() ? update.second.detailTexturePath : update.second.srcTexturePath;
 				newNormalMapResult.textureName = update.second.textureName;
 				newNormalMapResult.texture = std::make_shared<TextureResource>();
 				newNormalMapResult.texture->normalmapTexture2D = dstTexture2D;
 				newNormalMapResult.texture->normalmapShaderResourceView = dstShaderResourceView;
-				newNormalMapResult.hash = found->hash;
+                newNormalMapResult.hash = hash;
 
 				EnterCriticalSection(&resultLock);
 				results.push_back(newNormalMapResult);
@@ -1566,7 +1584,7 @@ namespace Mus {
 		return true;
 	}
 
-	void ObjectNormalMapUpdater::PostProcessing(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries)
+	void ObjectNormalMapUpdater::PostProcessing(ID3D11Device *device, ID3D11DeviceContext *context, ResourceDatas &resourceDatas, UpdateResult &results, MergedTextureGeometries &mergedTextureGeometries)
 	{
 		//merge texture
 		{
@@ -1613,12 +1631,12 @@ namespace Mus {
 		std::vector<std::future<void>> updateTasks;
 		concurrency::concurrent_unordered_set<std::uint32_t> failedCopyResources;
 		for (std::uint32_t i = 0; i < results.size(); i++)
-		{
+        {
+            if (results[i].existResource)
+                continue;
+            if (mergedTextureGeometries.find(results[i].geometry) != mergedTextureGeometries.end())
+                continue;
 			updateTasks.push_back(updateThreads->submitAsync([&, i]() {
-				if (results[i].existResource)
-					return;
-				if (mergedTextureGeometries.find(results[i].geometry) != mergedTextureGeometries.end())
-					return;
 				if (Config::GetSingleton().GetUseMipMap())
 				{
 					GenerateMips(device, context, resourceDatas[i], results[i].texture->normalmapTexture2D.Get());
@@ -1687,7 +1705,7 @@ namespace Mus {
 			results.push_back(results_[i]);
 		}
 	}
-	void ObjectNormalMapUpdater::PostProcessingGPU(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries)
+    void ObjectNormalMapUpdater::PostProcessingGPU(ID3D11Device* device, ID3D11DeviceContext* context, ResourceDatas& resourceDatas, UpdateResult& results, MergedTextureGeometries& mergedTextureGeometries)
 	{
 		//merge texture
 		{
@@ -1734,73 +1752,75 @@ namespace Mus {
 		const bool isSecondGPU = Shader::ShaderManager::GetSingleton().IsSecondGPUResource(context);
 		std::vector<std::future<void>> updateTasks;
 		concurrency::concurrent_unordered_set<std::uint32_t> failedCopyResources;
-		for (std::uint32_t i = 0; i < results.size(); i++)
-		{
-			updateTasks.push_back(updateThreads->submitAsync([&, i]() {
-				if (results[i].existResource)
-					return;
-				if (mergedTextureGeometries.find(results[i].geometry) != mergedTextureGeometries.end())
-					return;
-				if (Config::GetSingleton().GetUseMipMap())
-				{
-					if (GenerateMipsGPU(device, context, resourceDatas[i], results[i].texture->normalmapShaderResourceView.Get(), results[i].texture->normalmapTexture2D.Get()))
-					{
-						if (Config::GetSingleton().GetGPUForceSync())
-							WaitForGPU(device, context).Wait();
-					}
-				}
-				CompressTexture(device, context, resourceDatas[i], results[i].texture->normalmapTexture2D);
-				if (!isSecondGPU)
-				{
-					D3D11_TEXTURE2D_DESC desc;
-					results[i].texture->normalmapTexture2D->GetDesc(&desc);
-					HRESULT hr;
-					if (!(desc.BindFlags & D3D11_BIND_SHADER_RESOURCE))
-					{
-						resourceDatas[i]->stagingTexture2D = results[i].texture->normalmapTexture2D;
-						desc.Usage = D3D11_USAGE_DEFAULT;
-						desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-						desc.CPUAccessFlags = 0;
-						desc.MiscFlags = 0;
-						hr = device->CreateTexture2D(&desc, nullptr, results[i].texture->normalmapTexture2D.ReleaseAndGetAddressOf());
-						if (FAILED(hr)) {
-							logger::error("{} : Failed to create Texture2D ({})", resourceDatas[i]->textureName, hr);
-							failedCopyResources.insert(i);
-							return;
-						}
-						CopySubresourceRegion(device, context, results[i].texture->normalmapTexture2D.Get(), resourceDatas[i]->stagingTexture2D.Get());
-					}
-					D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
-					srvDesc.Format = desc.Format;
-					srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-					srvDesc.Texture2D.MipLevels = desc.MipLevels;
-					srvDesc.Texture2D.MostDetailedMip = 0;
-					hr = device->CreateShaderResourceView(results[i].texture->normalmapTexture2D.Get(), &srvDesc, results[i].texture->normalmapShaderResourceView.ReleaseAndGetAddressOf());
-					if (FAILED(hr)) {
-						logger::error("{} : Failed to create ShaderResourceView ({})", resourceDatas[i]->textureName, hr);
-						failedCopyResources.insert(i);
-						return;
-					}
+        for (std::uint32_t i = 0; i < results.size(); i++)
+        {
+            if (results[i].existResource)
+                continue;
+            if (mergedTextureGeometries.find(results[i].geometry) != mergedTextureGeometries.end())
+                continue;
+            updateTasks.push_back(updateThreads->submitAsync([&, i]() {
+                if (Config::GetSingleton().GetUseMipMap())
+                {
+                    if (GenerateMipsGPU(device, context, resourceDatas[i], results[i].texture->normalmapShaderResourceView.Get(), results[i].texture->normalmapTexture2D.Get()))
+                    {
+                        if (Config::GetSingleton().GetGPUForceSync())
+                            WaitForGPU(device, context).Wait();
+                    }
+                }
+                CompressTexture(device, context, resourceDatas[i], results[i].texture->normalmapTexture2D);
+                if (!isSecondGPU)
+                {
+                    D3D11_TEXTURE2D_DESC desc;
+                    results[i].texture->normalmapTexture2D->GetDesc(&desc);
+                    HRESULT hr;
+                    if (!(desc.BindFlags & D3D11_BIND_SHADER_RESOURCE))
+                    {
+                        resourceDatas[i]->stagingTexture2D = results[i].texture->normalmapTexture2D;
+                        desc.Usage = D3D11_USAGE_DEFAULT;
+                        desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+                        desc.CPUAccessFlags = 0;
+                        desc.MiscFlags = 0;
+                        hr = device->CreateTexture2D(&desc, nullptr, results[i].texture->normalmapTexture2D.ReleaseAndGetAddressOf());
+                        if (FAILED(hr))
+                        {
+                            logger::error("{} : Failed to create Texture2D ({})", resourceDatas[i]->textureName, hr);
+                            failedCopyResources.insert(i);
+                            return;
+                        }
+                        CopySubresourceRegion(device, context, results[i].texture->normalmapTexture2D.Get(), resourceDatas[i]->stagingTexture2D.Get());
+                    }
+                    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
+                    srvDesc.Format = desc.Format;
+                    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+                    srvDesc.Texture2D.MipLevels = desc.MipLevels;
+                    srvDesc.Texture2D.MostDetailedMip = 0;
+                    hr = device->CreateShaderResourceView(results[i].texture->normalmapTexture2D.Get(), &srvDesc, results[i].texture->normalmapShaderResourceView.ReleaseAndGetAddressOf());
+                    if (FAILED(hr))
+                    {
+                        logger::error("{} : Failed to create ShaderResourceView ({})", resourceDatas[i]->textureName, hr);
+                        failedCopyResources.insert(i);
+                        return;
+                    }
 
-					resourceDatas[i]->GetQuery(device, context);
-					ResourceDataMapLock.lock_shared();
-					ResourceDataMap.push_back(resourceDatas[i]);
-					ResourceDataMapLock.unlock_shared();
-					logger::info("{} : normalmap created", results[i].textureName, results[i].geoName);
-					NormalMapStore::GetSingleton().AddResource(results[i].hash, results[i].texture);
-				}
-				else
-				{
-					if (CopyResourceSecondToMain(resourceDatas[i], results[i].texture->normalmapTexture2D, results[i].texture->normalmapShaderResourceView))
-					{
-						logger::info("{} : normalmap created", results[i].textureName, results[i].geoName);
-						NormalMapStore::GetSingleton().AddResource(results[i].hash, results[i].texture);
-					}
-					else
-						failedCopyResources.insert(i);
-				}
-			}));
-		}
+                    resourceDatas[i]->GetQuery(device, context);
+                    ResourceDataMapLock.lock_shared();
+                    ResourceDataMap.push_back(resourceDatas[i]);
+                    ResourceDataMapLock.unlock_shared();
+                    logger::info("{} : normalmap created", results[i].textureName, results[i].geoName);
+                    NormalMapStore::GetSingleton().AddResource(results[i].hash, results[i].texture);
+                }
+                else
+                {
+                    if (CopyResourceSecondToMain(resourceDatas[i], results[i].texture->normalmapTexture2D, results[i].texture->normalmapShaderResourceView))
+                    {
+                        logger::info("{} : normalmap created", results[i].textureName, results[i].geoName);
+                        NormalMapStore::GetSingleton().AddResource(results[i].hash, results[i].texture);
+                    }
+                    else
+                        failedCopyResources.insert(i);
+                }
+            }));
+        }
 		for (auto& task : updateTasks) {
 			task.get();
 		}
@@ -1841,32 +1861,35 @@ namespace Mus {
 		std::uint8_t* dst_pData = reinterpret_cast<std::uint8_t*>(dstMappedResource.pData);
 		std::uint8_t* src_pData = reinterpret_cast<std::uint8_t*>(srcMappedResource.pData);
 		std::vector<std::future<void>> processes;
-		const std::uint32_t threads = processingThreads->GetThreads() * 4;
+		const std::uint32_t threads = processingThreads->GetThreads() * 8;
 		const std::uint32_t subY = std::min(height, std::min(width, threads) * std::min(height, threads));
 		const std::uint32_t unitY = (height + subY - 1) / subY;
-		for (std::uint32_t sy = 0; sy < subY; sy++) {
-			std::uint32_t beginY = sy * unitY;
-			std::uint32_t endY = beginY + unitY;
-			processes.push_back(processingThreads->submitAsync([&, beginY, endY]() {
-				for (UINT y = beginY; y < endY; y++) {
-					for (UINT x = 0; x < width; x++) {
-						std::uint8_t* dstRowData = dst_pData + y * dstMappedResource.RowPitch;
-						std::uint8_t* srcRowData = src_pData + y * srcMappedResource.RowPitch;
-						std::uint32_t* dstPixel = reinterpret_cast<uint32_t*>(dstRowData + x * 4);
-						std::uint32_t* srcPixel = reinterpret_cast<uint32_t*>(srcRowData + x * 4);
-						RGBA dstPixelColor, srcPixelColor;
-						dstPixelColor.SetReverse(*dstPixel);
-						srcPixelColor.SetReverse(*srcPixel);
-						if (dstPixelColor.a < 1.0f && srcPixelColor.a < 1.0f)
-							continue;
+        for (std::uint32_t sy = 0; sy < subY; sy++)
+        {
+            std::uint32_t beginY = sy * unitY;
+            std::uint32_t endY = beginY + unitY;
+            processes.push_back(processingThreads->submitAsync([&, beginY, endY]() {
+                for (UINT y = beginY; y < endY; y++)
+                {
+                    for (UINT x = 0; x < width; x++)
+                    {
+                        std::uint8_t* dstRowData = dst_pData + y * dstMappedResource.RowPitch;
+                        std::uint8_t* srcRowData = src_pData + y * srcMappedResource.RowPitch;
+                        std::uint32_t* dstPixel = reinterpret_cast<uint32_t*>(dstRowData + x * 4);
+                        std::uint32_t* srcPixel = reinterpret_cast<uint32_t*>(srcRowData + x * 4);
+                        RGBA dstPixelColor, srcPixelColor;
+                        dstPixelColor.SetReverse(*dstPixel);
+                        srcPixelColor.SetReverse(*srcPixel);
+                        if (dstPixelColor.a < 1.0f && srcPixelColor.a < 1.0f)
+                            continue;
 
-						RGBA dstColor = RGBA::lerp(srcPixelColor, dstPixelColor, dstPixelColor.a);
-						dstColor.a = 1.0f;
-						*dstPixel = dstColor.GetReverse();
-					}
-				}
-			}));
-		}
+                        RGBA dstColor = RGBA::lerp(srcPixelColor, dstPixelColor, dstPixelColor.a);
+                        dstColor.a = 1.0f;
+                        *dstPixel = dstColor.GetReverse();
+                    }
+                }
+            }));
+        }
 		for (auto& process : processes)
 		{
 			process.get();
@@ -2777,7 +2800,7 @@ namespace Mus {
 
 			std::uint8_t* srcData = reinterpret_cast<std::uint8_t*>(mappedResource[mipLevel].pData);
 			std::vector<std::future<void>> processes;
-			const std::uint32_t threads = std::max(std::size_t(1), processingThreads->GetThreads());
+			const std::uint32_t threads = std::max(std::size_t(1), processingThreads->GetThreads() * 8);
 			const std::uint32_t rowSub = std::max(1u, (bc7Height + threads - 1) / threads);
 			for (std::uint32_t threadNum = 0; threadNum < threads; threadNum++) {
 				const std::uint32_t beginY = threadNum * rowSub;

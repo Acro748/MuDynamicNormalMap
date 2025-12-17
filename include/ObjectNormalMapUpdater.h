@@ -150,9 +150,11 @@ namespace Mus {
 			Microsoft::WRL::ComPtr<ID3D11Texture2D> stagingTexture2D = nullptr;
 		};
 		typedef std::shared_ptr<TextureResourceData> TextureResourceDataPtr;
+        typedef concurrency::concurrent_vector<TextureResourceDataPtr> ResourceDatas;
+        typedef concurrency::concurrent_unordered_set<RE::BSGeometry *> MergedTextureGeometries;
 
 		bool IsDetailNormalMap(const std::string& a_normalMapPath);
-		void LoadCacheResource(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet& a_updateSet, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results);
+        void LoadCacheResource(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet& a_updateSet, MergedTextureGeometries& mergedTextureGeometries, ResourceDatas& resourceDatas, UpdateResult& results);
 
 		DirectX::XMVECTOR SlerpVector(const DirectX::XMVECTOR& a, const DirectX::XMVECTOR& b, const float& t);
 		bool ComputeBarycentric(const float& px, const float& py, const DirectX::XMINT2& a, const DirectX::XMINT2& b, const DirectX::XMINT2& c, DirectX::XMFLOAT3& out);
@@ -162,8 +164,8 @@ namespace Mus {
 		bool CopySubresourceFromBuffer(ID3D11Device* device, ID3D11DeviceContext* context, std::vector<std::uint8_t>& buffer, UINT rowPitch, UINT mipLevel, ID3D11Texture2D* dstTexture);
 		bool CopySubresourceFromBuffer(ID3D11Device* device, ID3D11DeviceContext* context, std::vector<std::vector<std::uint8_t>>& buffer, std::vector<UINT>& rowPitch, ID3D11Texture2D* dstTexture);
 
-		void PostProcessing(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries);
-		void PostProcessingGPU(ID3D11Device* device, ID3D11DeviceContext* context, concurrency::concurrent_vector<TextureResourceDataPtr>& resourceDatas, UpdateResult& results, std::unordered_set<RE::BSGeometry*>& mergedTextureGeometries);
+		void PostProcessing(ID3D11Device* device, ID3D11DeviceContext* context, ResourceDatas& resourceDatas, UpdateResult& results, MergedTextureGeometries& mergedTextureGeometries);
+        void PostProcessingGPU(ID3D11Device* device, ID3D11DeviceContext* context, ResourceDatas& resourceDatas, UpdateResult& results, MergedTextureGeometries& mergedTextureGeometries);
 
 		bool MergeTexture(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& rsourceData, ID3D11Texture2D* dstTex, ID3D11Texture2D* srcTex);
 		bool MergeTextureGPU(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& resourceData, ID3D11ShaderResourceView* dstSrv, ID3D11Texture2D* dstTex, ID3D11ShaderResourceView* srcSrv, ID3D11Texture2D* srcTex);
