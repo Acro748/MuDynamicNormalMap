@@ -14,8 +14,10 @@ namespace Mus {
 	std::clock_t currentTime = 0;
 
 	std::uint8_t divideTaskQ = 0;
-	bool vramSaveMode = true;
-	bool isNoSplitGPU = false;
+    std::atomic<bool> vramSaveMode = true;
+    std::atomic<bool> isNoSplitGPU = false;
+    std::atomic<bool> isImmediately = false;
+    std::atomic<bool> isSecondGPUEnabled = false;
 
 	float weldDistance = 0.0001f;
 	float weldDistanceMult = 10000;

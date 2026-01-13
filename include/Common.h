@@ -21,7 +21,7 @@ namespace Mus {
 		std::string maskTexturePath;
 		float detailStrength = 0.5f;
 	};
-	typedef concurrency::concurrent_unordered_map<RE::BSGeometry*, UpdateTextureSet> UpdateSet;
+	typedef std::unordered_map<RE::BSGeometry*, UpdateTextureSet> UpdateSet;
 
 	struct TextureInfo {
 		RE::FormID actorID;
@@ -32,6 +32,7 @@ namespace Mus {
 	struct TextureResource {
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> normalmapTexture2D = nullptr;
 		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> normalmapShaderResourceView = nullptr;
+        Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> normalmapUnorderedAccessView = nullptr;
 	};
 	typedef std::shared_ptr<TextureResource> TextureResourcePtr;
 }

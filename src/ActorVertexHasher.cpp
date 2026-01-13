@@ -124,7 +124,7 @@ namespace Mus {
 			if (bipedSlot > 0)
 			{
 				logger::debug("{:x} {} : detected changed slot {:x}", actor->formID, actor->GetName(), bipedSlot);
-				TaskManager::GetSingleton().QUpdateNormalMap(actor.get(), bipedSlot);
+                TaskManager::GetSingleton().QUpdateNormalMap(actor.get());
 			}
 
 			if (Config::GetSingleton().GetActorVertexHasherTime2())

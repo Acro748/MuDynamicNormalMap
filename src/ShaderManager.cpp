@@ -218,20 +218,11 @@ namespace Mus {
 				}
 			}
 			file += shaderName;
-			std::string file_ = file;
 			if (compiled)
-				file_ += ".cso";
+                file += ".cso";
 			else
-				file_ += ".hlsl";
-			if (!compiled)
-			{
-				if (!IsExistFileInStream(file_))
-				{
-					logger::critical("Failed to get shader file");
-					return L"";
-				}
-			}
-			return string2wstring(file_);
+                file += ".hlsl";
+            return string2wstring(file);
 		}
 
 		ShaderManager::ComputeShader ShaderManager::CreateComputeShader(ID3D11Device* device, std::string shaderName)
@@ -720,13 +711,14 @@ namespace Mus {
 
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> TextureLoadManager::GetNiTexture(std::string name)
 		{
+            Microsoft::WRL::ComPtr<ID3D11Texture2D> texture = nullptr;
 			auto found = niTextures.find(name);
 			if (found != niTextures.end())
 			{
-				if (found->second && found->second->rendererTexture)
-					return found->second->rendererTexture->texture;
+                if (found->second && found->second->rendererTexture)
+                    found->second->rendererTexture->texture->QueryInterface(texture.GetAddressOf());
 			}
-			return nullptr;
+            return texture;
 		}
 
 		void TextureLoadManager::ReleaseNiTexture(std::string name)
@@ -853,19 +845,21 @@ namespace Mus {
 			filePath = stringRemoveStarts(filePath, "Data\\");
 
 			RE::BSResourceNiBinaryStream file(filePath);
-			if (!file.good())
+            if (!file.good() || !file.stream)
 				return false;
 
-			RE::BSResourceNiBinaryStream::BufferInfo bufferInfo;
-			file.get_info(bufferInfo);
+			auto ec = file.stream->DoOpen();
+            if (ec != RE::BSResource::ErrorCode::kNone)
+                return false;
 
-			std::vector<std::uint8_t> buffer(bufferInfo.totalSize);
-			Read(&file, buffer.data(), bufferInfo.totalSize);
-
+			std::vector<std::uint8_t> buffer(file.stream->totalSize);
+            std::uint64_t readBytes;
+            file.stream->DoRead(buffer.data(), buffer.size(), readBytes);
+			
 			DirectX::ScratchImage image;
-			HRESULT hr = LoadFromDDSMemory(buffer.data(), buffer.size(), DirectX::DDS_FLAGS::DDS_FLAGS_NONE, nullptr, image);
+            HRESULT hr = LoadFromDDSMemory(buffer.data(), buffer.size(), DirectX::DDS_FLAGS::DDS_FLAGS_NONE, nullptr, image);
 			if (FAILED(hr)) {
-				logger::error("Failed to get texture from {} file", filePath);
+				logger::error("Failed to get texture from {} file ({})", filePath, hr);
 				return false;
 			}
 			Microsoft::WRL::ComPtr<ID3D11Resource> resource;

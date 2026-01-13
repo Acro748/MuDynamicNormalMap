@@ -1,10 +1,15 @@
 #include "ThreadPool.h"
 
 namespace Mus {
-    std::unique_ptr<ThreadPool_ParallelModule> actorThreads;
+    std::atomic<std::shared_ptr<ThreadPool_ParallelModule>> currentActorThreads;
+    std::shared_ptr<ThreadPool_ParallelModule> actorThreads;
+    std::shared_ptr<ThreadPool_ParallelModule> actorThreadsFull;
+
+    std::atomic<std::shared_ptr<ThreadPool_ParallelModule>> currentProcessingThreads;
+    std::shared_ptr<ThreadPool_ParallelModule> processingThreads;
+    std::shared_ptr<ThreadPool_ParallelModule> processingThreadsFull;
+
     std::unique_ptr<ThreadPool_ParallelModule> memoryManageThreads;
-    std::unique_ptr<ThreadPool_ParallelModule> updateThreads;
-    std::unique_ptr<ThreadPool_ParallelModule> processingThreads;
     std::unique_ptr<ThreadPool_ParallelModule> backGroundHasherThreads;
 
     ThreadPool_ParallelModule::ThreadPool_ParallelModule(std::uint32_t threadSize, std::uint64_t a_coreMask)

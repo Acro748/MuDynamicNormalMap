@@ -1,6 +1,16 @@
 #pragma once
 
 namespace Mus {
+    enum SIMDType {
+        noSIMD,
+        sse2,
+        sse4,
+        avx,
+        avx2,
+        total
+    };
+    SIMDType GetSIMDType(bool scan = false);
+
     class Config {
     public:
         [[nodiscard]] static Config& GetSingleton() {
@@ -13,7 +23,7 @@ namespace Mus {
         bool LoadConfig(std::ifstream& configfile);
 
         enum AutoTaskQList : std::uint8_t {
-            Disable = 0,
+            Immediately = 0,
             Fastest,
             Faster,
             Balanced,
@@ -199,11 +209,20 @@ namespace Mus {
         [[nodiscard]] inline auto GetTaskQTickMS() const noexcept {
             return TaskQTickMS;
         }
+        [[nodiscard]] inline auto GetProcessingInLoading() const noexcept {
+            return ProcessingInLoading;
+        }
+        [[nodiscard]] inline auto GetProcessingInLoadingWithMainGPU() const noexcept {
+            return ProcessingInLoadingWithMainGPU;
+        }
         [[nodiscard]] inline auto GetTextureCompress() const noexcept {
             return TextureCompress;
         }
         [[nodiscard]] inline auto GetTextureCompressQuality() const noexcept {
             return TextureCompressQuality;
+        }
+        [[nodiscard]] inline auto GetSIMDtype() const noexcept {
+            return SIMDtype;
         }
         [[nodiscard]] inline auto GetDiskCache() const noexcept {
             return DiskCache;
@@ -304,10 +323,13 @@ namespace Mus {
         bool UpdateDistanceVramSave = false;
 		bool UseMipMap = true;
 
-        std::uint8_t AutoTaskQ = AutoTaskQList::Disable;
+        std::uint8_t AutoTaskQ = AutoTaskQList::Balanced;
+        bool ProcessingInLoading = true;
+        bool ProcessingInLoadingWithMainGPU = true;
         std::clock_t TaskQTickMS = 100;
         std::int8_t TextureCompress = 0; //-1 auto compress, 0 no compress, 1 cpu bc7, 2 gpu bc7
         std::uint8_t TextureCompressQuality = 1;
+        std::int8_t SIMDtype = SIMDType::avx;
         bool DiskCache = true;
         std::string DiskCacheFolder = "Data\\SKSE\\Plugins\\MuDynamicNormalMap\\DiskCache";
         std::uint32_t DiskCacheLimitMB = 500;
@@ -406,8 +428,6 @@ namespace Mus {
             return value;
         }
 
-        void SetPriorityCores(std::int32_t DetectPriorityCores);
-
     protected:
         inline std::vector<RE::FormID> ConfigLineSplitterFormID(std::string valuestr)
         {
@@ -473,6 +493,7 @@ namespace Mus {
         static inline bool isSubSurface(std::string filename) { return IsContainString(filename, "_sk.dds"); };
         static inline bool isEnvironment(std::string filename) { return IsContainString(filename, "_e.dds"); };
     };
-
     void InitialSetting();
+    bool SetImmediately(bool a_Immediately);
+
 }

@@ -46,7 +46,7 @@ namespace Mus{
 		std::uint32_t GetRefCount(ID3D11ShaderResourceView* texture);
 
 		std::shared_mutex lock;
-		concurrency::concurrent_unordered_map<std::uint64_t, TextureResourcePtr> map;
+		std::unordered_map<std::uint64_t, TextureResourcePtr> map;
 
 		std::shared_mutex diskCacheLock;
 		struct DiskCacheInfo {
@@ -56,7 +56,7 @@ namespace Mus{
 			D3D11_TEXTURE2D_DESC texDesc;
 			D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
 		};
-		concurrency::concurrent_unordered_map<std::uint64_t, DiskCacheInfo> diskCacheInfo;
+		std::unordered_map<std::uint64_t, DiskCacheInfo> diskCacheInfo;
 		void UpdateAccessTime(std::uint64_t a_hash);
 
 		inline std::uint64_t GetSizeAsMB(std::uint64_t fileSize) {
@@ -90,7 +90,7 @@ namespace Mus{
 		void RemoveOldDiskCache();
 
 		std::shared_mutex hashPairsLock;
-		typedef concurrency::concurrent_unordered_set<std::uint64_t> HashPair;
-		concurrency::concurrent_vector<HashPair> hashPairs;
+		typedef std::unordered_set<std::uint64_t> HashPair;
+		std::vector<HashPair> hashPairs;
 	};
 }
