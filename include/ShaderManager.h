@@ -164,8 +164,7 @@ namespace Mus {
 				return 1;
 			}
 
-			static void LoadTexture(const char* path, std::uint8_t unk1, RE::NiPointer<RE::NiSourceTexture>& texture, bool unk2)
-			{
+			static void LoadTexture(const char* path, std::uint8_t unk1, RE::NiPointer<RE::NiSourceTexture>& texture, bool unk2) {
 				using func_t = decltype(&TextureLoadManager::LoadTexture);
 				REL::Relocation<func_t> func{ RELOCATION_ID(98986, 105640) };
 				return func(path, unk1, texture, unk2);

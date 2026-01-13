@@ -35,7 +35,7 @@ namespace {
         log->flush_on(Mus::Config::GetSingleton().GetFlushLevel());
 
         spdlog::set_default_logger(std::move(log));
-        spdlog::set_pattern("[%H:%M:%S.%e] [%l] [%t] [%s:%#] %v");
+        spdlog::set_pattern("[%H:%M:%S.%e][%L][%t][%s:%#] %v");
     }
 
     /**
@@ -180,21 +180,6 @@ namespace {
 
         Mus::TaskManager::GetSingleton().Init();
         Mus::ObjectNormalMapUpdater::GetSingleton().Init();
-
-        switch (Mus::GetSIMDType()) {
-        case Mus::SIMDType::avx2:
-            ispc::bc7e_avx2_compress_block_init();
-            break;
-        case Mus::SIMDType::avx:
-            ispc::bc7e_avx_compress_block_init();
-            break;
-        case Mus::SIMDType::sse4:
-            ispc::bc7e_sse4_compress_block_init();
-            break;
-        case Mus::SIMDType::sse2:
-            ispc::bc7e_sse2_compress_block_init();
-            break;
-        }
     }
 
     void kNewGameFunction()
@@ -272,7 +257,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
 
     Mus::Config::GetSingleton().LoadConfig();
 
-    Init(skse);
+    Init(skse, false);
     InitializeMessaging();
     InitializeSerialization();
     InitializePapyrus();

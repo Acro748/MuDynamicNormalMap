@@ -28,31 +28,34 @@ namespace Mus {
 		auto map_ = map;
 		lock.unlock_shared();
 
-		std::vector<std::uint64_t> garbages;
+		std::uint32_t garbageCount = 0;
 		for (auto& m : map_) {
 			if (!m.second->normalmapTexture2D || !m.second->normalmapShaderResourceView)
-			{
-				garbages.push_back(m.first);
+            {
+                lock.lock();
+                map.erase(m.first);
+                lock.unlock();
+                garbageCount++;
 				continue;
 			}
 			if (GetRefCount(m.second->normalmapTexture2D.Get()) <= 1 || GetRefCount(m.second->normalmapShaderResourceView.Get()) <= 1)
-			{
-				garbages.push_back(m.first);
+            {
+                lock.lock();
+                map.erase(m.first);
+                lock.unlock();
+                garbageCount++;
 				continue;
 			}
 		}
 
-		if (garbages.empty())
+		if (garbageCount == 0)
 			return;
 
-		lock.lock();
-		for (auto& garbage : garbages) {
-			map.unsafe_erase(garbage);
-		}
-		const std::size_t mapSize = map.size();
-		lock.unlock();
+        lock.lock_shared();
+        const std::size_t mapSize = map.size();
+        lock.unlock_shared();
 
-		logger::debug("Removed {} RAM cache / Current remain {} RAM cache", garbages.size(), mapSize);
+		logger::debug("Removed {} RAM cache / Current remain {} RAM cache", garbageCount, mapSize);
 	}
 
 	void NormalMapStore::AddResource(std::uint64_t a_hash, TextureResourcePtr a_resource)
@@ -97,7 +100,7 @@ namespace Mus {
 
 	void NormalMapStore::AddHashPair(std::uint64_t a_hash, std::uint64_t b_hash)
 	{
-		hashPairsLock.lock_shared();
+		hashPairsLock.lock();
 		auto found = std::find_if(hashPairs.begin(), hashPairs.end(), [&](HashPair& pair) {
 			return pair.find(a_hash) != pair.end() || pair.find(b_hash) != pair.end();
 		});
@@ -115,14 +118,14 @@ namespace Mus {
 			hashPairs.push_back(newPair);
 			logger::debug("Create and add hash pair {:x} - {:x}", a_hash, b_hash);
 		}
-		hashPairsLock.unlock_shared();
+		hashPairsLock.unlock();
 	}
 	bool NormalMapStore::IsPairHashes(std::uint64_t a_hash, std::uint64_t b_hash)
 	{
 		hashPairsLock.lock_shared();
-		bool isPair = std::find_if(hashPairs.begin(), hashPairs.end(), [&](HashPair& pair) {
-			return pair.find(a_hash) != pair.end() && pair.find(b_hash) != pair.end();
-		}) != hashPairs.end();
+		bool isPair = std::find_if(hashPairs.cbegin(), hashPairs.cend(), [&](const HashPair& pair) {
+			return pair.find(a_hash) != pair.cend() && pair.find(b_hash) != pair.cend();
+		}) != hashPairs.cend();
 		hashPairsLock.unlock_shared();
 		logger::debug("Is pair hashes : {:x} - {:x} => {}", a_hash, b_hash, isPair ? "O" : "X");
 		return isPair;
@@ -241,9 +244,9 @@ namespace Mus {
 		}
 		info.lastAccessTime = currentTime;
 
-		diskCacheLock.lock_shared();
+		diskCacheLock.lock();
 		diskCacheInfo[a_hash] = info;
-		diskCacheLock.unlock_shared();
+		diskCacheLock.unlock();
 		logger::info("Created disk cache {:x}", a_hash);
 		if (Config::GetSingleton().GetClearDiskCache())
 			return;
@@ -352,9 +355,9 @@ namespace Mus {
 				logger::error("Unable to read disk cache {:x}", a_hash);
 				return nullptr;
 			}
-			diskCacheLock.lock_shared();
+			diskCacheLock.lock();
 			diskCacheInfo[a_hash] = info;
-			diskCacheLock.unlock_shared();
+			diskCacheLock.unlock();
 			logger::info("Found disk cache {:x}", a_hash);
 		}
 
@@ -450,7 +453,7 @@ namespace Mus {
 		}
 
 		diskCacheLock.lock();
-		diskCacheInfo.unsafe_erase(a_hash);
+		diskCacheInfo.erase(a_hash);
 		diskCacheLock.unlock();
 		logger::info("Removed old disk cache {:x}", a_hash);
 	}

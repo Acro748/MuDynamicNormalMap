@@ -37,10 +37,15 @@ namespace Mus {
 
         void workerLoop();
     };
-    extern std::unique_ptr<ThreadPool_ParallelModule> actorThreads;
+    extern std::atomic<std::shared_ptr<ThreadPool_ParallelModule>> currentActorThreads;
+    extern std::shared_ptr<ThreadPool_ParallelModule> actorThreads;
+    extern std::shared_ptr<ThreadPool_ParallelModule> actorThreadsFull;
+
+    extern std::atomic<std::shared_ptr<ThreadPool_ParallelModule>> currentProcessingThreads;
+    extern std::shared_ptr<ThreadPool_ParallelModule> processingThreads;
+    extern std::shared_ptr<ThreadPool_ParallelModule> processingThreadsFull;
+
     extern std::unique_ptr<ThreadPool_ParallelModule> memoryManageThreads;
-    extern std::unique_ptr<ThreadPool_ParallelModule> updateThreads;
-    extern std::unique_ptr<ThreadPool_ParallelModule> processingThreads;
     extern std::unique_ptr<ThreadPool_ParallelModule> backGroundHasherThreads;
 
     class ThreadPool_GPUTaskModule

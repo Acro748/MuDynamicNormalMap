@@ -17,9 +17,9 @@ namespace Mus {
 
 		class Hash {
 		private:
-			XXH64_state_t* state = nullptr;
+            XXH3_state_t* state = nullptr;
 			void Init() {
-				state = XXH64_createState();
+				state = XXH3_createState();
 				Reset();
 			}
 		public:
@@ -30,13 +30,13 @@ namespace Mus {
 				Init();
 				Update(a_geo);
 			}
-			~Hash() { XXH64_freeState(state); }
+			~Hash() { XXH3_freeState(state); }
 			bool Update(RE::BSGeometry* a_geo);
-			void Update(const void* input, size_t len) { XXH64_update(state, input, len); }
-			void Reset() { XXH64_reset(state, 0); }
+            void Update(const void* input, std::size_t len) { XXH3_64bits_update(state, input, len); }
+            void Reset() { XXH3_64bits_reset(state); }
 			std::size_t GetNewHash() { 
 				oldHashValue = hashValue;
-				hashValue = XXH64_digest(state);
+				hashValue = XXH3_64bits_digest(state);
 				return hashValue;
 			}
 			std::size_t GetHash() const { return hashValue; }
@@ -67,14 +67,14 @@ namespace Mus {
 
 		std::atomic<bool> isDetecting = false;
 
-		std::shared_mutex blockActorsLock;
-		concurrency::concurrent_unordered_map<RE::FormID, bool> blockActors;
+		mutable std::shared_mutex blockActorsLock;
+		std::unordered_map<RE::FormID, bool> blockActors;
 		inline void SetBlocked(RE::FormID id, bool blocked) {
-			blockActorsLock.lock_shared();
+			blockActorsLock.lock();
 			blockActors[id] = blocked;
-			blockActorsLock.unlock_shared();
+			blockActorsLock.unlock();
 		}
-		inline bool IsBlocked(RE::FormID id) {
+		inline bool IsBlocked(RE::FormID id) const {
 			blockActorsLock.lock_shared();
 			auto found = blockActors.find(id);
 			bool isBlocked = found != blockActors.end() ? found->second : false;
