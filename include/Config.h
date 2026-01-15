@@ -324,10 +324,10 @@ namespace Mus {
 		bool UseMipMap = true;
 
         std::uint8_t AutoTaskQ = AutoTaskQList::Balanced;
-        bool ProcessingInLoading = true;
+        bool ProcessingInLoading = false;
         bool ProcessingInLoadingWithMainGPU = true;
         std::clock_t TaskQTickMS = 100;
-        std::int8_t TextureCompress = 0; //-1 auto compress, 0 no compress, 1 cpu bc7, 2 gpu bc7
+        std::int8_t TextureCompress = 1; //-1 auto compress, 0 no compress, 1 cpu bc7, 2 gpu bc7
         std::uint8_t TextureCompressQuality = 1;
         std::int8_t SIMDtype = SIMDType::avx;
         bool DiskCache = true;

@@ -596,7 +596,7 @@ namespace Mus {
             actorThreadCount = 4;
             processingThreadCount = coreCount;
             usePCores = true;
-            gpuTaskThreadCount = 4;
+            gpuTaskThreadCount = 1;
             break;
         case Config::AutoTaskQList::Faster:
             taskQTickMS = Config::GetSingleton().GetTaskQTickMS();

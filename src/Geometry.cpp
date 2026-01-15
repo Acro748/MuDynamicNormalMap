@@ -249,7 +249,7 @@ namespace Mus {
 
         std::vector<std::future<void>> processes;
         {
-            const std::size_t sub = std::max((std::size_t)1, std::min(triCount, currentProcessingThreads.load()->GetThreads()));
+            const std::size_t sub = std::max((std::size_t)1, std::min(triCount, currentProcessingThreads.load()->GetThreads() * 4));
             const std::size_t unit = (triCount + sub - 1) / sub;
             for (std::size_t t = 0; t < sub; t++)
             {
@@ -295,7 +295,7 @@ namespace Mus {
         std::vector<std::vector<PosEntry>> tpbMap;
         processes.clear();
         {
-            const std::size_t sub = std::max((std::size_t)1, std::min(vertCount, currentProcessingThreads.load()->GetThreads()));
+            const std::size_t sub = std::max((std::size_t)1, std::min(vertCount, currentProcessingThreads.load()->GetThreads() * 4));
             const std::size_t unit = (vertCount + sub - 1) / sub;
             tpbMap.resize(sub);
             for (std::size_t t = 0; t < sub; t++)
@@ -368,7 +368,7 @@ namespace Mus {
         processes.clear();
         {
             const std::size_t size = linkedVertices.size();
-            const std::size_t sub = std::max((std::size_t)1, std::min(size, currentProcessingThreads.load()->GetThreads()));
+            const std::size_t sub = std::max((std::size_t)1, std::min(size, currentProcessingThreads.load()->GetThreads() * 4));
             const std::size_t unit = (size + sub - 1) / sub;
             for (std::size_t t = 0; t < sub; t++)
             {

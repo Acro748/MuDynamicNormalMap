@@ -115,16 +115,6 @@ namespace Mus {
 		}
 
         std::vector<std::vector<std::uint32_t>> linkedVertices;
-        struct LinkedVerticesData {
-            std::vector<std::uint32_t> groups;
-            std::vector<std::uint32_t> offsets;
-            std::span<const std::uint32_t> GetGroup(std::uint32_t i) const {
-                if (i >= offsets.size() - 1)
-                    return {};
-                return {&groups[offsets[i]], &groups[offsets[i + 1]]};
-            }
-        };
-        LinkedVerticesData linkedVerticesData;
 
 		struct PositionKey {
 			std::int32_t x, y, z;

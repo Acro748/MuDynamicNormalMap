@@ -1078,7 +1078,8 @@ namespace Mus {
             {
                 //logger::info("Loading Menu Close");
             }
-		}
+        }
+        return EventResult::kContinue;
 	}
 
 
