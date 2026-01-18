@@ -411,7 +411,6 @@ namespace Mus {
 	ObjectNormalMapUpdater::UpdateResult ObjectNormalMapUpdater::UpdateObjectNormalMap(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet a_updateSet)
     {
         RefGuard rg(this);
-		WaitForFreeVram();
 
 		const std::string_view _func_ = __func__;
 
@@ -532,29 +531,30 @@ namespace Mus {
             std::uint8_t* overlayData = nullptr;
             std::uint8_t* maskData = nullptr;
 
-            sl.Lock();
-            hr = context->Map(dstTexture2D.Get(), 0, D3D11_MAP_WRITE, 0, &dstMappedResource);
-            if (newResourceData->srcTexture2D)
-            {
-                hr = context->Map(newResourceData->srcTexture2D.Get(), 0, D3D11_MAP_READ, 0, &srcMappedResource);
-                srcData = reinterpret_cast<std::uint8_t*>(srcMappedResource.pData);
+			{
+                Shader::ShaderLockGuard slg(&sl);
+                hr = context->Map(dstTexture2D.Get(), 0, D3D11_MAP_WRITE, 0, &dstMappedResource);
+                if (newResourceData->srcTexture2D)
+                {
+                    hr = context->Map(newResourceData->srcTexture2D.Get(), 0, D3D11_MAP_READ, 0, &srcMappedResource);
+                    srcData = reinterpret_cast<std::uint8_t*>(srcMappedResource.pData);
+                }
+                if (newResourceData->detailTexture2D)
+                {
+                    hr = context->Map(newResourceData->detailTexture2D.Get(), 0, D3D11_MAP_READ, 0, &detailMappedResource);
+                    detailData = reinterpret_cast<std::uint8_t*>(detailMappedResource.pData);
+                }
+                if (newResourceData->overlayTexture2D)
+                {
+                    hr = context->Map(newResourceData->overlayTexture2D.Get(), 0, D3D11_MAP_READ, 0, &overlayMappedResource);
+                    overlayData = reinterpret_cast<std::uint8_t*>(overlayMappedResource.pData);
+                }
+                if (newResourceData->maskTexture2D)
+                {
+                    hr = context->Map(newResourceData->maskTexture2D.Get(), 0, D3D11_MAP_READ, 0, &maskMappedResource);
+                    maskData = reinterpret_cast<std::uint8_t*>(maskMappedResource.pData);
+                }
             }
-            if (newResourceData->detailTexture2D)
-            {
-                hr = context->Map(newResourceData->detailTexture2D.Get(), 0, D3D11_MAP_READ, 0, &detailMappedResource);
-                detailData = reinterpret_cast<std::uint8_t*>(detailMappedResource.pData);
-            }
-            if (newResourceData->overlayTexture2D)
-            {
-                hr = context->Map(newResourceData->overlayTexture2D.Get(), 0, D3D11_MAP_READ, 0, &overlayMappedResource);
-                overlayData = reinterpret_cast<std::uint8_t*>(overlayMappedResource.pData);
-            }
-            if (newResourceData->maskTexture2D)
-            {
-                hr = context->Map(newResourceData->maskTexture2D.Get(), 0, D3D11_MAP_READ, 0, &maskMappedResource);
-                maskData = reinterpret_cast<std::uint8_t*>(maskMappedResource.pData);
-            }
-            sl.Unlock();
 
             std::uint8_t* dstData = reinterpret_cast<std::uint8_t*>(dstMappedResource.pData);
 
@@ -798,17 +798,20 @@ namespace Mus {
             if (Config::GetSingleton().GetUpdateNormalMapTime2())
                 PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, true, false);
 
-            sl.Lock();
-            context->Unmap(dstTexture2D.Get(), 0);
-            if (hasSrcData)
-                context->Unmap(newResourceData->srcTexture2D.Get(), 0);
-            if (hasDetailData)
-                context->Unmap(newResourceData->detailTexture2D.Get(), 0);
-            if (hasOverlayData)
-                context->Unmap(newResourceData->overlayTexture2D.Get(), 0);
-            if (hasMaskData)
-                context->Unmap(newResourceData->maskTexture2D.Get(), 0);
-            sl.Unlock();
+            
+			{
+                Shader::ShaderLockGuard slg(&sl);
+                context->Unmap(dstTexture2D.Get(), 0);
+                if (hasSrcData)
+                    context->Unmap(newResourceData->srcTexture2D.Get(), 0);
+                if (hasDetailData)
+                    context->Unmap(newResourceData->detailTexture2D.Get(), 0);
+                if (hasOverlayData)
+                    context->Unmap(newResourceData->overlayTexture2D.Get(), 0);
+                if (hasMaskData)
+                    context->Unmap(newResourceData->maskTexture2D.Get(), 0);
+            }
+            
 
             NormalMapResult newNormalMapResult;
             newNormalMapResult.slot = update.second.slot;
@@ -838,7 +841,6 @@ namespace Mus {
             return results;
 
         RefGuard rg(this);
-		WaitForFreeVram();
 
 		HRESULT hr;
 		const auto device = GetDevice();
@@ -986,86 +988,18 @@ namespace Mus {
                 continue;
             }
 
-            sl.Lock();
-            context->ClearUnorderedAccessViewUint(dstUnorderedAccessView.Get(), clearValue);
-            sl.Unlock();
+            
+			{
+                Shader::ShaderLockGuard slg(&sl);
+                context->ClearUnorderedAccessViewUint(dstUnorderedAccessView.Get(), clearValue);
+            }
+
 
             const UINT width = dstDesc.Width;
             const UINT height = dstDesc.Height;
 
             if (Config::GetSingleton().GetUpdateNormalMapTime1())
                 PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, true, false);
-
-            struct ShaderBackup
-            {
-            public:
-                void Backup(ID3D11DeviceContext* context)
-                {
-                    context->CSGetShader(&shader, nullptr, 0);
-                    context->CSGetConstantBuffers(0, 1, &constBuffer);
-                    context->CSGetShaderResources(0, 1, &vertexSRV);
-                    context->CSGetShaderResources(1, 1, &uvSRV);
-                    context->CSGetShaderResources(2, 1, &normalSRV);
-                    context->CSGetShaderResources(3, 1, &tangentSRV);
-                    context->CSGetShaderResources(4, 1, &bitangentSRV);
-                    context->CSGetShaderResources(5, 1, &indicesSRV);
-                    context->CSGetShaderResources(6, 1, &srcSRV);
-                    context->CSGetShaderResources(7, 1, &detailSRV);
-                    context->CSGetShaderResources(8, 1, &overlaySRV);
-                    context->CSGetShaderResources(9, 1, &maskSRV);
-                    context->CSGetUnorderedAccessViews(0, 1, &dstUAV);
-                    context->CSGetSamplers(0, 1, &samplerState);
-                    Unbind(context);
-                }
-                void Revert(ID3D11DeviceContext* context)
-                {
-                    Unbind(context);
-                    context->CSSetShader(shader.Get(), nullptr, 0);
-                    context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
-                    context->CSSetShaderResources(0, 1, vertexSRV.GetAddressOf());
-                    context->CSSetShaderResources(1, 1, uvSRV.GetAddressOf());
-                    context->CSSetShaderResources(2, 1, normalSRV.GetAddressOf());
-                    context->CSSetShaderResources(3, 1, tangentSRV.GetAddressOf());
-                    context->CSSetShaderResources(4, 1, bitangentSRV.GetAddressOf());
-                    context->CSSetShaderResources(5, 1, indicesSRV.GetAddressOf());
-                    context->CSSetShaderResources(6, 1, srcSRV.GetAddressOf());
-                    context->CSSetShaderResources(7, 1, detailSRV.GetAddressOf());
-                    context->CSSetShaderResources(8, 1, overlaySRV.GetAddressOf());
-                    context->CSSetShaderResources(9, 1, maskSRV.GetAddressOf());
-                    context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
-                    context->CSSetSamplers(0, 1, samplerState.GetAddressOf());
-                }
-
-            private:
-                void Unbind(ID3D11DeviceContext* context)
-                {
-                    ID3D11Buffer* emptyBuffer[1] = {nullptr};
-                    ID3D11ShaderResourceView* emptySRV[10] = {nullptr};
-                    ID3D11UnorderedAccessView* emptyUAV[1] = {nullptr};
-                    ID3D11SamplerState* emptySamplerState[1] = {nullptr};
-
-                    context->CSSetShader(nullptr, nullptr, 0);
-                    context->CSSetConstantBuffers(0, 1, emptyBuffer);
-                    context->CSSetShaderResources(0, 10, emptySRV);
-                    context->CSSetUnorderedAccessViews(0, 1, emptyUAV, nullptr);
-                    context->CSSetSamplers(0, 1, emptySamplerState);
-                }
-
-                Shader::ShaderManager::ComputeShader shader;
-                Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
-                Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> vertexSRV;
-                Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> uvSRV;
-                Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> normalSRV;
-                Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> tangentSRV;
-                Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> bitangentSRV;
-                Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> indicesSRV;
-                Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcSRV;
-                Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> detailSRV;
-                Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> overlaySRV;
-                Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> maskSRV;
-                Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> dstUAV;
-                Microsoft::WRL::ComPtr<ID3D11SamplerState> samplerState;
-            };
 
 			UpdateNormalMapBufferData cbData = {};
             cbData.texWidth = dstDesc.Width;
@@ -1087,31 +1021,31 @@ namespace Mus {
                 if (Config::GetSingleton().GetUpdateNormalMapTime2())
                     GPUPerformanceLog(device, context, std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, false, false);
 
-				D3D11_MAPPED_SUBRESOURCE mapped;
-                ShaderBackup sb;
-                sl.Lock();
-                hr = context->Map(updateNormalMapBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-                *reinterpret_cast<UpdateNormalMapBufferData*>(mapped.pData) = cbData;
-                context->Unmap(updateNormalMapBuffer[isSecondGPUEnabled].Get(), 0);
-                sb.Backup(context);
-                context->CSSetShader(updateNormalMapShader[isSecondGPUEnabled].Get(), nullptr, 0);
-                context->CSSetConstantBuffers(0, 1, updateNormalMapBuffer[isSecondGPUEnabled].GetAddressOf());
-                context->CSSetShaderResources(0, 1, geoData->vertexSRV.GetAddressOf());
-                context->CSSetShaderResources(1, 1, geoData->uvSRV.GetAddressOf());
-                context->CSSetShaderResources(2, 1, geoData->normalSRV.GetAddressOf());
-                context->CSSetShaderResources(3, 1, geoData->tangentSRV.GetAddressOf());
-                context->CSSetShaderResources(4, 1, geoData->bitangentSRV.GetAddressOf());
-                context->CSSetShaderResources(5, 1, geoData->indicesSRV.GetAddressOf());
-                context->CSSetShaderResources(6, 1, newResourceData->srcShaderResourceView.GetAddressOf());
-                context->CSSetShaderResources(7, 1, newResourceData->detailShaderResourceView.GetAddressOf());
-                context->CSSetShaderResources(8, 1, newResourceData->overlayShaderResourceView.GetAddressOf());
-                context->CSSetShaderResources(9, 1, newResourceData->maskShaderResourceView.GetAddressOf());
-                context->CSSetUnorderedAccessViews(0, 1, dstUnorderedAccessView.GetAddressOf(), nullptr);
-                context->CSSetSamplers(0, 1, samplerState[isSecondGPUEnabled].GetAddressOf());
-                context->Dispatch(dispatch, 1, 1);
-                sb.Revert(context);
-                sl.Unlock();
-
+				{
+                    D3D11_MAPPED_SUBRESOURCE mapped;
+                    UpdateNormalMapBackup sb;
+                    Shader::ShaderLockGuard slg(&sl);
+                    ShaderBackupManager sbm(context, &sb);
+                    hr = context->Map(updateNormalMapBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+                    *reinterpret_cast<UpdateNormalMapBufferData*>(mapped.pData) = cbData;
+                    context->Unmap(updateNormalMapBuffer[isSecondGPUEnabled].Get(), 0);
+                    context->CSSetShader(updateNormalMapShader[isSecondGPUEnabled].Get(), nullptr, 0);
+                    context->CSSetConstantBuffers(0, 1, updateNormalMapBuffer[isSecondGPUEnabled].GetAddressOf());
+                    context->CSSetShaderResources(0, 1, geoData->vertexSRV.GetAddressOf());
+                    context->CSSetShaderResources(1, 1, geoData->uvSRV.GetAddressOf());
+                    context->CSSetShaderResources(2, 1, geoData->normalSRV.GetAddressOf());
+                    context->CSSetShaderResources(3, 1, geoData->tangentSRV.GetAddressOf());
+                    context->CSSetShaderResources(4, 1, geoData->bitangentSRV.GetAddressOf());
+                    context->CSSetShaderResources(5, 1, geoData->indicesSRV.GetAddressOf());
+                    context->CSSetShaderResources(6, 1, newResourceData->srcShaderResourceView.GetAddressOf());
+                    context->CSSetShaderResources(7, 1, newResourceData->detailShaderResourceView.GetAddressOf());
+                    context->CSSetShaderResources(8, 1, newResourceData->overlayShaderResourceView.GetAddressOf());
+                    context->CSSetShaderResources(9, 1, newResourceData->maskShaderResourceView.GetAddressOf());
+                    context->CSSetUnorderedAccessViews(0, 1, dstUnorderedAccessView.GetAddressOf(), nullptr);
+                    context->CSSetSamplers(0, 1, samplerState[isSecondGPUEnabled].GetAddressOf());
+                    context->Dispatch(dispatch, 1, 1);
+                }
+                
                 if (Config::GetSingleton().GetUpdateNormalMapTime2())
                     GPUPerformanceLog(device, context, std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, true, false);
             }
@@ -1125,35 +1059,37 @@ namespace Mus {
                 std::vector<std::future<void>> gpuTasks;
                 for (std::size_t subIndex = 0; subIndex < subSize; subIndex++)
                 {
-                    const std::uint32_t trisStart = objInfo.indicesStart + subIndex * numSubTris * 3;
-                    gpuTasks.push_back(gpuTask->submitAsync([&, subIndex]() {
+                    const std::uint32_t indicesStart = objInfo.indicesStart + subIndex * numSubTris * 3;
+                    auto cbData_ = cbData;
+                    cbData_.indicesStart = indicesStart;
+                    gpuTasks.push_back(gpuTask->submitAsync([&, cbData_, subIndex]() {
                         if (Config::GetSingleton().GetUpdateNormalMapTime2())
                             GPUPerformanceLog(device, context, std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName + "::" + std::to_string(subIndex), false, false);
 
-                        D3D11_MAPPED_SUBRESOURCE mapped;
-                        ShaderBackup sb;
-                        sl.Lock();
-                        context->Map(updateNormalMapBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-                        *reinterpret_cast<UpdateNormalMapBufferData*>(mapped.pData) = cbData;
-                        context->Unmap(updateNormalMapBuffer[isSecondGPUEnabled].Get(), 0);
-                        sb.Backup(context);
-                        context->CSSetShader(updateNormalMapShader[isSecondGPUEnabled].Get(), nullptr, 0);
-                        context->CSSetConstantBuffers(0, 1, updateNormalMapBuffer[isSecondGPUEnabled].GetAddressOf());
-                        context->CSSetShaderResources(0, 1, geoData->vertexSRV.GetAddressOf());
-                        context->CSSetShaderResources(1, 1, geoData->uvSRV.GetAddressOf());
-                        context->CSSetShaderResources(2, 1, geoData->normalSRV.GetAddressOf());
-                        context->CSSetShaderResources(3, 1, geoData->tangentSRV.GetAddressOf());
-                        context->CSSetShaderResources(4, 1, geoData->bitangentSRV.GetAddressOf());
-                        context->CSSetShaderResources(5, 1, geoData->indicesSRV.GetAddressOf());
-                        context->CSSetShaderResources(6, 1, newResourceData->srcShaderResourceView.GetAddressOf());
-                        context->CSSetShaderResources(7, 1, newResourceData->detailShaderResourceView.GetAddressOf());
-                        context->CSSetShaderResources(8, 1, newResourceData->overlayShaderResourceView.GetAddressOf());
-                        context->CSSetShaderResources(9, 1, newResourceData->maskShaderResourceView.GetAddressOf());
-                        context->CSSetUnorderedAccessViews(0, 1, dstUnorderedAccessView.GetAddressOf(), nullptr);
-                        context->CSSetSamplers(0, 1, samplerState[isSecondGPUEnabled].GetAddressOf());
-                        context->Dispatch(dispatch, 1, 1);
-                        sb.Revert(context);
-                        sl.Unlock();
+						{
+                            D3D11_MAPPED_SUBRESOURCE mapped;
+                            UpdateNormalMapBackup sb;
+                            Shader::ShaderLockGuard slg(&sl);
+                            ShaderBackupManager sbm(context, &sb);
+                            context->Map(updateNormalMapBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+                            *reinterpret_cast<UpdateNormalMapBufferData*>(mapped.pData) = cbData_;
+                            context->Unmap(updateNormalMapBuffer[isSecondGPUEnabled].Get(), 0);
+                            context->CSSetShader(updateNormalMapShader[isSecondGPUEnabled].Get(), nullptr, 0);
+                            context->CSSetConstantBuffers(0, 1, updateNormalMapBuffer[isSecondGPUEnabled].GetAddressOf());
+                            context->CSSetShaderResources(0, 1, geoData->vertexSRV.GetAddressOf());
+                            context->CSSetShaderResources(1, 1, geoData->uvSRV.GetAddressOf());
+                            context->CSSetShaderResources(2, 1, geoData->normalSRV.GetAddressOf());
+                            context->CSSetShaderResources(3, 1, geoData->tangentSRV.GetAddressOf());
+                            context->CSSetShaderResources(4, 1, geoData->bitangentSRV.GetAddressOf());
+                            context->CSSetShaderResources(5, 1, geoData->indicesSRV.GetAddressOf());
+                            context->CSSetShaderResources(6, 1, newResourceData->srcShaderResourceView.GetAddressOf());
+                            context->CSSetShaderResources(7, 1, newResourceData->detailShaderResourceView.GetAddressOf());
+                            context->CSSetShaderResources(8, 1, newResourceData->overlayShaderResourceView.GetAddressOf());
+                            context->CSSetShaderResources(9, 1, newResourceData->maskShaderResourceView.GetAddressOf());
+                            context->CSSetUnorderedAccessViews(0, 1, dstUnorderedAccessView.GetAddressOf(), nullptr);
+                            context->CSSetSamplers(0, 1, samplerState[isSecondGPUEnabled].GetAddressOf());
+                            context->Dispatch(dispatch, 1, 1);
+                        }
 
                         if (Config::GetSingleton().GetUpdateNormalMapTime2())
                             GPUPerformanceLog(device, context, std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName + "::" + std::to_string(subIndex), true, false);
@@ -1392,9 +1328,8 @@ namespace Mus {
 
 		if (sl.IsSecondGPU() || isNoSplitGPU || (dstWidth <= 256 && dstHeight <= 256))
 		{
-			sl.Lock();
+            Shader::ShaderLockGuard slg(&sl);
 			context->CopySubresourceRegion(dstTexture, dstMipMapLevel, 0, 0, 0, srcTexture, srcMipMapLevel, nullptr);
-			sl.Unlock();
 			return true;
 		}
 
@@ -1419,13 +1354,14 @@ namespace Mus {
 					GPUPerformanceLog(device, context, std::string("CopySubresourceRegion") + "::" + std::to_string(dstWidth) + "::" + std::to_string(dstHeight)
 									  + "::" + std::to_string(sy), false, false);
 
-				sl.Lock();
-				context->CopySubresourceRegion(
-					dstTexture, dstMipMapLevel,
-					box.left, box.top, 0,
-					srcTexture, srcMipMapLevel,
-					&box);
-				sl.Unlock();
+				{
+                    Shader::ShaderLockGuard slg(&sl);
+                    context->CopySubresourceRegion(
+                        dstTexture, dstMipMapLevel,
+                        box.left, box.top, 0,
+                        srcTexture, srcMipMapLevel,
+                        &box);
+                }
 
 				if (Config::GetSingleton().GetTextureCopyTime())
 					GPUPerformanceLog(device, context, std::string("CopySubresourceRegion") + "::" + std::to_string(dstWidth) + "::" + std::to_string(dstHeight)
@@ -1473,9 +1409,10 @@ namespace Mus {
 				GPUPerformanceLog(device, context, std::string("CopySubresourceFromBuffer") + "::" + std::to_string(width) + "::" + std::to_string(height)
 								  , false, false);
 
-			sl.Lock();
-			context->UpdateSubresource(dstTexture, mipLevel, nullptr, buffer.data(), rowPitch, 0);
-			sl.Unlock();
+			{
+                Shader::ShaderLockGuard slg(&sl);
+                context->UpdateSubresource(dstTexture, mipLevel, nullptr, buffer.data(), rowPitch, 0);
+            }
 
 			if (Config::GetSingleton().GetTextureCopyTime())
 				GPUPerformanceLog(device, context, std::string("CopySubresourceFromBuffer") + "::" + std::to_string(width) + "::" + std::to_string(height)
@@ -1530,15 +1467,17 @@ namespace Mus {
 				if (Config::GetSingleton().GetTextureCopyTime())
 					GPUPerformanceLog(device, context, std::string("CopySubresourceFromBuffer") + "::" + std::to_string(width) + "::" + std::to_string(height)
 									  + "::" + std::to_string(sy), false, false);
-				sl.Lock();
-				context->UpdateSubresource(
-					dstTexture,
-					mipLevel,
-					&box,
-					bufferStart,
-					rowPitch,
-					0);
-				sl.Unlock();
+
+				{
+                    Shader::ShaderLockGuard slg(&sl);
+                    context->UpdateSubresource(
+                        dstTexture,
+                        mipLevel,
+                        &box,
+                        bufferStart,
+                        rowPitch,
+                        0);
+                }
 
 				if (Config::GetSingleton().GetTextureCopyTime())
 					GPUPerformanceLog(device, context, std::string("CopySubresourceFromBuffer") + "::" + std::to_string(width) + "::" + std::to_string(height)
@@ -1829,10 +1768,11 @@ namespace Mus {
 		dstTex->GetDesc(&desc);
 
 		D3D11_MAPPED_SUBRESOURCE dstMappedResource, srcMappedResource;
-		sl.Lock();
-		context->Map(dstTex, 0, D3D11_MAP_READ_WRITE, 0, &dstMappedResource);
-		context->Map(srcTex, 0, D3D11_MAP_READ, 0, &srcMappedResource);
-		sl.Unlock();
+		{
+            Shader::ShaderLockGuard slg(&sl);
+            context->Map(dstTex, 0, D3D11_MAP_READ_WRITE, 0, &dstMappedResource);
+            context->Map(srcTex, 0, D3D11_MAP_READ, 0, &srcMappedResource);
+        }
 
 		const UINT width = desc.Width;
 		const UINT height = desc.Height;
@@ -1874,10 +1814,12 @@ namespace Mus {
 			process.get();
 		}
 
-		sl.Lock();
-		context->Unmap(dstTex, 0);
-		context->Unmap(srcTex, 0);
-		sl.Unlock();
+		
+        {
+			Shader::ShaderLockGuard slg(&sl);
+            context->Unmap(dstTex, 0);
+            context->Unmap(srcTex, 0);
+        }
 
 		if (Config::GetSingleton().GetMergeTime())
 			PerformanceLog(std::string(__func__) + "::" + srcResourceData->textureName, true, false);
@@ -1899,39 +1841,6 @@ namespace Mus {
 		D3D11_TEXTURE2D_DESC desc;
 		dstTex->GetDesc(&desc);
 
-		struct ShaderBackup {
-		public:
-			void Backup(ID3D11DeviceContext* context) {
-				context->CSGetShader(&shader, nullptr, 0);
-				context->CSGetConstantBuffers(0, 1, &constBuffer);
-				context->CSGetShaderResources(0, 1, &srv);
-				context->CSGetUnorderedAccessViews(0, 1, &uav);
-				Unbind(context);
-			}
-			void Revert(ID3D11DeviceContext* context) {
-				Unbind(context);
-				context->CSSetShader(shader.Get(), nullptr, 0);
-				context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
-				context->CSSetShaderResources(0, 1, srv.GetAddressOf());
-				context->CSSetUnorderedAccessViews(0, 1, uav.GetAddressOf(), nullptr);
-			}
-		private:
-			void Unbind(ID3D11DeviceContext* context) {
-				ID3D11Buffer* emptyBuffer[1] = { nullptr };
-				ID3D11ShaderResourceView* emptySRV[1] = { nullptr };
-				ID3D11UnorderedAccessView* emptyUAV[1] = { nullptr };
-				context->CSSetShader(nullptr, nullptr, 0);
-				context->CSSetConstantBuffers(0, 1, emptyBuffer);
-				context->CSSetShaderResources(0, 1, emptySRV);
-				context->CSSetUnorderedAccessViews(0, 1, emptyUAV, nullptr);
-			}
-
-			Shader::ShaderManager::ComputeShader shader;
-			Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
-			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
-			Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav;
-		};
-
 		const UINT width = desc.Width;
 		const UINT height = desc.Height;
 
@@ -1949,20 +1858,20 @@ namespace Mus {
 				GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
 								  , false, false);
 
-            D3D11_MAPPED_SUBRESOURCE mapped;
-			ShaderBackup sb;
-            sl.Lock();
-            context->Map(mergeTextureBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-            *reinterpret_cast<MergeTextureBufferData*>(mapped.pData) = cbData;
-            context->Unmap(mergeTextureBuffer[isSecondGPUEnabled].Get(), 0);
-			sb.Backup(context);
-            context->CSSetShader(mergeTexture[isSecondGPUEnabled].Get(), nullptr, 0);
-            context->CSSetConstantBuffers(0, 1, mergeTextureBuffer[isSecondGPUEnabled].GetAddressOf());
-			context->CSSetShaderResources(0, 1, &srcSRV);
-            context->CSSetUnorderedAccessViews(0, 1, &dstUAV, nullptr);
-			context->Dispatch(dispatch.x, dispatch.y, 1);
-			sb.Revert(context);
-			sl.Unlock();
+			{
+                D3D11_MAPPED_SUBRESOURCE mapped;
+                MergeTextureBackup sb;
+                Shader::ShaderLockGuard slg(&sl);
+                ShaderBackupManager sbm(context, &sb);
+                context->Map(mergeTextureBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+                *reinterpret_cast<MergeTextureBufferData*>(mapped.pData) = cbData;
+                context->Unmap(mergeTextureBuffer[isSecondGPUEnabled].Get(), 0);
+                context->CSSetShader(mergeTexture[isSecondGPUEnabled].Get(), nullptr, 0);
+                context->CSSetConstantBuffers(0, 1, mergeTextureBuffer[isSecondGPUEnabled].GetAddressOf());
+                context->CSSetShaderResources(0, 1, &srcSRV);
+                context->CSSetUnorderedAccessViews(0, 1, &dstUAV, nullptr);
+                context->Dispatch(dispatch.x, dispatch.y, 1);
+            }
 
 			if (Config::GetSingleton().GetMergeTime())
 				GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
@@ -1986,20 +1895,20 @@ namespace Mus {
 						GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
 										  + "::" + std::to_string(sy), false, false);
 
-                    D3D11_MAPPED_SUBRESOURCE mapped;
-					ShaderBackup sb;
-                    sl.Lock();
-                    context->Map(mergeTextureBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-                    *reinterpret_cast<MergeTextureBufferData*>(mapped.pData) = cbData_;
-                    context->Unmap(mergeTextureBuffer[isSecondGPUEnabled].Get(), 0);
-					sb.Backup(context);
-                    context->CSSetShader(mergeTexture[isSecondGPUEnabled].Get(), nullptr, 0);
-                    context->CSSetConstantBuffers(0, 1, mergeTextureBuffer[isSecondGPUEnabled].GetAddressOf());
-					context->CSSetShaderResources(0, 1, &srcSRV);
-                    context->CSSetUnorderedAccessViews(0, 1, &dstUAV, nullptr);
-					context->Dispatch(dispatch.x, dispatch.y, 1);
-					sb.Revert(context);
-					sl.Unlock();
+					{
+                        D3D11_MAPPED_SUBRESOURCE mapped;
+                        MergeTextureBackup sb;
+                        Shader::ShaderLockGuard slg(&sl);
+                        ShaderBackupManager sbm(context, &sb);
+                        context->Map(mergeTextureBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+                        *reinterpret_cast<MergeTextureBufferData*>(mapped.pData) = cbData_;
+                        context->Unmap(mergeTextureBuffer[isSecondGPUEnabled].Get(), 0);
+                        context->CSSetShader(mergeTexture[isSecondGPUEnabled].Get(), nullptr, 0);
+                        context->CSSetConstantBuffers(0, 1, mergeTextureBuffer[isSecondGPUEnabled].GetAddressOf());
+                        context->CSSetShaderResources(0, 1, &srcSRV);
+                        context->CSSetUnorderedAccessViews(0, 1, &dstUAV, nullptr);
+                        context->Dispatch(dispatch.x, dispatch.y, 1);
+                    }
 
 					if (Config::GetSingleton().GetMergeTime())
 						GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(width) + "|" + std::to_string(height)
@@ -2037,12 +1946,13 @@ namespace Mus {
 		resourceData->generateMipsData.texture2D->GetDesc(&desc);
 
 		std::vector<D3D11_MAPPED_SUBRESOURCE> mappedResource(desc.MipLevels);
-		sl.Lock();
-		for (UINT mipLevel = 0; mipLevel < desc.MipLevels; mipLevel++)
-		{
-			hr = context->Map(resourceData->generateMipsData.texture2D.Get(), mipLevel, D3D11_MAP_READ_WRITE, 0, &mappedResource[mipLevel]);
-		}
-		sl.Unlock();
+        {
+            Shader::ShaderLockGuard slg(&sl);
+            for (UINT mipLevel = 0; mipLevel < desc.MipLevels; mipLevel++)
+            {
+                hr = context->Map(resourceData->generateMipsData.texture2D.Get(), mipLevel, D3D11_MAP_READ_WRITE, 0, &mappedResource[mipLevel]);
+            }
+        }
 
 		const UINT width = desc.Width;
 		const UINT height = desc.Height; 
@@ -2227,12 +2137,13 @@ namespace Mus {
 			}
 		}
 
-		sl.Lock();
-		for (UINT mipLevel = 0; mipLevel < desc.MipLevels; mipLevel++)
 		{
-			context->Unmap(resourceData->generateMipsData.texture2D.Get(), mipLevel);
-		}
-		sl.Unlock();
+            Shader::ShaderLockGuard slg(&sl);
+            for (UINT mipLevel = 0; mipLevel < desc.MipLevels; mipLevel++)
+            {
+                context->Unmap(resourceData->generateMipsData.texture2D.Get(), mipLevel);
+            }
+        }
 
 		logger::debug("{}::{} : Generate Mips done", _func_, resourceData->textureName);
 
@@ -2252,42 +2163,6 @@ namespace Mus {
 		const std::string _func_ = __func__;
 
 		logger::info("{}::{} : Generate Mips...", _func_, resourceData->textureName);
-
-		struct ShaderBackup {
-		public:
-			void Backup(ID3D11DeviceContext* context) {
-				context->CSGetShader(&shader, nullptr, 0);
-				context->CSGetConstantBuffers(0, 1, &constBuffer);
-				context->CSGetShaderResources(0, 1, &src0);
-				context->CSGetUnorderedAccessViews(0, 1, &dst);
-				context->CSGetUnorderedAccessViews(1, 1, &src);
-				Unbind(context);
-			}
-			void Revert(ID3D11DeviceContext* context) {
-				Unbind(context);
-				context->CSSetShader(shader.Get(), nullptr, 0);
-				context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
-				context->CSSetShaderResources(0, 1, src0.GetAddressOf());
-				context->CSSetUnorderedAccessViews(0, 1, dst.GetAddressOf(), nullptr);
-				context->CSSetUnorderedAccessViews(1, 1, src.GetAddressOf(), nullptr);
-			}
-		private:
-			void Unbind(ID3D11DeviceContext* context) {
-				ID3D11Buffer* emptyBuffer[1] = { nullptr };
-				ID3D11ShaderResourceView* emptySRV[1] = { nullptr };
-				ID3D11UnorderedAccessView* emptyUAV[2] = { nullptr };
-				context->CSSetShader(nullptr, nullptr, 0);
-				context->CSSetConstantBuffers(0, 1, emptyBuffer);
-				context->CSSetShaderResources(0, 1, emptySRV);
-				context->CSSetUnorderedAccessViews(0, 2, emptyUAV, nullptr);
-			}
-
-			Shader::ShaderManager::ComputeShader shader;
-			Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
-			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> src0;
-			Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> dst;
-			Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> src;
-		};
 
 		D3D11_TEXTURE2D_DESC desc;
 		texInOut->GetDesc(&desc);
@@ -2358,20 +2233,21 @@ namespace Mus {
 							GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(mipWidth) + "|" + std::to_string(mipHeight)
 											  , false, false);
 
-						D3D11_MAPPED_SUBRESOURCE mapped;
-						ShaderBackup sb;
-						sl.Lock();
-                        context->Map(generateMipsBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-                        *reinterpret_cast<GenerateMipsBufferData*>(mapped.pData) = cbData;
-                        context->Unmap(generateMipsBuffer[isSecondGPUEnabled].Get(), 0);
-						sb.Backup(context);
-                        context->CSSetShader(generateMips[isSecondGPUEnabled].Get(), nullptr, 0);
-                        context->CSSetConstantBuffers(0, 1, generateMipsBuffer[isSecondGPUEnabled].GetAddressOf());
-						context->CSSetShaderResources(0, 1, srcSRV.GetAddressOf());
-						context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
-						context->Dispatch(dispatch.x, dispatch.y, 1);
-						sb.Revert(context);
-						sl.Unlock();
+						{
+                            D3D11_MAPPED_SUBRESOURCE mapped;
+                            GenerateMipsBackup sb;
+                            Shader::ShaderLockGuard slg(&sl);
+                            ShaderBackupManager sbm(context, &sb);
+                            context->Map(generateMipsBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+                            *reinterpret_cast<GenerateMipsBufferData*>(mapped.pData) = cbData;
+                            context->Unmap(generateMipsBuffer[isSecondGPUEnabled].Get(), 0);
+                            context->CSSetShader(generateMips[isSecondGPUEnabled].Get(), nullptr, 0);
+                            context->CSSetConstantBuffers(0, 1, generateMipsBuffer[isSecondGPUEnabled].GetAddressOf());
+                            context->CSSetShaderResources(0, 1, srcSRV.GetAddressOf());
+                            context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
+                            context->Dispatch(dispatch.x, dispatch.y, 1);
+                        }
+
 						if (Config::GetSingleton().GetGenerateMipsTime())
 							GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(mipWidth) + "|" + std::to_string(mipHeight)
 											  , true, false);
@@ -2398,20 +2274,21 @@ namespace Mus {
 													  + "::" + std::to_string(mipWidth) + "|" + std::to_string(mipHeight) + "::" + std::to_string(sy)
 													  , false, false);
 
-                                D3D11_MAPPED_SUBRESOURCE mapped;
-								ShaderBackup sb;
-                                sl.Lock();
-                                context->Map(generateMipsBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-                                *reinterpret_cast<GenerateMipsBufferData*>(mapped.pData) = cbData_;
-                                context->Unmap(generateMipsBuffer[isSecondGPUEnabled].Get(), 0);
-								sb.Backup(context);
-                                context->CSSetShader(generateMips[isSecondGPUEnabled].Get(), nullptr, 0);
-                                context->CSSetConstantBuffers(0, 1, generateMipsBuffer[isSecondGPUEnabled].GetAddressOf());
-								context->CSSetShaderResources(0, 1, srcSRV.GetAddressOf());
-								context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
-								context->Dispatch(dispatch.x, dispatch.y, 1);
-								sb.Revert(context);
-								sl.Unlock();
+								{
+                                    D3D11_MAPPED_SUBRESOURCE mapped;
+                                    GenerateMipsBackup sb;
+                                    Shader::ShaderLockGuard slg(&sl);
+                                    ShaderBackupManager sbm(context, &sb);
+                                    context->Map(generateMipsBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+                                    *reinterpret_cast<GenerateMipsBufferData*>(mapped.pData) = cbData_;
+                                    context->Unmap(generateMipsBuffer[isSecondGPUEnabled].Get(), 0);
+                                    context->CSSetShader(generateMips[isSecondGPUEnabled].Get(), nullptr, 0);
+                                    context->CSSetConstantBuffers(0, 1, generateMipsBuffer[isSecondGPUEnabled].GetAddressOf());
+                                    context->CSSetShaderResources(0, 1, srcSRV.GetAddressOf());
+                                    context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
+                                    context->Dispatch(dispatch.x, dispatch.y, 1);
+                                }
+
 								if (Config::GetSingleton().GetGenerateMipsTime())
 									GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(mipLevel)
 													  + "::" + std::to_string(mipWidth) + "|" + std::to_string(mipHeight) + "::" + std::to_string(sy)
@@ -2458,20 +2335,21 @@ namespace Mus {
 						GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(mipWidth) + "|" + std::to_string(mipHeight)
 										  , false, false);
 
-                    D3D11_MAPPED_SUBRESOURCE mapped;
-					ShaderBackup sb;
-                    sl.Lock();
-                    context->Map(generateMipsBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-                    *reinterpret_cast<GenerateMipsBufferData*>(mapped.pData) = cbData;
-                    context->Unmap(generateMipsBuffer[isSecondGPUEnabled].Get(), 0);
-					sb.Backup(context);
-                    context->CSSetShader(generateMips[isSecondGPUEnabled].Get(), nullptr, 0);
-                    context->CSSetConstantBuffers(0, 1, generateMipsBuffer[isSecondGPUEnabled].GetAddressOf());
-					context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
-					context->CSSetUnorderedAccessViews(1, 1, srcUAV.GetAddressOf(), nullptr);
-					context->Dispatch(dispatch.x, dispatch.y, 1);
-					sb.Revert(context);
-					sl.Unlock();
+					{
+                        D3D11_MAPPED_SUBRESOURCE mapped;
+                        GenerateMipsBackup sb;
+                        Shader::ShaderLockGuard slg(&sl);
+                        ShaderBackupManager sbm(context, &sb);
+                        context->Map(generateMipsBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+                        *reinterpret_cast<GenerateMipsBufferData*>(mapped.pData) = cbData;
+                        context->Unmap(generateMipsBuffer[isSecondGPUEnabled].Get(), 0);
+                        context->CSSetShader(generateMips[isSecondGPUEnabled].Get(), nullptr, 0);
+                        context->CSSetConstantBuffers(0, 1, generateMipsBuffer[isSecondGPUEnabled].GetAddressOf());
+                        context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
+                        context->CSSetUnorderedAccessViews(1, 1, srcUAV.GetAddressOf(), nullptr);
+                        context->Dispatch(dispatch.x, dispatch.y, 1);
+                    }
+
 					if (Config::GetSingleton().GetGenerateMipsTime())
 						GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(mipWidth) + "|" + std::to_string(mipHeight)
 										  , true, false);
@@ -2498,20 +2376,21 @@ namespace Mus {
 												  + "::" + std::to_string(mipWidth) + "|" + std::to_string(mipHeight) + "::" + std::to_string(sy)
 												  , false, false);
 
-                            D3D11_MAPPED_SUBRESOURCE mapped;
-							ShaderBackup sb;
-                            sl.Lock();
-                            context->Map(generateMipsBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-                            *reinterpret_cast<GenerateMipsBufferData*>(mapped.pData) = cbData_;
-                            context->Unmap(generateMipsBuffer[isSecondGPUEnabled].Get(), 0);
-							sb.Backup(context);
-                            context->CSSetShader(generateMips[isSecondGPUEnabled].Get(), nullptr, 0);
-                            context->CSSetConstantBuffers(0, 1, generateMipsBuffer[isSecondGPUEnabled].GetAddressOf());
-							context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
-							context->CSSetUnorderedAccessViews(1, 1, srcUAV.GetAddressOf(), nullptr);
-							context->Dispatch(dispatch.x, dispatch.y, 1);
-							sb.Revert(context);
-							sl.Unlock();
+							{
+                                D3D11_MAPPED_SUBRESOURCE mapped;
+                                GenerateMipsBackup sb;
+                                Shader::ShaderLockGuard slg(&sl);
+                                ShaderBackupManager sbm(context, &sb);
+                                context->Map(generateMipsBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+                                *reinterpret_cast<GenerateMipsBufferData*>(mapped.pData) = cbData_;
+                                context->Unmap(generateMipsBuffer[isSecondGPUEnabled].Get(), 0);
+                                context->CSSetShader(generateMips[isSecondGPUEnabled].Get(), nullptr, 0);
+                                context->CSSetConstantBuffers(0, 1, generateMipsBuffer[isSecondGPUEnabled].GetAddressOf());
+                                context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
+                                context->CSSetUnorderedAccessViews(1, 1, srcUAV.GetAddressOf(), nullptr);
+                                context->Dispatch(dispatch.x, dispatch.y, 1);
+                            }
+
 							if (Config::GetSingleton().GetGenerateMipsTime())
 								GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(mipLevel)
 												  + "::" + std::to_string(mipWidth) + "|" + std::to_string(mipHeight) + "::" + std::to_string(sy)
@@ -2635,12 +2514,13 @@ namespace Mus {
 		}
 
 		std::vector<D3D11_MAPPED_SUBRESOURCE> mappedResource(srcDesc.MipLevels);
-		sl.Lock();
-		for (UINT mipLevel = 0; mipLevel < srcDesc.MipLevels; mipLevel++)
-		{
-			context->Map(resourceData->textureCompressData.srcStagingTexture.Get(), mipLevel, D3D11_MAP_READ, 0, &mappedResource[mipLevel]);
-		}
-		sl.Unlock();
+        {
+            Shader::ShaderLockGuard slg(&sl);
+            for (UINT mipLevel = 0; mipLevel < srcDesc.MipLevels; mipLevel++)
+            {
+                context->Map(resourceData->textureCompressData.srcStagingTexture.Get(), mipLevel, D3D11_MAP_READ, 0, &mappedResource[mipLevel]);
+            }
+        }
 
 		std::vector<D3D11_SUBRESOURCE_DATA> initData(srcDesc.MipLevels);
 		std::vector<std::vector<std::uint8_t>> bc7Buffers(srcDesc.MipLevels);
@@ -2757,12 +2637,13 @@ namespace Mus {
 			initData[mipLevel].SysMemSlicePitch = 0;
 		};
 
-		sl.Lock();
-		for (UINT mipLevel = 0; mipLevel < srcDesc.MipLevels; mipLevel++)
 		{
-			context->Unmap(resourceData->textureCompressData.srcStagingTexture.Get(), mipLevel);
-		}
-		sl.Unlock();
+            Shader::ShaderLockGuard slg(&sl);
+            for (UINT mipLevel = 0; mipLevel < srcDesc.MipLevels; mipLevel++)
+            {
+                context->Unmap(resourceData->textureCompressData.srcStagingTexture.Get(), mipLevel);
+            }
+        }
 
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D;
 		D3D11_TEXTURE2D_DESC dstDesc = srcDesc;
@@ -2961,33 +2842,37 @@ namespace Mus {
 				gpuTimers[funcStr] = std::move(timer);
 			}
 
-			sl.Lock();
-			context->Begin(gpuTimers[funcStr].disjointQuery.Get());
-			context->End(gpuTimers[funcStr].startQuery.Get());
-			sl.Unlock();
+			{
+                Shader::ShaderLockGuard slg(&sl);
+                context->Begin(gpuTimers[funcStr].disjointQuery.Get());
+                context->End(gpuTimers[funcStr].startQuery.Get());
+            }
 		}
 		else
 		{
 			double tick = PerformanceCheckTick ? (double)(RE::GetSecondsSinceLastFrame() * 1000) : (double)(TimeTick60 * 1000);
-			sl.Lock();
-			context->Flush();
-			context->End(gpuTimers[funcStr].endQuery.Get());
-			context->End(gpuTimers[funcStr].disjointQuery.Get());
-			sl.Unlock();
+            {
+                Shader::ShaderLockGuard slg(&sl);
+                context->Flush();
+                context->End(gpuTimers[funcStr].endQuery.Get());
+                context->End(gpuTimers[funcStr].disjointQuery.Get());
+            }
 
 			D3D11_QUERY_DATA_TIMESTAMP_DISJOINT disjointData = {};
-			sl.Lock();
-			while (context->GetData(gpuTimers[funcStr].disjointQuery.Get(), &disjointData, sizeof(disjointData), 0) != S_OK);
-			sl.Unlock();
+            {
+                Shader::ShaderLockGuard slg(&sl);
+                while (context->GetData(gpuTimers[funcStr].disjointQuery.Get(), &disjointData, sizeof(disjointData), 0) != S_OK);
+            }
 
 			if (disjointData.Disjoint)
 				return;
 
 			UINT64 startTime = 0, endTime = 0;
-			sl.Lock();
-			while (context->GetData(gpuTimers[funcStr].startQuery.Get(), &startTime, sizeof(startTime), 0) != S_OK);
-			while (context->GetData(gpuTimers[funcStr].endQuery.Get(), &endTime, sizeof(endTime), 0) != S_OK);
-			sl.Unlock();
+            {
+                Shader::ShaderLockGuard slg(&sl);
+                while (context->GetData(gpuTimers[funcStr].startQuery.Get(), &startTime, sizeof(startTime), 0) != S_OK);
+                while (context->GetData(gpuTimers[funcStr].endQuery.Get(), &endTime, sizeof(endTime), 0) != S_OK);
+            }
 
 			const double duration_ms = (double)(endTime - startTime) / disjointData.Frequency * 1000.0;
 
@@ -3027,18 +2912,6 @@ namespace Mus {
 		}
 	}
 
-	void ObjectNormalMapUpdater::WaitForFreeVram()
-	{
-		if (IsBeforeTaskReleased())
-			return;
-		logger::debug("Wait for vram free...");
-		while (!IsBeforeTaskReleased())
-		{
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		}
-		logger::debug("Wait for vram free done");
-	}
-
 	WaitForGPU::WaitForGPU(ID3D11Device* a_device, ID3D11DeviceContext* a_context)
 		: device(a_device), context(a_context), sl(a_context)
 	{
@@ -3053,10 +2926,12 @@ namespace Mus {
 		if (FAILED(hr)) {
 			return;
 		}
-		sl.Lock();
-		context->Flush();
-		context->End(query.Get());
-		sl.Unlock();
+		
+        {
+            Shader::ShaderLockGuard slg(&sl);
+            context->Flush();
+            context->End(query.Get());
+        }
 		logger::trace("Wait for Renderer...");
 	}
 
@@ -3066,9 +2941,10 @@ namespace Mus {
 			return;
 		HRESULT hr;
 		while (true) {
-			sl.Lock();
-			hr = context->GetData(query.Get(), nullptr, 0, 0);
-			sl.Unlock();
+            {
+                Shader::ShaderLockGuard slg(&sl);
+                hr = context->GetData(query.Get(), nullptr, 0, 0);
+            }
 			if (FAILED(hr))
 				break;
 			if (hr == S_OK)

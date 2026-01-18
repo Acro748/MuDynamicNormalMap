@@ -568,7 +568,6 @@ namespace Mus {
             taskQTickMS = 0;
             directTaskQ = true;
             divideTaskQ = 0;
-            vramSaveMode = false;
 
             isNoSplitGPU = true;
             isImmediately = true;
@@ -585,7 +584,6 @@ namespace Mus {
             taskQTickMS = 0;
             directTaskQ = true;
             divideTaskQ = 0;
-            vramSaveMode = false;
 
             isNoSplitGPU = true;
             isImmediately = false;
@@ -593,7 +591,7 @@ namespace Mus {
             waitPreTask = false;
             waitSleepTime = std::chrono::microseconds(100);
 
-            actorThreadCount = 4;
+            actorThreadCount = 1;
             processingThreadCount = coreCount;
             usePCores = true;
             gpuTaskThreadCount = 1;
@@ -602,25 +600,23 @@ namespace Mus {
             taskQTickMS = Config::GetSingleton().GetTaskQTickMS();
             directTaskQ = true;
             divideTaskQ = 0;
-            vramSaveMode = true;
 
             isNoSplitGPU = true;
             isImmediately = false;
 
             waitPreTask = false;
-            waitSleepTime = std::chrono::microseconds(500);
+            waitSleepTime = std::chrono::microseconds(100);
 
             actorThreadCount = 1;
-            processingThreadCount = coreCount;
-            usePCores = true;
+            processingThreadCount = std::max(1, std::max(4, coreCount / 2));
+            usePCores = false;
             gpuTaskThreadCount = 1;
             break;
         default:
         case Config::AutoTaskQList::Balanced:
             taskQTickMS = Config::GetSingleton().GetTaskQTickMS();
-            directTaskQ = false;
+            directTaskQ = true;
             divideTaskQ = 0;
-            vramSaveMode = true;
 
             isNoSplitGPU = false;
             isImmediately = false;
@@ -637,7 +633,6 @@ namespace Mus {
             taskQTickMS = Config::GetSingleton().GetTaskQTickMS();
             directTaskQ = false;
             divideTaskQ = 0;
-            vramSaveMode = true;
 
             isNoSplitGPU = false;
             isImmediately = false;
@@ -654,7 +649,6 @@ namespace Mus {
             taskQTickMS = Config::GetSingleton().GetTaskQTickMS();
             directTaskQ = false;
             divideTaskQ = 1;
-            vramSaveMode = true;
 
             isNoSplitGPU = false;
             isImmediately = false;
@@ -668,8 +662,6 @@ namespace Mus {
             gpuTaskThreadCount = 1;
             break;
         }
-        if (isSecondGPUEnabled)
-            vramSaveMode = false;
 
         std::uint64_t coreMask = 0;
         if (!usePCores)
@@ -707,8 +699,8 @@ namespace Mus {
                 processingThreadCount = eCoreCount;
             }
         }
+
         gpuTask = std::make_unique<ThreadPool_GPUTaskModule>(gpuTaskThreadCount, coreMask, taskQTickMS, directTaskQ, waitPreTask);
-        g_frameEventDispatcher.addListener(gpuTask.get());
 
         actorThreads = std::make_shared<ThreadPool_ParallelModule>(actorThreadCount, coreMask);
         actorThreadsFull = std::make_shared<ThreadPool_ParallelModule>(4, 0);
@@ -760,7 +752,6 @@ namespace Mus {
         if (!Config::GetSingleton().GetProcessingInLoading())
             return true;
         static std::atomic<bool> isImmediately_ = isImmediately.load();
-        static std::atomic<bool> vramSaveMode_ = vramSaveMode.load();
         static std::atomic<bool> isNoSplitGPU_ = isNoSplitGPU.load();
         static std::atomic<bool> isSecondGPUEnabled_ = isSecondGPUEnabled.load();
         if (a_Immediately)
@@ -795,8 +786,6 @@ namespace Mus {
         {
             currentProcessingThreads.store(processingThreadsFull);
             currentActorThreads.store(actorThreadsFull);
-            vramSaveMode_ = vramSaveMode.load();
-            vramSaveMode = false;
             isNoSplitGPU_ = isNoSplitGPU.load();
             isNoSplitGPU = true;
         }
@@ -804,7 +793,6 @@ namespace Mus {
         {
             currentProcessingThreads.store(processingThreads);
             currentActorThreads.store(actorThreads);
-            vramSaveMode = vramSaveMode_.load();
             isNoSplitGPU = isNoSplitGPU_.load();
         }
         return true;

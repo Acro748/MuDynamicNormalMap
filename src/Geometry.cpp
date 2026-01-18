@@ -263,10 +263,6 @@ namespace Mus {
                         const std::uint32_t i1 = indices[offset + 1];
                         const std::uint32_t i2 = indices[offset + 2];
 
-                        const DirectX::XMFLOAT3& p0 = vertices[i0];
-                        const DirectX::XMFLOAT3& p1 = vertices[i1];
-                        const DirectX::XMFLOAT3& p2 = vertices[i2];
-
                         vertexToFaceMap[i0].push_back(i);
                         vertexToFaceMap[i1].push_back(i);
                         vertexToFaceMap[i2].push_back(i);

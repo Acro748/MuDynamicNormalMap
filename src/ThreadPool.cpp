@@ -64,6 +64,7 @@ namespace Mus {
             running.push_back(false);
             workers.emplace_back([this, i] { workerLoop(i); });
         }
+        g_frameEventDispatcher.addListener(this);
     }
 
     ThreadPool_GPUTaskModule::~ThreadPool_GPUTaskModule() {
@@ -71,6 +72,7 @@ namespace Mus {
         cv.notify_all();
         for (auto& t : workers)
             if (t.joinable()) t.join();
+        g_frameEventDispatcher.removeListener(this);
     }
 
     void ThreadPool_GPUTaskModule::workerLoop(std::uint32_t threadNum) {

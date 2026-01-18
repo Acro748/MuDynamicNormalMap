@@ -973,30 +973,21 @@ namespace Mus {
 			D3D11_TEXTURE2D_DESC textureDesc;
 			texture->GetDesc(&textureDesc);
 
-			const bool isSecondGPU = Shader::ShaderManager::GetSingleton().IsSecondGPUResource(context);
-			auto ShaderLock = [isSecondGPU]() {
-				if (isSecondGPU)
-					Shader::ShaderManager::GetSingleton().ShaderSecondContextLock();
-				else
-					Shader::ShaderManager::GetSingleton().ShaderContextLock();
-			};
-			auto ShaderUnlock = [&]() {
-				if (isSecondGPU)
-					Shader::ShaderManager::GetSingleton().ShaderSecondContextUnlock();
-				else
-					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-			};
+			Shader::ShaderLocker sl(context);
 
 			// decoding texture
 			DirectX::ScratchImage image;
-			ShaderLock();
-			HRESULT hr = DirectX::CaptureTexture(device, context, texture.Get(), image);
-			ShaderUnlock();
-			if (FAILED(hr))
+			HRESULT hr;
+			
 			{
-				logger::error("Failed to decoding texture ({})", hr);
-				return false;
-			}
+                Shader::ShaderLockGuard slg(&sl);
+                hr = DirectX::CaptureTexture(device, context, texture.Get(), image);
+            }
+            if (FAILED(hr))
+            {
+                logger::error("Failed to decoding texture ({})", hr);
+                return false;
+            }
 
 			Microsoft::WRL::ComPtr<ID3D11Resource> tmpResource;
 			bool convertResult = false;
@@ -1103,25 +1094,15 @@ namespace Mus {
 			if (formatType < 0)
 				return false;
 
-			bool isSecondGPU = ShaderManager::GetSingleton().IsSecondGPUResource(context);
-			auto ShaderLock = [isSecondGPU]() {
-				if (isSecondGPU)
-					ShaderManager::GetSingleton().ShaderSecondContextLock();
-				else
-					ShaderManager::GetSingleton().ShaderContextLock();
-			};
-			auto ShaderUnlock = [isSecondGPU]() {
-				if (isSecondGPU)
-					ShaderManager::GetSingleton().ShaderSecondContextUnlock();
-				else
-					ShaderManager::GetSingleton().ShaderContextUnlock();
-			};
+            Shader::ShaderLocker sl(context);
 
 			// decoding texture
 			DirectX::ScratchImage image;
-			ShaderLock();
-			HRESULT hr = DirectX::CaptureTexture(device, context, texInOut.Get(), image);
-			ShaderUnlock();
+            HRESULT hr;
+            {
+                Shader::ShaderLockGuard slg(&sl);
+                hr = DirectX::CaptureTexture(device, context, texInOut.Get(), image);
+            }
 			if (FAILED(hr))
 			{
 				logger::error("Failed to decoding texture ({})", hr);
@@ -1155,9 +1136,12 @@ namespace Mus {
 					flags |= DirectX::TEX_COMPRESS_BC7_USE_3SUBSETS;
 				}
 
-				ShaderLock();
-				hr = DirectX::Compress(device, image.GetImages(), image.GetImageCount(), image.GetMetadata(), newFormat, flags, 1.0f, compressedImage);
-				ShaderUnlock();
+				
+				{
+                    Shader::ShaderLockGuard slg(&sl);
+                    hr = DirectX::Compress(device, image.GetImages(), image.GetImageCount(), image.GetMetadata(), newFormat, flags, 1.0f, compressedImage);
+                }
+
 				if (FAILED(hr))
 				{
 					logger::error("Failed to compress texture to {} ({})", magic_enum::enum_name(newFormat).data(), hr);

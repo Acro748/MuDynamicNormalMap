@@ -47,17 +47,6 @@ namespace Mus {
 
 		void ClearGeometryResourceData();
 
-		inline bool IsBeforeTaskReleased() {
-			if (vramSaveMode)
-			{
-				resourceDataMapLock.lock_shared();
-				bool isEmpty = resourceDataMap.empty();
-				resourceDataMapLock.unlock_shared();
-				return isEmpty;
-			}
-			return true;
-		};
-
 		struct NormalMapResult {
 			bool existResource = false;
 			bool diskCache = false;
@@ -233,6 +222,161 @@ namespace Mus {
         static_assert(sizeof(GenerateMipsBufferData) % 16 == 0, "Constant buffer must be 16-byte aligned.");
         Microsoft::WRL::ComPtr<ID3D11Buffer> generateMipsBuffer[2] = {nullptr, nullptr};
 
+		class ShaderBackup {
+        public:
+            virtual void Backup(ID3D11DeviceContext* context) = 0;
+            virtual void Revert(ID3D11DeviceContext* context) = 0;
+		};
+		class ShaderBackupManager {
+        public:
+            ShaderBackupManager() = delete;
+            ShaderBackupManager(ID3D11DeviceContext* a_context, ShaderBackup* a_shaderBackup) 
+				: context(a_context), shaderBackup(a_shaderBackup) { shaderBackup->Backup(context); };
+            ~ShaderBackupManager() { shaderBackup->Revert(context); };
+
+		private:
+            ID3D11DeviceContext* context = nullptr;
+            ShaderBackup* shaderBackup = nullptr;
+		};
+
+		class UpdateNormalMapBackup : public ShaderBackup {
+        public:
+            virtual void Backup(ID3D11DeviceContext* context) override {
+                context->CSGetShader(&shader, nullptr, 0);
+                context->CSGetConstantBuffers(0, 1, &constBuffer);
+                context->CSGetShaderResources(0, 1, &vertexSRV);
+                context->CSGetShaderResources(1, 1, &uvSRV);
+                context->CSGetShaderResources(2, 1, &normalSRV);
+                context->CSGetShaderResources(3, 1, &tangentSRV);
+                context->CSGetShaderResources(4, 1, &bitangentSRV);
+                context->CSGetShaderResources(5, 1, &indicesSRV);
+                context->CSGetShaderResources(6, 1, &srcSRV);
+                context->CSGetShaderResources(7, 1, &detailSRV);
+                context->CSGetShaderResources(8, 1, &overlaySRV);
+                context->CSGetShaderResources(9, 1, &maskSRV);
+                context->CSGetUnorderedAccessViews(0, 1, &dstUAV);
+                context->CSGetSamplers(0, 1, &samplerState);
+                Unbind(context);
+            }
+            void Revert(ID3D11DeviceContext* context) override {
+                Unbind(context);
+                context->CSSetShader(shader.Get(), nullptr, 0);
+                context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
+                context->CSSetShaderResources(0, 1, vertexSRV.GetAddressOf());
+                context->CSSetShaderResources(1, 1, uvSRV.GetAddressOf());
+                context->CSSetShaderResources(2, 1, normalSRV.GetAddressOf());
+                context->CSSetShaderResources(3, 1, tangentSRV.GetAddressOf());
+                context->CSSetShaderResources(4, 1, bitangentSRV.GetAddressOf());
+                context->CSSetShaderResources(5, 1, indicesSRV.GetAddressOf());
+                context->CSSetShaderResources(6, 1, srcSRV.GetAddressOf());
+                context->CSSetShaderResources(7, 1, detailSRV.GetAddressOf());
+                context->CSSetShaderResources(8, 1, overlaySRV.GetAddressOf());
+                context->CSSetShaderResources(9, 1, maskSRV.GetAddressOf());
+                context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
+                context->CSSetSamplers(0, 1, samplerState.GetAddressOf());
+            }
+
+        private:
+            void Unbind(ID3D11DeviceContext* context) {
+                ID3D11Buffer* emptyBuffer[1] = {nullptr};
+                ID3D11ShaderResourceView* emptySRV[10] = {nullptr};
+                ID3D11UnorderedAccessView* emptyUAV[1] = {nullptr};
+                ID3D11SamplerState* emptySamplerState[1] = {nullptr};
+
+                context->CSSetShader(nullptr, nullptr, 0);
+                context->CSSetConstantBuffers(0, 1, emptyBuffer);
+                context->CSSetShaderResources(0, 10, emptySRV);
+                context->CSSetUnorderedAccessViews(0, 1, emptyUAV, nullptr);
+                context->CSSetSamplers(0, 1, emptySamplerState);
+            }
+
+            Shader::ShaderManager::ComputeShader shader;
+            Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> vertexSRV;
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> uvSRV;
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> normalSRV;
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> tangentSRV;
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> bitangentSRV;
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> indicesSRV;
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcSRV;
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> detailSRV;
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> overlaySRV;
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> maskSRV;
+            Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> dstUAV;
+            Microsoft::WRL::ComPtr<ID3D11SamplerState> samplerState;
+        };
+
+		class MergeTextureBackup : public ShaderBackup {
+        public:
+            void Backup(ID3D11DeviceContext* context) override {
+                context->CSGetShader(&shader, nullptr, 0);
+                context->CSGetConstantBuffers(0, 1, &constBuffer);
+                context->CSGetShaderResources(0, 1, &srv);
+                context->CSGetUnorderedAccessViews(0, 1, &uav);
+                Unbind(context);
+            }
+            void Revert(ID3D11DeviceContext* context) override {
+                Unbind(context);
+                context->CSSetShader(shader.Get(), nullptr, 0);
+                context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
+                context->CSSetShaderResources(0, 1, srv.GetAddressOf());
+                context->CSSetUnorderedAccessViews(0, 1, uav.GetAddressOf(), nullptr);
+            }
+
+        private:
+            void Unbind(ID3D11DeviceContext* context) {
+                ID3D11Buffer* emptyBuffer[1] = {nullptr};
+                ID3D11ShaderResourceView* emptySRV[1] = {nullptr};
+                ID3D11UnorderedAccessView* emptyUAV[1] = {nullptr};
+                context->CSSetShader(nullptr, nullptr, 0);
+                context->CSSetConstantBuffers(0, 1, emptyBuffer);
+                context->CSSetShaderResources(0, 1, emptySRV);
+                context->CSSetUnorderedAccessViews(0, 1, emptyUAV, nullptr);
+            }
+
+            Shader::ShaderManager::ComputeShader shader;
+            Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+            Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav;
+        };
+
+		class GenerateMipsBackup : public ShaderBackup {
+        public:
+            void Backup(ID3D11DeviceContext* context) {
+                context->CSGetShader(&shader, nullptr, 0);
+                context->CSGetConstantBuffers(0, 1, &constBuffer);
+                context->CSGetShaderResources(0, 1, &src0);
+                context->CSGetUnorderedAccessViews(0, 1, &dst);
+                context->CSGetUnorderedAccessViews(1, 1, &src);
+                Unbind(context);
+            }
+            void Revert(ID3D11DeviceContext* context) {
+                Unbind(context);
+                context->CSSetShader(shader.Get(), nullptr, 0);
+                context->CSSetConstantBuffers(0, 1, constBuffer.GetAddressOf());
+                context->CSSetShaderResources(0, 1, src0.GetAddressOf());
+                context->CSSetUnorderedAccessViews(0, 1, dst.GetAddressOf(), nullptr);
+                context->CSSetUnorderedAccessViews(1, 1, src.GetAddressOf(), nullptr);
+            }
+
+        private:
+            void Unbind(ID3D11DeviceContext* context) {
+                ID3D11Buffer* emptyBuffer[1] = {nullptr};
+                ID3D11ShaderResourceView* emptySRV[1] = {nullptr};
+                ID3D11UnorderedAccessView* emptyUAV[2] = {nullptr};
+                context->CSSetShader(nullptr, nullptr, 0);
+                context->CSSetConstantBuffers(0, 1, emptyBuffer);
+                context->CSSetShaderResources(0, 1, emptySRV);
+                context->CSSetUnorderedAccessViews(0, 2, emptyUAV, nullptr);
+            }
+
+            Shader::ShaderManager::ComputeShader shader;
+            Microsoft::WRL::ComPtr<ID3D11Buffer> constBuffer;
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> src0;
+            Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> dst;
+            Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> src;
+        };
+
 		bool IsDetailNormalMap(const std::string& a_normalMapPath);
         void LoadCacheResource(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet& a_updateSet, MergedTextureGeometries& mergedTextureGeometries, ResourceDatas& resourceDatas, UpdateResult& results);
 
@@ -260,7 +404,6 @@ namespace Mus {
 		bool CopyResourceSecondToMain(TextureResourceDataPtr& resourceData, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texInOut, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srvInOut);
 		
 		void GPUPerformanceLog(ID3D11Device* device, ID3D11DeviceContext* context, std::string funcStr, bool isEnd, bool isAverage = true, std::uint32_t args = 0);
-		void WaitForFreeVram();
 
 		struct GeometryResourceData {
 			Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer = nullptr;
@@ -287,7 +430,6 @@ namespace Mus {
         ResourceDataMap resourceDataMap;
 
 		std::uint64_t GetHash(UpdateTextureSet updateSet, std::uint64_t geoHash);
-
 	};
 
 	class WaitForGPU {
