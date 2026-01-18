@@ -95,22 +95,32 @@ namespace Mus {
 		class ShaderLocker {
 		public:
 			ShaderLocker() = delete;
-			ShaderLocker(ID3D11DeviceContext* context) : isSecondGPU(Shader::ShaderManager::GetSingleton().IsSecondGPUResource(context)) {};
+			ShaderLocker(ID3D11DeviceContext* context) : isSecondGPU(ShaderManager::GetSingleton().IsSecondGPUResource(context)) {};
 			inline void Lock() {
 				if (isSecondGPU)
-					Shader::ShaderManager::GetSingleton().ShaderSecondContextLock();
+					ShaderManager::GetSingleton().ShaderSecondContextLock();
 				else
-					Shader::ShaderManager::GetSingleton().ShaderContextLock();
+					ShaderManager::GetSingleton().ShaderContextLock();
 			};
 			inline void Unlock() {
 				if (isSecondGPU)
-					Shader::ShaderManager::GetSingleton().ShaderSecondContextUnlock();
+					ShaderManager::GetSingleton().ShaderSecondContextUnlock();
 				else
-					Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+					ShaderManager::GetSingleton().ShaderContextUnlock();
 			};
 			bool IsSecondGPU() const { return isSecondGPU; };
 		private:
 			const bool isSecondGPU = false;
+		};
+
+		class ShaderLockGuard {
+        public:
+            ShaderLockGuard() = delete;
+            ShaderLockGuard(ShaderLocker* shaderLocker) : sl(shaderLocker) { sl->Lock(); };
+            ~ShaderLockGuard() { sl->Unlock(); };
+
+		private:
+            ShaderLocker* sl;
 		};
 
 		class TextureLoadManager {

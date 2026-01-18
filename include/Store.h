@@ -34,7 +34,6 @@ namespace Mus {
 	constexpr float TimeTick60msec = TimeTick60 * 1000;
 
 	extern std::uint8_t divideTaskQ;
-    extern std::atomic<bool> vramSaveMode;
     extern std::atomic<bool> isNoSplitGPU;
     extern std::atomic<bool> isImmediately;
     extern std::atomic<bool> isSecondGPUEnabled;
