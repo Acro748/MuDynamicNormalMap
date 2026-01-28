@@ -595,182 +595,197 @@ namespace Mus {
 	}
 
 	void GeometryData::Subdivision(std::uint32_t a_subCount, std::uint32_t a_triThreshold)
-	{
-		if (a_subCount == 0)
-			return;
+    {
+        if (a_subCount == 0)
+            return;
 
-		std::string subID = std::to_string(vertices.size());
-		if (Config::GetSingleton().GetGeometryDataTime())
-			PerformanceLog(std::string(__func__) + "::" + subID, false, false);
+        std::string subID = std::to_string(vertices.size());
+        if (Config::GetSingleton().GetGeometryDataTime())
+            PerformanceLog(std::string(__func__) + "::" + subID, false, false);
 
-		logger::debug("{} : {} subdivition({})...", __func__, vertices.size(), a_subCount);
+        logger::debug("{} : {} subdivition({})...", __func__, vertices.size(), a_subCount);
 
-		struct LocalDate {
-			RE::BSGeometry* geometry;
-			std::string geoName;
-			GeometryInfo geoInfo;
-			std::vector<DirectX::XMFLOAT3> vertices;
-			std::vector<DirectX::XMFLOAT2> uvs;
-			std::vector<std::uint32_t> indices;
-			ObjectInfo objInfo;
-		};
+        struct LocalDate
+        {
+            RE::BSGeometry* geometry;
+            std::string geoName;
+            GeometryInfo geoInfo;
+            std::vector<DirectX::XMFLOAT3> vertices;
+            std::vector<DirectX::XMFLOAT2> uvs;
+            std::vector<std::uint32_t> indices;
+            ObjectInfo objInfo;
+        };
 
-		std::vector<LocalDate> subdividedDatas;
-		for (auto& geometry : geometries)
-		{
-			LocalDate data(
-				geometry.geometry,
-				geometry.objInfo.info.name,
-				geometry.objInfo.info
-			);
+        std::vector<LocalDate> subdividedDatas;
+        for (auto& geometry : geometries)
+        {
+            LocalDate data = {
+                .geometry = geometry.geometry,
+                .geoName = geometry.objInfo.info.name,
+                .geoInfo = geometry.objInfo.info};
 
-			data.vertices.assign(vertices.begin() + geometry.objInfo.vertexStart, vertices.begin() + geometry.objInfo.vertexEnd);
-			data.uvs.assign(uvs.begin() + geometry.objInfo.uvStart, uvs.begin() + geometry.objInfo.uvEnd);
-			data.indices.assign(indices.begin() + geometry.objInfo.indicesStart, indices.begin() + geometry.objInfo.indicesEnd);
+            data.vertices.assign(vertices.begin() + geometry.objInfo.vertexStart, vertices.begin() + geometry.objInfo.vertexEnd);
+            data.uvs.assign(uvs.begin() + geometry.objInfo.uvStart, uvs.begin() + geometry.objInfo.uvEnd);
+            data.indices.assign(indices.begin() + geometry.objInfo.indicesStart, indices.begin() + geometry.objInfo.indicesEnd);
 
-			std::size_t triCount = data.indices.size() / 3;
-			std::vector<std::future<void>> processes;
+            std::size_t triCount = data.indices.size() / 3;
+            std::vector<std::future<void>> processes;
             const std::size_t sub = std::max((std::size_t)1, std::min(triCount, currentProcessingThreads.load()->GetThreads()));
-			const std::size_t unit = (triCount + sub - 1) / sub;
-			for (std::size_t t = 0; t < sub; t++) {
-				const std::size_t begin = t * unit;
-				const std::size_t end = std::min(begin + unit, triCount);
+            const std::size_t unit = (triCount + sub - 1) / sub;
+            for (std::size_t t = 0; t < sub; t++)
+            {
+                const std::size_t begin = t * unit;
+                const std::size_t end = std::min(begin + unit, triCount);
                 processes.push_back(currentProcessingThreads.load()->submitAsync([&, begin, end]() {
-					for (std::size_t i = begin; i < end; i++)
-					{
-						std::size_t offset = i * 3;
-						data.indices[offset + 0] -= geometry.objInfo.vertexStart;
-						data.indices[offset + 1] -= geometry.objInfo.vertexStart;
-						data.indices[offset + 2] -= geometry.objInfo.vertexStart;
-					}
-				}));
-			}
-			for (auto& process : processes) {
-				process.get();
-			}
+                    for (std::size_t i = begin; i < end; i++)
+                    {
+                        std::size_t offset = i * 3;
+                        data.indices[offset + 0] -= geometry.objInfo.vertexStart;
+                        data.indices[offset + 1] -= geometry.objInfo.vertexStart;
+                        data.indices[offset + 2] -= geometry.objInfo.vertexStart;
+                    }
+                }));
+            }
+            for (auto& process : processes)
+            {
+                process.get();
+            }
 
-			data.objInfo = geometry.objInfo;
+            data.objInfo = geometry.objInfo;
 
-			subdividedDatas.push_back(data);
-		}
+            subdividedDatas.push_back(data);
+        }
 
-		vertices.clear();
-		uvs.clear();
-		indices.clear();
-		geometries.clear();
+        vertices.clear();
+        uvs.clear();
+        indices.clear();
+        geometries.clear();
 
-		for (auto& data : subdividedDatas)
+        std::vector<std::future<void>> processes;
+        for (std::size_t i = 0; i < subdividedDatas.size(); i++)
+        {
+            if (subdividedDatas[i].indices.size() / 3 > a_triThreshold)
+                continue;
+            processes.push_back(currentProcessingThreads.load()->submitAsync([&, i]() {
+                auto& data = subdividedDatas[i];
+                for (std::uint32_t doSubdivision = 0; doSubdivision < a_subCount; doSubdivision++)
+                {
+                    std::unordered_map<std::size_t, std::uint32_t> midpointMap;
+                    auto getMidpointIndex = [&](std::uint32_t i0, std::uint32_t i1) -> std::uint32_t {
+                        auto createKey = [](std::uint32_t i0, std::uint32_t i1) -> std::size_t {
+                            std::uint32_t a = (std::min)(i0, i1);
+                            std::uint32_t b = std::max(i0, i1);
+                            return (static_cast<std::size_t>(a) << 32) | b;
+                        };
+
+                        auto key = createKey(i0, i1);
+                        if (auto it = midpointMap.find(key); it != midpointMap.end())
+                            return it->second;
+
+                        std::size_t index = data.vertices.size();
+
+                        const auto& v0 = data.vertices[i0];
+                        const auto& v1 = data.vertices[i1];
+                        DirectX::XMFLOAT3 midVertex = {
+                            (v0.x + v1.x) * 0.5f,
+                            (v0.y + v1.y) * 0.5f,
+                            (v0.z + v1.z) * 0.5f};
+                        data.vertices.push_back(midVertex);
+
+                        const auto& u0 = data.uvs[i0];
+                        const auto& u1 = data.uvs[i1];
+                        DirectX::XMFLOAT2 midUV = {
+                            (u0.x + u1.x) * 0.5f,
+                            (u0.y + u1.y) * 0.5f};
+                        data.uvs.push_back(midUV);
+
+                        midpointMap[key] = index;
+                        return index;
+                    };
+
+                    auto oldIndices = data.indices;
+                    data.indices.resize(data.indices.size() * 4);
+                    for (std::size_t i = 0; i < oldIndices.size() / 3; i++)
+                    {
+                        std::size_t offset = i * 3;
+                        std::uint32_t v0 = oldIndices[offset + 0];
+                        std::uint32_t v1 = oldIndices[offset + 1];
+                        std::uint32_t v2 = oldIndices[offset + 2];
+
+                        std::uint32_t m01 = getMidpointIndex(v0, v1);
+                        std::uint32_t m12 = getMidpointIndex(v1, v2);
+                        std::uint32_t m20 = getMidpointIndex(v2, v0);
+
+                        std::size_t triOffset = offset * 4;
+                        data.indices[triOffset + 0] = v0;
+                        data.indices[triOffset + 1] = m01;
+                        data.indices[triOffset + 2] = m20;
+
+                        data.indices[triOffset + 3] = v1;
+                        data.indices[triOffset + 4] = m12;
+                        data.indices[triOffset + 5] = m01;
+
+                        data.indices[triOffset + 6] = v2;
+                        data.indices[triOffset + 7] = m20;
+                        data.indices[triOffset + 8] = m12;
+
+                        data.indices[triOffset + 9] = m01;
+                        data.indices[triOffset + 10] = m12;
+                        data.indices[triOffset + 11] = m20;
+                    }
+                }
+            }));
+        }
+		for (auto& process : processes)
 		{
-			if (data.indices.size() / 3 < a_triThreshold)
-			{
-				for (std::uint32_t doSubdivision = 0; doSubdivision < a_subCount; doSubdivision++)
-				{
-					std::unordered_map<std::size_t, std::uint32_t> midpointMap;
-					auto getMidpointIndex = [&](std::uint32_t i0, std::uint32_t i1) -> std::uint32_t {
-						auto createKey = [](std::uint32_t i0, std::uint32_t i1) -> std::size_t {
-							std::uint32_t a = (std::min)(i0, i1);
-							std::uint32_t b = std::max(i0, i1);
-							return (static_cast<std::size_t>(a) << 32) | b;
-						};
-
-						auto key = createKey(i0, i1);
-						if (auto it = midpointMap.find(key); it != midpointMap.end())
-							return it->second;
-
-						std::size_t index = data.vertices.size();
-
-						const auto& v0 = data.vertices[i0];
-						const auto& v1 = data.vertices[i1];
-						DirectX::XMFLOAT3 midVertex = {
-							(v0.x + v1.x) * 0.5f,
-							(v0.y + v1.y) * 0.5f,
-							(v0.z + v1.z) * 0.5f
-						};
-						data.vertices.push_back(midVertex);
-
-						const auto& u0 = data.uvs[i0];
-						const auto& u1 = data.uvs[i1];
-						DirectX::XMFLOAT2 midUV = {
-							(u0.x + u1.x) * 0.5f,
-							(u0.y + u1.y) * 0.5f
-						};
-						data.uvs.push_back(midUV);
-
-						midpointMap[key] = index;
-							return index;
-						};
-
-					auto oldIndices = data.indices;
-					data.indices.resize(data.indices.size() * 4);
-					for (std::size_t i = 0; i < oldIndices.size() / 3; i++)
-					{
-						std::size_t offset = i * 3;
-						std::uint32_t v0 = oldIndices[offset + 0];
-						std::uint32_t v1 = oldIndices[offset + 1];
-						std::uint32_t v2 = oldIndices[offset + 2];
-
-						std::uint32_t m01 = getMidpointIndex(v0, v1);
-						std::uint32_t m12 = getMidpointIndex(v1, v2);
-						std::uint32_t m20 = getMidpointIndex(v2, v0);
-
-						std::size_t triOffset = offset * 4;
-						data.indices[triOffset + 0] = v0;
-						data.indices[triOffset + 1] = m01;
-						data.indices[triOffset + 2] = m20;
-
-						data.indices[triOffset + 3] = v1;
-						data.indices[triOffset + 4] = m12;
-						data.indices[triOffset + 5] = m01;
-
-						data.indices[triOffset + 6] = v2;
-						data.indices[triOffset + 7] = m20;
-						data.indices[triOffset + 8] = m12;
-
-						data.indices[triOffset + 9] = m01;
-						data.indices[triOffset + 10] = m12;
-						data.indices[triOffset + 11] = m20;
-					}
-				}
-			}
-
-			ObjectInfo newObjInfo;
-			newObjInfo.info = data.geoInfo;
-			newObjInfo.vertexStart = vertices.size();
-			newObjInfo.uvStart = uvs.size();
-			newObjInfo.indicesStart = indices.size();
-
-			vertices.insert(vertices.end(), data.vertices.begin(), data.vertices.end());
-			uvs.insert(uvs.end(), data.uvs.begin(), data.uvs.end());
-
-			std::size_t triCount = data.indices.size() / 3;
-			std::vector<std::future<void>> processes;
-            const std::size_t sub = std::max((std::size_t)1, std::min(triCount, currentProcessingThreads.load()->GetThreads()));
-			const std::size_t unit = (triCount + sub - 1) / sub;
-			for (std::size_t t = 0; t < sub; t++) {
-				const std::size_t begin = t * unit;
-				const std::size_t end = std::min(begin + unit, triCount);
-                processes.push_back(currentProcessingThreads.load()->submitAsync([&, begin, end]() {
-					for (std::size_t i = begin; i < end; i++)
-					{
-						std::size_t offset = i * 3;
-						data.indices[offset + 0] += newObjInfo.vertexStart;
-						data.indices[offset + 1] += newObjInfo.vertexStart;
-						data.indices[offset + 2] += newObjInfo.vertexStart;
-					}
-				}));
-			}
-			for (auto& process : processes) {
-				process.get();
-			}
-
-			indices.insert(indices.end(), data.indices.begin(), data.indices.end());
-
-			newObjInfo.vertexEnd = vertices.size();
-			newObjInfo.uvEnd = uvs.size();
-			newObjInfo.indicesEnd = indices.size();
-
-			geometries.push_back(GeometriesInfo{ data.geometry, newObjInfo });
+			process.get();
 		}
+		for (std::size_t i = 0; i < subdividedDatas.size(); i++)
+        {
+            auto& data = subdividedDatas[i];
+            data.objInfo.info = data.geoInfo;
+            data.objInfo.vertexStart = vertices.size();
+            data.objInfo.uvStart = uvs.size();
+
+            vertices.append_range(data.vertices);
+            uvs.append_range(data.uvs);
+
+            data.objInfo.vertexEnd = vertices.size();
+            data.objInfo.uvEnd = uvs.size();
+
+            data.objInfo.indicesStart = indices.size();
+            std::size_t triCount = data.indices.size() / 3;
+            const std::size_t sub = std::max((std::size_t)1, std::min(triCount, currentProcessingThreads.load()->GetThreads()));
+            const std::size_t unit = (triCount + sub - 1) / sub;
+            processes.clear();
+            for (std::size_t t = 0; t < sub; t++)
+            {
+                const std::size_t begin = t * unit;
+                const std::size_t end = std::min(begin + unit, triCount);
+                processes.push_back(currentProcessingThreads.load()->submitAsync([&, begin, end]() {
+                    for (std::size_t i = begin; i < end; i++)
+                    {
+                        std::size_t offset = i * 3;
+                        data.indices[offset + 0] += data.objInfo.vertexStart;
+                        data.indices[offset + 1] += data.objInfo.vertexStart;
+                        data.indices[offset + 2] += data.objInfo.vertexStart;
+                    }
+                }));
+            }
+            for (auto& process : processes)
+            {
+                process.get();
+            }
+
+            indices.append_range(data.indices);
+            data.objInfo.indicesEnd = indices.size();
+
+            GeometriesInfo newGeoInfo = {
+                .geometry = data.geometry,
+                .objInfo = std::move(data.objInfo)
+            };
+            geometries.push_back(std::move(newGeoInfo));
+        }
 
 		logger::debug("{} : {} subdivition done", __func__, vertices.size());
 

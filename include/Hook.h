@@ -31,30 +31,34 @@ namespace Mus {
 		~EventDispatcherImpl() {}
 
 		void addListener(IEventListener<Event>* listener) override {
+            std::lock_guard lg(m_lock);
 			m_listeners.insert(listener);
 			m_cacheDirt = true;
 		};
-		void removeListener(IEventListener<Event>* listener) override {
+        void removeListener(IEventListener<Event>* listener) override {
+            std::lock_guard lg(m_lock);
 			m_listeners.erase(listener);
 			m_cacheDirt = true;
 		};
-		void dispatch(const Event& event) override {
-			if (m_cacheDirt)
-			{
-				m_caches.clear();
-				for (auto& i : m_listeners)
-					m_caches.emplace_back(i);
-				m_cacheDirt = false;
-			}
+        void dispatch(const Event& event) override {
+            if (m_cacheDirt) {
+                std::lock_guard lg(m_lock);
+                m_caches.clear();
+                for (auto& i : m_listeners)
+                    m_caches.emplace_back(i);
+                m_cacheDirt = false;
+            }
 
-			for (auto i : m_caches)
-				i->onEvent(event);
-		};
+            std::shared_lock sl(m_lock);
+            for (auto i : m_caches)
+                i->onEvent(event);
+        };
 
 	private:
+        std::shared_mutex m_lock;
 		std::unordered_set<IEventListener<Event>*> m_listeners;
 		std::vector<IEventListener<Event>*> m_caches;
-		bool m_cacheDirt = false;
+		std::atomic<bool> m_cacheDirt = false;
 	};
 
 	struct FrameEvent

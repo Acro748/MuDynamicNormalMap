@@ -854,12 +854,17 @@ namespace Mus {
         return slots;
     }
 
-    inline std::uint64_t GetFileSize(std::filesystem::path filePath) {
+    inline std::uint64_t GetFileSize(const std::filesystem::path& filePath) {
         std::error_code ec;
         std::uint64_t size = std::filesystem::file_size(filePath, ec);
         if (ec)
             return 0;
         return size;
+    }
+
+    constexpr std::string MDNMPrefix = "[MDNM]";
+    inline bool IsCreatedByMDNM(const std::string& a_textureName) {
+        return stringStartsWith(a_textureName, MDNMPrefix);
     }
 
     inline bool IsInvalidActor(RE::Actor* a_actor) {

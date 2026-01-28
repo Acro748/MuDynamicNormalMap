@@ -41,12 +41,16 @@ namespace Mus {
 			}
 			std::size_t GetHash() const { return hashValue; }
 			std::size_t GetOldHash() const { return oldHashValue; }
+            void SetCheckTexture(bool isCheck) { isCheckTexture = isCheck; }
+            bool IsChangedTexture() const { return isCheckTexture && !isMDNMTexture; }
 		private:
 			std::size_t hashValue = 0;
 			std::size_t oldHashValue = 0;
+            bool isCheckTexture = false;
+            bool isMDNMTexture = false;
 		};
 		typedef std::shared_ptr<Hash> HashPtr;
-		typedef concurrency::concurrent_unordered_map<RE::BSGeometry*, HashPtr> GeometryHash;
+		typedef std::unordered_map<RE::BSGeometry*, HashPtr> GeometryHash;
 
 		struct GeometryHashData {
 			GeometryHash hash;
@@ -54,6 +58,7 @@ namespace Mus {
 		};
 
 		bool Register(RE::Actor* a_actor, RE::BSGeometry* a_geo);
+		bool RegisterCheckTexture(RE::Actor* a_actor, RE::BSGeometry* a_geo);
 	protected:
 		void onEvent(const FrameEvent& e) override; 
 		void onEvent(const FacegenNiNodeEvent& e) override;
@@ -70,19 +75,16 @@ namespace Mus {
 		mutable std::shared_mutex blockActorsLock;
 		std::unordered_map<RE::FormID, bool> blockActors;
 		inline void SetBlocked(RE::FormID id, bool blocked) {
-			blockActorsLock.lock();
+            std::lock_guard lg(blockActorsLock);
 			blockActors[id] = blocked;
-			blockActorsLock.unlock();
 		}
 		inline bool IsBlocked(RE::FormID id) const {
-			blockActorsLock.lock_shared();
+            std::shared_lock sl(blockActorsLock);
 			auto found = blockActors.find(id);
-			bool isBlocked = found != blockActors.end() ? found->second : false;
-			blockActorsLock.unlock_shared();
-			return isBlocked;
+            return found != blockActors.end() ? found->second : false;
 		}
 
 		std::shared_mutex actorHashLock;
-		concurrency::concurrent_unordered_map<RE::FormID, GeometryHashData> actorHash;
+		std::unordered_map<RE::FormID, GeometryHashData> actorHash;
 	};
 }

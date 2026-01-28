@@ -253,6 +253,9 @@ namespace Mus {
         [[nodiscard]] inline auto GetDetectTickMS() const noexcept {
             return DetectTickMS;
         }
+        [[nodiscard]] inline auto GetDetectTextureChange() const noexcept {
+            return DetectTextureChange;
+        }
 
     protected:
         //Debug
@@ -341,6 +344,7 @@ namespace Mus {
         bool RealtimeDetectOnBackGround = false;
         float DetectDistance = 512.0f * 512.0f;
         std::clock_t DetectTickMS = 1000; //1sec
+        bool DetectTextureChange = true;
 
     public:
         inline std::string getCurrentSettingValue(std::string s)

@@ -103,16 +103,9 @@ namespace Mus {
 			return;
 		auto cameraPosition = camera->GetRuntimeData2().pos;
 
-		UpdateSlotQueue updateSlotQueue_;
-        for (const auto& map : updateSlotQueue)
-        {
-            if (map.second > 0)
-                updateSlotQueue_[map.first] = map.second;
-		}
-        if (updateSlotQueue_.empty())
-            return;
-
-        concurrency::parallel_for_each(updateSlotQueue_.begin(), updateSlotQueue_.end(), [&](auto& map) {
+		std::lock_guard lg(updateSlotQueueLock);
+        concurrency::concurrent_vector<RE::FormID> garbages;
+        concurrency::parallel_for_each(updateSlotQueue.begin(), updateSlotQueue.end(), [&](auto& map) {
 			RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
 			if (IsInvalidActor(actor))
 				return;
@@ -125,18 +118,20 @@ namespace Mus {
 			{
 				isInRange = cameraPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) <= Config::GetSingleton().GetUpdateDistance();
 			}
-            if (isActiveActors[actor->formID] != isInRange)
+            if (GetIsActiveActor(actor->formID) != isInRange)
 			{
 				if (!isInRange)
 				{
 					if (!Config::GetSingleton().GetUpdateDistanceVramSave())
 						return;
-					lastNormalMapLock.lock_shared();
-                    bool isFoundLastNormalMap = lastNormalMap.find(actor->formID) != lastNormalMap.end();
-					lastNormalMapLock.unlock_shared();
+                    bool isFoundLastNormalMap;
+                    {
+                        std::shared_lock sl(lastNormalMapLock);
+                        isFoundLastNormalMap = lastNormalMap.find(actor->formID) != lastNormalMap.end();
+                    }
 					if (isFoundLastNormalMap)
 					{
-						if (!isUpdating[actor->formID])
+                        if (!GetIsUpdating(actor->formID))
 							RemoveNormalMap(actor);
 						else
 							return;
@@ -147,13 +142,18 @@ namespace Mus {
 					QUpdateNormalMap(actor, BipedObjectSlot::kAll);
 				}
 			}
-			if (isInRange && !isUpdating[actor->formID])
+            if (isInRange && !GetIsUpdating(actor->formID))
 			{
-				QUpdateNormalMapImpl(actor, GetAllGeometries(actor), updateSlotQueue[actor->formID]);
-				updateSlotQueue[actor->formID] = 0;
+				QUpdateNormalMapImpl(actor, GetAllGeometries(actor), map.second);
+                garbages.push_back(map.first);
             }
-            isActiveActors[actor->formID] = isInRange;
+            SetIsActiveActor(actor->formID, isInRange);
 		});
+
+		for (auto& id : garbages)
+		{
+            updateSlotQueue.erase(id);
+		}
 
         if (isAfterLoading)
         {
@@ -165,8 +165,8 @@ namespace Mus {
             }
         }
 
-		if (Config::GetSingleton().GetQueueTime())
-			PerformanceLog(std::string("updateSlotQueue"), true, false, updateSlotQueue.size());
+		if (Config::GetSingleton().GetQueueTime() && !garbages.empty())
+            PerformanceLog(std::string("updateSlotQueue"), true, false, garbages.size());
 	}
 
 	void TaskManager::RunDelayTask()
@@ -260,9 +260,11 @@ namespace Mus {
 			return true;
 		if (bipedSlot & BipedObjectSlot::kHead && !Config::GetSingleton().GetHeadEnable())
 			bipedSlot &= ~BipedObjectSlot::kHead;
-		updateSlotQueue[id] |= bipedSlot;
-		if (isActiveActors.find(id) == isActiveActors.end())
-			isActiveActors[id] = false;
+        {
+            std::lock_guard lg(updateSlotQueueLock);
+            updateSlotQueue[id] |= bipedSlot;
+        }
+        SetIsActiveActor(a_actor->formID, true);
 		logger::debug("{}::{:x}::{} : queue added 0x{:x}", __func__, id, actorName, bipedSlot);
 		return true;
 	}
@@ -355,10 +357,11 @@ namespace Mus {
 				if (!Config::GetSingleton().GetRevertNormalMap())
                 {
                     bool isFound = false;
-                    lastNormalMapLock.lock_shared();
-                    if (auto found = lastNormalMap.find(id); found != lastNormalMap.end())
-                        isFound = found->second.find({newUpdateSet[geo].slot, newUpdateSet[geo].textureName}) != found->second.end();
-					lastNormalMapLock.unlock_shared();
+                    {
+                        std::shared_lock sl(lastNormalMapLock);
+                        if (auto found = lastNormalMap.find(id); found != lastNormalMap.end())
+                            isFound = found->second.find({newUpdateSet[geo].slot, newUpdateSet[geo].textureName}) != found->second.end();
+                    }
                     if (isFound)
                         Shader::TextureLoadManager::CreateSourceTexture(newUpdateSet[geo].textureName, material->normalTexture);
 				}
@@ -385,10 +388,10 @@ namespace Mus {
 	}
 	void TaskManager::QUpdateNormalMapImpl(RE::FormID a_actorID, std::string a_actorName, GeometryDataPtr a_geoData, UpdateSet a_updateSet)
 	{
-		if (!a_geoData || a_updateSet.empty() || isUpdating[a_actorID])
+        if (!a_geoData || a_updateSet.empty() || GetIsUpdating(a_actorID))
 			return;
 
-		isUpdating[a_actorID] = true;
+		SetIsUpdating(a_actorID, true);
         auto func = [this, a_actorID, a_actorName, a_geoData, a_updateSet]() {
             if (Config::GetSingleton().GetFullUpdateTime())
                 PerformanceLog(std::string("QUpdateNormalMapImpl") + "::" + SetHex(a_actorID, 0), false, false);
@@ -396,7 +399,7 @@ namespace Mus {
             if (!ObjectNormalMapUpdater::GetSingleton().CreateGeometryResourceData(a_actorID, a_geoData))
             {
                 logger::error("{:x}::{} : Failed to get geometry data", a_actorID, a_actorName);
-                isUpdating[a_actorID] = false;
+                SetIsUpdating(a_actorID, false);
                 return;
             }
 
@@ -408,7 +411,7 @@ namespace Mus {
             if (textures.empty())
             {
                 logger::error("{:x}::{} : Failed to update object normalmap", a_actorID, a_actorName);
-                isUpdating[a_actorID] = false;
+                SetIsUpdating(a_actorID, false);
                 return;
             }
 
@@ -417,7 +420,7 @@ namespace Mus {
                 if (IsInvalidActor(actor))
                 {
                     logger::error("{:x}::{} : invalid reference", a_actorID, a_actorName);
-                    isUpdating[a_actorID] = false;
+                    SetIsUpdating(a_actorID, false);
                     return;
                 }
 
@@ -536,14 +539,16 @@ namespace Mus {
                     if (Config::GetSingleton().GetDebugTexture())
                         material->diffuseTexture = normalmap;
                     material->normalTexture = normalmap;
+					ActorVertexHasher::GetSingleton().RegisterCheckTexture(actor, geo);
 
-                    lastNormalMapLock.lock();
-                    lastNormalMap[a_actorID].insert({found->slot, found->textureName});
-                    lastNormalMapLock.unlock();
+					{
+                        std::lock_guard lg(lastNormalMapLock);
+                        lastNormalMap[a_actorID].insert({found->slot, found->textureName});
+                    }
                     logger::info("{:x}::{}::{} : update object normalmap done", a_actorID, a_actorName, geo->name.c_str());
                     return RE::BSVisit::BSVisitControl::kContinue;
                 });
-                isUpdating[a_actorID] = false;
+                SetIsUpdating(a_actorID, false);
             });
 
             if (Config::GetSingleton().GetFullUpdateTime())
@@ -789,10 +794,6 @@ namespace Mus {
 			return info.texturePath;
 		return FixTexturePath(a_textureName);
 	}
-	bool TaskManager::IsCreatedByMDNM(std::string a_textureName)
-	{
-		return stringStartsWith(a_textureName, MDNMPrefix);
-	}
 
 	bool TaskManager::RemoveNormalMap(RE::Actor* a_actor)
 	{
@@ -830,14 +831,15 @@ namespace Mus {
 		}
 
         SlotTexSet textures;
-		lastNormalMapLock.lock();
-        auto found = lastNormalMap.find(a_actor->formID);
-        if (found != lastNormalMap.end())
-        {
-            textures = found->second;
-            lastNormalMap.erase(a_actor->formID);
+		{
+            std::lock_guard lg(lastNormalMapLock);
+            auto found = lastNormalMap.find(a_actor->formID);
+            if (found != lastNormalMap.end())
+            {
+                textures = found->second;
+                lastNormalMap.erase(a_actor->formID);
+            }
         }
-		lastNormalMapLock.unlock();
         ReleaseNormalMap(textures);
 		return true;
 	}
@@ -950,15 +952,12 @@ namespace Mus {
                             logger::warn("Some normalmaps are still being updated...");
                             return EventResult::kContinue;
                         }
-						g_frameEventDispatcher.removeListener(gpuTask.get());
-						g_armorAttachEventEventDispatcher.removeListener(&Mus::ActorVertexHasher::GetSingleton());
-						g_facegenNiNodeEventDispatcher.removeListener(&Mus::ActorVertexHasher::GetSingleton());
-						g_actorChangeHeadPartEventDispatcher.removeListener(&ActorVertexHasher::GetSingleton());
-						if (const auto NiNodeEvent = SKSE::GetNiNodeUpdateEventSource(); NiNodeEvent)
-							NiNodeEvent->RemoveEventSink(&Mus::ActorVertexHasher::GetSingleton());
 						Mus::Config::GetSingleton().LoadConfig();
 						InitialSetting();
-						isUpdating.clear();
+                        {
+                            std::lock_guard lg(isUpdatingLock);
+                            isUpdating.clear();
+                        }
 						ConditionManager::GetSingleton().InitialConditionList();
 						static_cast<MultipleConfig*>(&Config::GetSingleton())->LoadConditionFile();
 						ConditionManager::GetSingleton().SortConditions();
@@ -1009,10 +1008,11 @@ namespace Mus {
 							target = RE::PlayerCharacter::GetSingleton();
 
 						SlotTexSet textures;
-						lastNormalMapLock.lock_shared();
-                        if (auto found = lastNormalMap.find(target->formID); found != lastNormalMap.end())
-                            textures = found->second;
-						lastNormalMapLock.unlock_shared();
+                        {
+                            std::shared_lock sl(lastNormalMapLock);
+                            if (auto found = lastNormalMap.find(target->formID); found != lastNormalMap.end())
+                                textures = found->second;
+                        }
 
 						for (auto& pair : textures)
 						{
@@ -1086,28 +1086,30 @@ namespace Mus {
 	void TaskManager::ReleaseResourceOnUnloadActors()
 	{
 		memoryManageThreads->submitAsync([&]() {
-            lastNormalMapLock.lock_shared();
-            auto lastNormalMap_ = lastNormalMap;
-            lastNormalMapLock.unlock_shared();
-            if (lastNormalMap_.empty())
-                return;
-            std::size_t count = lastNormalMap_.size();
-            for (auto& map : lastNormalMap_)
-			{
-				RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
-				if (IsInvalidActor(actor))
-				{
-					if (isUpdating[map.first])
-					{
-						continue;
-					}
-					ReleaseNormalMap(map.second);
-					lastNormalMapLock.lock();
-                    lastNormalMap.erase(map.first);
-					lastNormalMapLock.unlock();
-                    count--;
-				}
-			}
+            {
+                std::shared_lock sl(lastNormalMapLock);
+                if (lastNormalMap.empty())
+                    return;
+            }
+            std::uint32_t count = 0;
+            {
+                std::lock_guard lg(lastNormalMapLock);
+                for (auto it = lastNormalMap.begin(); it != lastNormalMap.end();)
+                {
+                    RE::Actor* actor = GetFormByID<RE::Actor*>(it->first);
+                    if (IsInvalidActor(actor))
+                    {
+                        if (!GetIsUpdating(actor->formID))
+                        {
+                            ReleaseNormalMap(it->second);
+                            it = lastNormalMap.erase(it);
+                            count--;
+                            continue;
+                        }
+                    }
+                    it++;
+                }
+            }
 			if (count > 0)
 				logger::debug("Current remain NiTexture {}", count);
 		});
@@ -1115,19 +1117,21 @@ namespace Mus {
 	void TaskManager::ReleaseNormalMap(RE::FormID a_actorID, bSlot a_slot)
 	{
         SlotTexSet textures;
-		lastNormalMapLock.lock_shared();
-        if (auto found = lastNormalMap.find(a_actorID); found != lastNormalMap.end())
-            textures = found->second;
-		lastNormalMapLock.unlock_shared();
+        {
+            std::shared_lock sl(lastNormalMapLock);
+            if (auto found = lastNormalMap.find(a_actorID); found != lastNormalMap.end())
+                textures = found->second;
+        }
         for (auto& texture : textures)
 		{
 			if (texture.slot == a_slot && !texture.textureName.empty())
 			{
 				Shader::TextureLoadManager::GetSingleton().ReleaseNiTexture(texture.textureName);
 				logger::debug("{} : Removed unused NiTexture", texture.textureName);
-				lastNormalMapLock.lock();
-				lastNormalMap[a_actorID].erase(texture);
-				lastNormalMapLock.unlock();
+                {
+                    std::lock_guard lg(lastNormalMapLock);
+                    lastNormalMap[a_actorID].erase(texture);
+                }
 			}
 		}
 	}

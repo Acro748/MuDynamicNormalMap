@@ -241,7 +241,7 @@ namespace Mus {
 
 		class UpdateNormalMapBackup : public ShaderBackup {
         public:
-            virtual void Backup(ID3D11DeviceContext* context) override {
+            void Backup(ID3D11DeviceContext* context) override {
                 context->CSGetShader(&shader, nullptr, 0);
                 context->CSGetConstantBuffers(0, 1, &constBuffer);
                 context->CSGetShaderResources(0, 1, &vertexSRV);

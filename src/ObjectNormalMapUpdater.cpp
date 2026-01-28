@@ -1508,17 +1508,16 @@ namespace Mus {
 		//merge texture
 		{
 			bool merged = false;
-			auto results_ = results;
-			std::sort(results_.begin(), results_.end(), [](NormalMapResult& a, NormalMapResult& b) {
+            std::sort(results.begin(), results.end(), [](NormalMapResult& a, NormalMapResult& b) {
 				return a.vertexCount > b.vertexCount;
 			});
-			for (auto& dst : results_)
-			{
-				if (mergedTextureGeometries.find(dst.geometry) != mergedTextureGeometries.end())
-					continue;
+            for (auto& dst : results)
+            {
+                if (mergedTextureGeometries.find(dst.geometry) != mergedTextureGeometries.end())
+                    continue;
 
-				for (auto& src : results)
-				{
+                for (auto& src : results)
+                {
 					if (src.geometry == dst.geometry)
 						continue;
 					if (mergedTextureGeometries.find(src.geometry) != mergedTextureGeometries.end())
@@ -1625,11 +1624,10 @@ namespace Mus {
         // merge texture
         {
             bool merged = false;
-            auto results_ = results;
-            std::sort(results_.begin(), results_.end(), [](NormalMapResult& a, NormalMapResult& b) {
+            std::sort(results.begin(), results.end(), [](NormalMapResult& a, NormalMapResult& b) {
                 return a.vertexCount > b.vertexCount;
             });
-            for (auto& dst : results_)
+            for (auto& dst : results)
             {
                 if (mergedTextureGeometries.find(dst.geometry) != mergedTextureGeometries.end())
                     continue;
@@ -1664,7 +1662,7 @@ namespace Mus {
         }
 
         const bool isSecondGPU = Shader::ShaderManager::GetSingleton().IsSecondGPUResource(context);
-        concurrency::concurrent_unordered_set<std::uint32_t> failedCopyResources;
+        std::unordered_set<std::uint32_t> failedCopyResources;
         for (std::uint32_t i = 0; i < results.size(); i++)
         {
             if (results[i].existResource)
@@ -1967,23 +1965,25 @@ namespace Mus {
 			DirectX::XMINT2(-1,  1), // left down
 			DirectX::XMINT2(0,  1), // down
 			DirectX::XMINT2(1,  1)  // right down
-		};
+        };
+        struct ColorMap
+        {
+            std::uint32_t* src = nullptr;
+            RGBA resultsColor;
+        };
 		for (std::uint8_t i = 0; i < 2; i++)
 		{
-			std::vector<std::future<void>> processes;
+            std::vector<std::future<std::vector<ColorMap>>> colorMapProcesses;
             const std::uint32_t threads = currentProcessingThreads.load()->GetThreads() * 16;
 			const std::uint32_t subY = std::min(height, std::min(width, threads) * std::min(height, threads));
 			const std::uint32_t unitY = (height + subY - 1) / subY;
 			std::uint8_t* pData = reinterpret_cast<std::uint8_t*>(mappedResource[0].pData);
-			struct ColorMap {
-				std::uint32_t* src = nullptr;
-				RGBA resultsColor;
-			};
-			concurrency::concurrent_vector<ColorMap> resultsColorMap;
+			std::vector<ColorMap> resultsColorMap;
 			for (std::uint32_t sy = 0; sy < subY; sy++) {
 				const std::uint32_t beginY = sy * unitY;
 				const std::uint32_t endY = std::min(beginY + unitY, height);
-                processes.push_back(currentProcessingThreads.load()->submitAsync([&, beginY, endY]() {
+                colorMapProcesses.push_back(currentProcessingThreads.load()->submitAsync([&, beginY, endY]() {
+                    std::vector<ColorMap> resultsColorMapFrag;
 					for (UINT y = beginY; y < endY; y++) {
 						std::uint8_t* rowData = pData + y * mappedResource[0].RowPitch;
 						for (UINT x = 0; x < width; x++)
@@ -2016,17 +2016,18 @@ namespace Mus {
 							if (validCount == 0)
 								continue;
 							RGBA resultsColor = averageColor / validCount;
-							resultsColorMap.push_back(ColorMap{ pixel, resultsColor });
+                            resultsColorMapFrag.push_back(ColorMap{pixel, resultsColor});
 						}
 					}
+                    return resultsColorMapFrag;
 				}));
 			}
-			for (auto& process : processes)
+            for (auto& process : colorMapProcesses)
 			{
-				process.get();
+                resultsColorMap.append_range(process.get());
 			}
-			processes.clear();
 
+            std::vector<std::future<void>> processes;
 			std::size_t sub = std::max(std::size_t(1), std::min(resultsColorMap.size(), currentProcessingThreads.load()->GetThreads()));
 			std::size_t unit = (resultsColorMap.size() + sub - 1) / sub;
 			for (std::size_t t = 0; t < sub; t++) {
