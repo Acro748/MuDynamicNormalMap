@@ -420,13 +420,13 @@ namespace Mus {
 		QUpdateNormalMapImpl(a_actor->formID, actorName, newGeometryData, newUpdateSet);
 		return true;
 	}
-	void TaskManager::QUpdateNormalMapImpl(RE::FormID a_actorID, std::string a_actorName, GeometryDataPtr a_geoData, UpdateSet a_updateSet)
+	void TaskManager::QUpdateNormalMapImpl(RE::FormID a_actorID, std::string a_actorName, GeometryDataPtr a_geoData, UpdateSet& a_updateSet)
 	{
         if (!a_geoData || a_updateSet.empty() || GetIsUpdating(a_actorID))
 			return;
 
 		SetIsUpdating(a_actorID, true);
-        auto func = [this, a_actorID, a_actorName, a_geoData, a_updateSet]() {
+        auto func = [this, a_actorID, a_actorName, a_geoData, a_updateSet = std::move(a_updateSet)]() mutable {
             if (Config::GetSingleton().GetFullUpdateTime())
                 PerformanceLog(std::string("QUpdateNormalMapImpl") + "::" + SetHex(a_actorID, false), false, false);
 
@@ -449,7 +449,7 @@ namespace Mus {
                 return;
             }
 
-            RegisterDelayTask([this, a_actorID, a_actorName, textures]() {
+            RegisterDelayTask([this, a_actorID, a_actorName, textures = std::move(textures)]() {
                 auto actor = GetFormByID<RE::Actor*>(a_actorID);
                 if (IsInvalidActor(actor))
                 {
@@ -974,29 +974,27 @@ namespace Mus {
 							RE::DebugNotification(notification.c_str());
 						}
 					}
-					else if (button->HeldDuration() >= 3.0f) //forced reset
-					{
-						if (isResetTasks)
-							return EventResult::kContinue;
+                    else if (button->HeldDuration() >= 3.0f) // forced reset
+                    {
+                        if (isResetTasks)
+                            return EventResult::kContinue;
                         if (ObjectNormalMapUpdater::GetSingleton().GetCount() > 0)
                         {
                             RE::DebugNotification("MDNM : Some normalmaps are still being updated");
                             logger::warn("Some normalmaps are still being updated...");
                             return EventResult::kContinue;
                         }
-						Mus::Config::GetSingleton().LoadConfig();
-						InitialSetting();
-                        {
-                            isUpdating.clear();
-                        }
-						ConditionManager::GetSingleton().InitialConditionList();
-						static_cast<MultipleConfig*>(&Config::GetSingleton())->LoadConditionFile();
-						ConditionManager::GetSingleton().SortConditions();
-						ObjectNormalMapUpdater::GetSingleton().Init();
-						RE::DebugNotification("MDNM : Reload done");
-						logger::info("Reload done");
-						isResetTasks = true;
-					}
+                        Mus::Config::GetSingleton().LoadConfig();
+                        InitialSetting();
+                        isUpdating.clear();
+                        ConditionManager::GetSingleton().InitialConditionList();
+                        static_cast<MultipleConfig*>(&Config::GetSingleton())->LoadConditionFile();
+                        ConditionManager::GetSingleton().SortConditions();
+                        ObjectNormalMapUpdater::GetSingleton().Init();
+                        RE::DebugNotification("MDNM : Reload done");
+                        logger::info("Reload done");
+                        isResetTasks = true;
+                    }
 				}
 				else if (keyCode == 29) //ctrl
 				{

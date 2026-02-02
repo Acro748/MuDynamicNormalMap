@@ -75,7 +75,7 @@ namespace Mus {
 		bool QUpdateNormalMap(RE::Actor* a_actor, bSlotbit bipedSlot = BipedObjectSlot::kAll);
 
 		bool QUpdateNormalMapImpl(RE::Actor* a_actor, GeometryList a_srcGeometies, bSlotbit bipedSlot);
-		void QUpdateNormalMapImpl(RE::FormID a_actorID, std::string a_actorName, GeometryDataPtr a_geoData, UpdateSet a_updateSet);
+		void QUpdateNormalMapImpl(RE::FormID a_actorID, std::string a_actorName, GeometryDataPtr a_geoData, UpdateSet& a_updateSet);
 
 		void RunManageResource(bool isImminently);
 		bool RemoveNormalMap(RE::Actor* a_actor);
@@ -120,8 +120,7 @@ namespace Mus {
 		typedef concurrency::concurrent_unordered_map<RE::FormID, bSlotbit> UpdateSlotQueue;
         UpdateSlotQueue updateSlotQueue;
 
-		typedef std::unordered_map<RE::FormID, bool> ActiveMap;
-        ActiveMap isActiveActors; // ActorID, isActive
+		std::unordered_map<RE::FormID, bool> isActiveActors; // ActorID, isActive
         mutable std::shared_mutex isActiveActorsLock;
         inline void SetIsActiveActor(RE::FormID a_actorID, bool a_isActive) {
             std::lock_guard lg(isActiveActorsLock);
@@ -133,8 +132,7 @@ namespace Mus {
             return it != isActiveActors.end() ? it->second : false;
         }
 
-        typedef concurrency::concurrent_unordered_map<RE::FormID, bool> UpdatingMap;
-        UpdatingMap isUpdating;
+        concurrency::concurrent_unordered_map<RE::FormID, bool> isUpdating;
         inline void SetIsUpdating(RE::FormID a_actorID, bool a_isUpdating) {
             isUpdating[a_actorID] = a_isUpdating;
         }

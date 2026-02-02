@@ -407,7 +407,7 @@ namespace Mus {
 										+ std::to_string(geoHash));
 	}
 
-	ObjectNormalMapUpdater::UpdateResult ObjectNormalMapUpdater::UpdateObjectNormalMap(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet a_updateSet)
+	ObjectNormalMapUpdater::UpdateResult ObjectNormalMapUpdater::UpdateObjectNormalMap(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet& a_updateSet)
     {
         RefGuard rg(this);
 
@@ -832,7 +832,7 @@ namespace Mus {
 		return results;
 	}
 
-	ObjectNormalMapUpdater::UpdateResult ObjectNormalMapUpdater::UpdateObjectNormalMapGPU(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet a_updateSet)
+	ObjectNormalMapUpdater::UpdateResult ObjectNormalMapUpdater::UpdateObjectNormalMapGPU(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet& a_updateSet)
 	{
 		const std::string_view _func_ = __func__;
 		UpdateResult results;

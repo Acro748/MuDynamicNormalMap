@@ -66,8 +66,8 @@ namespace Mus {
 			TextureResourcePtr texture;
 		};
 		typedef std::vector<NormalMapResult> UpdateResult;
-		UpdateResult UpdateObjectNormalMap(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet a_updateSet);
-		UpdateResult UpdateObjectNormalMapGPU(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet a_updateSet);
+		UpdateResult UpdateObjectNormalMap(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet& a_updateSet);
+		UpdateResult UpdateObjectNormalMapGPU(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet& a_updateSet);
 
 	protected:
 		void onEvent(const FrameEvent& e) override;
