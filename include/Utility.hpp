@@ -340,7 +340,6 @@ namespace Mus {
 
     inline std::string FixPath(std::string path)
     {
-        path = lowLetter(path);
         std::filesystem::path filePath = string2wstring(path);
         return std::regex_replace(wstring2string(filePath.make_preferred().wstring()), std::regex(R"([\\/]+)"), R"(\)");
     }
@@ -366,25 +365,26 @@ namespace Mus {
         textures,
         none 
     };
-    inline bool IsExistDirectoy(std::string path)
+    inline bool IsExistDirectoy(const lString& path)
     {
-        if (!stringStartsWith(path, GetRuntimeDataDirectory()))
-            path = GetRuntimeDataDirectory() + path;
-        return std::filesystem::exists(path) && std::filesystem::is_directory(path);
+        if (path.starts_with(GetRuntimeDataDirectory()))
+            return std::filesystem::exists(path.string()) && std::filesystem::is_directory(path.string());
+        else
+            return std::filesystem::exists(GetRuntimeDataDirectory() + path.string()) && std::filesystem::is_directory(GetRuntimeDataDirectory() + path.string());
     }
-    inline bool IsExistFileInFileSystem(std::string path)
+    inline bool IsExistFileInFileSystem(const lString& path)
     {
         return _access_s((GetRuntimeDataDirectory() + path).c_str(), 0) == 0;
     }
-    inline bool IsExistFileInStream_Impl(std::string path)
+    inline bool IsExistFileInStream_Impl(const lString& path)
     {
         RE::BSResourceNiBinaryStream binaryStream(path.c_str());
         return binaryStream.good();
     }
-    inline bool IsExistFileInStream(std::string path, ExistType type = ExistType::none)
+    inline bool IsExistFileInStream(lString path, ExistType type = ExistType::none)
     {
-        path = stringRemoveStarts(path, "Data\\");
-        if (stringStartsWith(path, "meshes") || stringStartsWith(path, "textures"))
+        path.remove_starts_with("Data\\");
+        if (path.starts_with("meshes") || path.starts_with("textures"))
             return IsExistFileInStream_Impl(path);
         else if (type == ExistType::meshes)
             return IsExistFileInStream_Impl("meshes\\" + path);
@@ -392,29 +392,37 @@ namespace Mus {
             return IsExistFileInStream_Impl("textures\\" + path);
         return IsExistFileInStream_Impl(path);
     }
-    inline bool IsExistFile(std::string path, ExistType type = ExistType::none, bool inFileSystem = false)
+    inline bool IsExistFile(lString path, ExistType type = ExistType::none, bool inFileSystem = false)
     {
         if (path.empty())
             return false;
-        path = stringRemoveStarts(path, "Data\\");
+        path.remove_starts_with("Data\\");
+        static concurrency::concurrent_unordered_map<lString, bool> isExists;
+        if (auto it = isExists.find(path); it != isExists.end())
+            return it->second;
+        bool result = false;
         if (!inFileSystem)
         {
-            if (IsContainString(path, "meshes") || IsContainString(path, "textures") || type != ExistType::none)
-                return IsExistFileInStream(path, type);
+            if (path.starts_with("meshes") || path.starts_with("textures") || type != ExistType::none)
+                result = IsExistFileInStream(path, type);
+            else
+                result = _access_s((GetRuntimeDataDirectory() + path).c_str(), 0) == 0;
         }
         else
         {
-            if (IsContainString(path, "meshes") || IsContainString(path, "textures") || type != ExistType::none)
+            if (path.starts_with("meshes") || path.starts_with("textures"))
             {
-                if (stringStartsWith(path, "meshes") || stringStartsWith(path, "textures"))
-                    return IsExistFileInFileSystem(path);
-                else if (type == ExistType::meshes)
-                    return IsExistFileInFileSystem("meshes\\" + path);
-                else if (type == ExistType::textures)
-                    return IsExistFileInFileSystem("textures\\" + path);
+                result = IsExistFileInFileSystem(path);
             }
+            else if (type == ExistType::meshes)
+                result = IsExistFileInFileSystem("meshes\\" + path);
+            else if (type == ExistType::textures)
+                result = IsExistFileInFileSystem("textures\\" + path);
+            else
+                result = _access_s((GetRuntimeDataDirectory() + path).c_str(), 0) == 0;
         }
-        return _access_s((GetRuntimeDataDirectory() + path).c_str(), 0) == 0;
+        isExists[path] = result;
+        return result;
     }
 
     inline bool DuplicateFileInStream(std::string src_file, std::string dst_file)

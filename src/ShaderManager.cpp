@@ -980,7 +980,7 @@ namespace Mus {
 			HRESULT hr;
 			
 			{
-                Shader::ShaderLockGuard slg(&sl);
+                Shader::ShaderLockGuard slg(sl);
                 hr = DirectX::CaptureTexture(device, context, texture.Get(), image);
             }
             if (FAILED(hr))
@@ -1100,7 +1100,7 @@ namespace Mus {
 			DirectX::ScratchImage image;
             HRESULT hr;
             {
-                Shader::ShaderLockGuard slg(&sl);
+                Shader::ShaderLockGuard slg(sl);
                 hr = DirectX::CaptureTexture(device, context, texInOut.Get(), image);
             }
 			if (FAILED(hr))
@@ -1138,7 +1138,7 @@ namespace Mus {
 
 				
 				{
-                    Shader::ShaderLockGuard slg(&sl);
+                    Shader::ShaderLockGuard slg(sl);
                     hr = DirectX::Compress(device, image.GetImages(), image.GetImageCount(), image.GetMetadata(), newFormat, flags, 1.0f, compressedImage);
                 }
 

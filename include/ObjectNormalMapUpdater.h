@@ -22,8 +22,14 @@ namespace Mus {
 	class RefGuard {
     public:
         RefGuard() = delete;
-        RefGuard(Ref* a_ref) : ref(a_ref) { ref->IncRef(); }
-        ~RefGuard() { ref->DecRef(); }
+        RefGuard(const RefGuard&) = delete;
+        RefGuard(RefGuard&&) = delete;
+
+        RefGuard(Ref* a_ref) noexcept : ref(a_ref) { ref->IncRef(); }
+        ~RefGuard() noexcept { ref->DecRef(); }
+
+        RefGuard& operator=(const RefGuard&) = delete;
+        RefGuard& operator=(RefGuard&&) = delete;
 
     private:
         Ref* ref = nullptr;
@@ -227,16 +233,22 @@ namespace Mus {
             virtual void Backup(ID3D11DeviceContext* context) = 0;
             virtual void Revert(ID3D11DeviceContext* context) = 0;
 		};
-		class ShaderBackupManager {
+		class ShaderBackupGuard {
         public:
-            ShaderBackupManager() = delete;
-            ShaderBackupManager(ID3D11DeviceContext* a_context, ShaderBackup* a_shaderBackup) 
-				: context(a_context), shaderBackup(a_shaderBackup) { shaderBackup->Backup(context); };
-            ~ShaderBackupManager() { shaderBackup->Revert(context); };
+            ShaderBackupGuard() = delete;
+            ShaderBackupGuard(const ShaderBackupGuard&) = delete;
+            ShaderBackupGuard(ShaderBackupGuard&&) = delete;
+
+            ShaderBackupGuard(ID3D11DeviceContext* a_context, ShaderBackup& a_shaderBackup) noexcept
+				: context(a_context), shaderBackup(a_shaderBackup) { shaderBackup.Backup(context); };
+            ~ShaderBackupGuard() noexcept { shaderBackup.Revert(context); };
+
+            ShaderBackupGuard& operator=(const ShaderBackupGuard&) = delete;
+            ShaderBackupGuard& operator=(ShaderBackupGuard&&) = delete;
 
 		private:
             ID3D11DeviceContext* context = nullptr;
-            ShaderBackup* shaderBackup = nullptr;
+            ShaderBackup& shaderBackup;
 		};
 
 		class UpdateNormalMapBackup : public ShaderBackup {

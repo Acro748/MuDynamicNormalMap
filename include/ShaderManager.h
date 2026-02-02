@@ -116,11 +116,18 @@ namespace Mus {
 		class ShaderLockGuard {
         public:
             ShaderLockGuard() = delete;
-            ShaderLockGuard(ShaderLocker* shaderLocker) : sl(shaderLocker) { sl->Lock(); };
-            ~ShaderLockGuard() { sl->Unlock(); };
+            ShaderLockGuard(const ShaderLockGuard&) = delete;
+            ShaderLockGuard(ShaderLockGuard&&) = delete;
+
+            ShaderLockGuard(ShaderLocker& shaderLocker) noexcept : sl(shaderLocker) { sl.Lock(); };
+
+            ~ShaderLockGuard() noexcept { sl.Unlock(); };
+
+			ShaderLockGuard& operator=(const ShaderLockGuard&) = delete;
+			ShaderLockGuard& operator=(ShaderLockGuard&&) = delete;
 
 		private:
-            ShaderLocker* sl;
+            ShaderLocker& sl;
 		};
 
 		class TextureLoadManager {

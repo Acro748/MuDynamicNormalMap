@@ -702,12 +702,12 @@ namespace Mus {
         actorThreads = std::make_shared<ThreadPool_ParallelModule>(actorThreadCount, coreMask);
         actorThreadsFull = std::make_shared<ThreadPool_ParallelModule>(4, 0);
         logger::info("set actorThreads {} on {}", actorThreadCount, usePCores ? "all cores" : "all E-cores");
-        currentActorThreads.store(actorThreads);
+        currentActorThreads = actorThreads;
 
         processingThreads = std::make_unique<ThreadPool_ParallelModule>(processingThreadCount, coreMask);
         processingThreadsFull = std::make_unique<ThreadPool_ParallelModule>(coreCount, 0);
         logger::info("set processingThreads {} on {}", processingThreadCount, usePCores ? "all cores" : "all E-cores");
-        currentProcessingThreads.store(processingThreads);
+        currentProcessingThreads = processingThreads;
 
         memoryManageThreads = std::make_unique<ThreadPool_ParallelModule>(memoryManageThreadCount, coreMask);
         logger::info("set memoryManageThreads {} on {}", memoryManageThreadCount, usePCores ? "all cores" : "all E-cores");
@@ -790,15 +790,15 @@ namespace Mus {
         }
         if (isImmediately != isImmediately_)
         {
-            currentProcessingThreads.store(processingThreadsFull);
-            currentActorThreads.store(actorThreadsFull);
+            currentProcessingThreads = processingThreadsFull;
+            currentActorThreads = actorThreadsFull;
             isNoSplitGPU_ = isNoSplitGPU.load();
             isNoSplitGPU = true;
         }
         else
         {
-            currentProcessingThreads.store(processingThreads);
-            currentActorThreads.store(actorThreads);
+            currentProcessingThreads = processingThreads;
+            currentActorThreads = actorThreads;
             isNoSplitGPU = isNoSplitGPU_.load();
         }
         return true;

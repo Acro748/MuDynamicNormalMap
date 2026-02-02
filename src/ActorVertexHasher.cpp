@@ -88,6 +88,7 @@ namespace Mus {
             actorIt->second.hash.insert(std::make_pair(a_geo, newHash));
             logger::debug("{:x} {} {}: registered for ActorVertexHasher", a_actor->formID, a_actor->GetName(), a_geo->name.c_str());
 		}
+        return true;
     }
 	bool ActorVertexHasher::RegisterCheckTexture(RE::Actor* a_actor, RE::BSGeometry* a_geo)
 	{

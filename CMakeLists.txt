@@ -32,6 +32,7 @@ set(headers
         include/Utility.hpp
         include/nifUtil.h
         include/Config.h
+        include/lString.h
         include/PapyrusScripts.h
         include/ShaderManager.h
         include/ObjectNormalMapUpdater.h

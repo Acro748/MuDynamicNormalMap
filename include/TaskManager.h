@@ -69,11 +69,12 @@ namespace Mus {
 		void RegisterDelayTask(std::function<void()> func);
 		void RegisterDelayTask(std::int16_t delayTick, std::function<void()> func);
 
-		std::unordered_set<RE::BSGeometry*> GetAllGeometries(RE::Actor* a_actor);
+		typedef std::vector<RE::BSGeometry*> GeometryList;
+        GeometryList GetAllGeometries(RE::Actor* a_actor);
 
 		bool QUpdateNormalMap(RE::Actor* a_actor, bSlotbit bipedSlot = BipedObjectSlot::kAll);
 
-		bool QUpdateNormalMapImpl(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, bSlotbit bipedSlot);
+		bool QUpdateNormalMapImpl(RE::Actor* a_actor, GeometryList a_srcGeometies, bSlotbit bipedSlot);
 		void QUpdateNormalMapImpl(RE::FormID a_actorID, std::string a_actorName, GeometryDataPtr a_geoData, UpdateSet a_updateSet);
 
 		void RunManageResource(bool isImminently);
@@ -116,41 +117,32 @@ namespace Mus {
 
 		std::string FixTexturePath(std::string texturePath);
 
-		typedef std::unordered_map<RE::FormID, bSlotbit> UpdateSlotQueue;
+		typedef concurrency::concurrent_unordered_map<RE::FormID, bSlotbit> UpdateSlotQueue;
         UpdateSlotQueue updateSlotQueue;
-        mutable std::shared_mutex updateSlotQueueLock;
 
-        std::unordered_map<RE::FormID, bool> isActiveActors; // ActorID, isActive
+		typedef std::unordered_map<RE::FormID, bool> ActiveMap;
+        ActiveMap isActiveActors; // ActorID, isActive
         mutable std::shared_mutex isActiveActorsLock;
         inline void SetIsActiveActor(RE::FormID a_actorID, bool a_isActive) {
             std::lock_guard lg(isActiveActorsLock);
             isActiveActors[a_actorID] = a_isActive;
         }
         inline bool GetIsActiveActor(RE::FormID a_actorID) const {
-			std::shared_lock sl(isActiveActorsLock);
+            std::shared_lock sl(isActiveActorsLock);
             auto it = isActiveActors.find(a_actorID);
-			if (it != isActiveActors.end()) {
-				return it->second;
-			}
-            return false;
+            return it != isActiveActors.end() ? it->second : false;
         }
 
-        std::unordered_map<RE::FormID, bool> isUpdating;
-        mutable std::shared_mutex isUpdatingLock;
+        typedef concurrency::concurrent_unordered_map<RE::FormID, bool> UpdatingMap;
+        UpdatingMap isUpdating;
         inline void SetIsUpdating(RE::FormID a_actorID, bool a_isUpdating) {
-			std::lock_guard lg(isUpdatingLock);
             isUpdating[a_actorID] = a_isUpdating;
         }
         inline bool GetIsUpdating(RE::FormID a_actorID) const {
-            std::shared_lock sl(isUpdatingLock);
             auto it = isUpdating.find(a_actorID);
-            if (it != isUpdating.end()) {
-                return it->second;
-            }
-            return false;
+            return it != isUpdating.end() ? it->second : false;
         }
 
-		std::shared_mutex lastNormalMapLock;
 		struct SlotTexKey {
 			bSlot slot;
 			std::string textureName;
@@ -166,11 +158,12 @@ namespace Mus {
 			}
 		};
 		typedef std::unordered_set<SlotTexKey, SlotTexHash> SlotTexSet;
-		std::unordered_map<RE::FormID, SlotTexSet> lastNormalMap;
+        std::unordered_map<RE::FormID, SlotTexSet> lastNormalMap;
+        mutable std::shared_mutex lastNormalMapLock;
 
 		void ReleaseResourceOnUnloadActors();
 
 		void ReleaseNormalMap(RE::FormID a_actorID, bSlot a_slot);
-        void ReleaseNormalMap(SlotTexSet& textures);
+        void ReleaseNormalMap(const SlotTexSet& textures) const;
 	};
 }
