@@ -2616,7 +2616,7 @@ namespace Mus {
             std::vector<std::uint32_t> pixelBuffer(bc7Width * bc7Height * 16);
 			std::uint8_t* srcData = reinterpret_cast<std::uint8_t*>(mappedResource[mipLevel].pData);
 			std::vector<std::future<void>> processes;
-            const std::uint32_t threads = std::max(std::size_t(1), currentProcessingThreads.load()->GetThreads() * (isImmediately ? 1 : 8));
+            const std::uint32_t threads = std::max(1ull, currentProcessingThreads.load()->GetThreads() * (isImmediately ? 1 : 8));
 			const std::uint32_t rowSub = std::max(1u, (bc7Height + threads - 1) / threads);
 			for (std::uint32_t threadNum = 0; threadNum < threads; threadNum++) {
 				const std::uint32_t beginY = threadNum * rowSub;
