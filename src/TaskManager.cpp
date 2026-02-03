@@ -103,57 +103,90 @@ namespace Mus {
 			return;
 		auto cameraPosition = camera->GetRuntimeData2().pos;
 
-		UpdateSlotQueue updateSlotQueue_;
-        for (const auto& map : updateSlotQueue)
+        const float updateDistance = Config::GetSingleton().GetUpdateDistance();
+        if (updateDistance > 0)
         {
-            if (map.second > 0)
-                updateSlotQueue_[map.first] = map.second;
-		}
-        if (updateSlotQueue_.empty())
-            return;
+            const bool vramSave = Config::GetSingleton().GetUpdateDistanceVramSave();
+            std::vector<std::function<void()>> queues;
+            {
+                std::lock_guard lg(isActiveActorsLock);
+                for (auto it = isActiveActors.begin(); it != isActiveActors.end();)
+                {
+                    RE::Actor* actor = GetFormByID<RE::Actor*>(it->first);
+                    if (IsInvalidActor(actor))
+                    {
+                        it = isActiveActors.erase(it);
+                        continue;
+                    }
+                    bool isInRange = false;
+                    if (IsPlayer(actor->formID) || updateDistance <= floatPrecision)
+                    {
+                        isInRange = true;
+                    }
+                    else
+                    {
+                        isInRange = cameraPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) <= updateDistance;
+                    }
+                    if (it->second != isInRange)
+                    {
+                        if (!isInRange)
+                        {
+                            if (vramSave)
+                            {
+                                bool isExist = false;
+								{
+                                    std::shared_lock sl(lastNormalMapLock);
+                                    isExist = lastNormalMap.find(actor->formID) != lastNormalMap.end();
+								}
+                                if (isExist)
+                                {
+                                    if (GetIsUpdating(actor->formID))
+                                    {
+                                        it++;
+                                        continue;
+                                    }
+                                    RemoveNormalMap(actor);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            queues.push_back([this, actor]() { QUpdateNormalMap(actor); });
+                        }
+                        it->second = isInRange;
+                    }
+                    it++;
+                }
+            }
+            for (auto& q : queues)
+            {
+                q();
+			}
+        }
 
+        UpdateSlotQueue updateSlotQueue_;
+        {
+            updateSlotQueue_ = std::move(updateSlotQueue);
+        }
+
+        std::atomic<std::uint32_t> count = 0;
         concurrency::parallel_for_each(updateSlotQueue_.begin(), updateSlotQueue_.end(), [&](auto& map) {
 			RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
 			if (IsInvalidActor(actor))
 				return;
-			bool isInRange = false;
-			if (IsPlayer(actor->formID) || Config::GetSingleton().GetUpdateDistance() <= floatPrecision)
+            if (GetIsActiveActor(actor->formID))
 			{
-				isInRange = true;
-			}
-			else
-			{
-				isInRange = cameraPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) <= Config::GetSingleton().GetUpdateDistance();
-			}
-            if (isActiveActors[actor->formID] != isInRange)
-			{
-				if (!isInRange)
-				{
-					if (!Config::GetSingleton().GetUpdateDistanceVramSave())
-						return;
-					lastNormalMapLock.lock_shared();
-                    bool isFoundLastNormalMap = lastNormalMap.find(actor->formID) != lastNormalMap.end();
-					lastNormalMapLock.unlock_shared();
-					if (isFoundLastNormalMap)
-					{
-						if (!isUpdating[actor->formID])
-							RemoveNormalMap(actor);
-						else
-							return;
-                    }
-				}
-				else
-				{
-					QUpdateNormalMap(actor, BipedObjectSlot::kAll);
-				}
-			}
-			if (isInRange && !isUpdating[actor->formID])
-			{
-				QUpdateNormalMapImpl(actor, GetAllGeometries(actor), updateSlotQueue[actor->formID]);
-				updateSlotQueue[actor->formID] = 0;
+                if (!GetIsUpdating(actor->formID))
+                {
+                    QUpdateNormalMapImpl(actor, GetAllGeometries(actor), map.second);
+                    count++;
+                }
+                else
+                {
+                    updateSlotQueue[actor->formID] |= map.second;
+                }
             }
-            isActiveActors[actor->formID] = isInRange;
-		});
+        });
 
         if (isAfterLoading)
         {
@@ -165,8 +198,8 @@ namespace Mus {
             }
         }
 
-		if (Config::GetSingleton().GetQueueTime())
-			PerformanceLog(std::string("updateSlotQueue"), true, false, updateSlotQueue.size());
+		if (Config::GetSingleton().GetQueueTime() && count > 0)
+            PerformanceLog(std::string("updateSlotQueue"), true, false, count);
 	}
 
 	void TaskManager::RunDelayTask()
@@ -177,10 +210,11 @@ namespace Mus {
 		if (Config::GetSingleton().GetQueueTime())
 			PerformanceLog(std::string(__func__), false, false);
 
-		delayTaskLock.lock();
-		auto delayTask_ = delayTask;
-		delayTask.clear();
-		delayTaskLock.unlock();
+		std::vector<std::function<void()>> delayTask_;
+		{
+            std::lock_guard lg(delayTaskLock);
+            delayTask_ = std::move(delayTask);
+		}
 		concurrency::parallel_for_each(delayTask_.begin(), delayTask_.end(), [&](auto& task)
 		{
 			task();
@@ -211,14 +245,14 @@ namespace Mus {
 		ReleaseResourceOnUnloadActors();
 	}
 
-	std::unordered_set<RE::BSGeometry*> TaskManager::GetAllGeometries(RE::Actor* a_actor)
+	TaskManager::GeometryList TaskManager::GetAllGeometries(RE::Actor* a_actor)
 	{
-		std::unordered_set<RE::BSGeometry*> geometries;
+        GeometryList geometries;
 		if (IsInvalidActor(a_actor))
 			return geometries;
 		auto root = a_actor->loadedData->data3D.get();
 		if (!root)
-			return geometries;
+            return geometries;
 		RE::BSVisit::TraverseScenegraphGeometries(root, [&](RE::BSGeometry* geometry) -> RE::BSVisit::BSVisitControl {
 			using State = RE::BSGeometry::States;
 			using Feature = RE::BSShaderMaterial::Feature;
@@ -239,35 +273,34 @@ namespace Mus {
 				if (auto alphaProperty = netimmerse_cast<RE::NiAlphaProperty*>(property); alphaProperty)
 					return RE::BSVisit::BSVisitControl::kContinue;
 			}
-			geometries.insert(geometry);
+			geometries.push_back(geometry);
 			return RE::BSVisit::BSVisitControl::kContinue;
-		});
+        });
 		return geometries;
 	}
-	bool TaskManager::QUpdateNormalMap(RE::Actor* a_actor, bSlotbit bipedSlot)
-	{
-		if (!a_actor || bipedSlot == 0)
-			return false;
-		RE::FormID id = a_actor->formID;
-		std::string actorName = a_actor->GetName();
-		if (IsPlayer(id) && !Config::GetSingleton().GetPlayerEnable())
-			return true;
-		if (!IsPlayer(id) && !Config::GetSingleton().GetNPCEnable())
-			return true;
-		if (GetSex(a_actor) == RE::SEX::kMale && !Config::GetSingleton().GetMaleEnable())
-			return true;
-		if (GetSex(a_actor) == RE::SEX::kFemale && !Config::GetSingleton().GetFemaleEnable())
-			return true;
-		if (bipedSlot & BipedObjectSlot::kHead && !Config::GetSingleton().GetHeadEnable())
-			bipedSlot &= ~BipedObjectSlot::kHead;
-		updateSlotQueue[id] |= bipedSlot;
-		if (isActiveActors.find(id) == isActiveActors.end())
-			isActiveActors[id] = false;
-		logger::debug("{}::{:x}::{} : queue added 0x{:x}", __func__, id, actorName, bipedSlot);
-		return true;
-	}
+    bool TaskManager::QUpdateNormalMap(RE::Actor* a_actor, bSlotbit bipedSlot)
+    {
+        if (!a_actor || bipedSlot == 0)
+            return false;
+        RE::FormID id = a_actor->formID;
+        std::string actorName = a_actor->GetName();
+        if (IsPlayer(id) && !Config::GetSingleton().GetPlayerEnable())
+            return true;
+        if (!IsPlayer(id) && !Config::GetSingleton().GetNPCEnable())
+            return true;
+        if (GetSex(a_actor) == RE::SEX::kMale && !Config::GetSingleton().GetMaleEnable())
+            return true;
+        if (GetSex(a_actor) == RE::SEX::kFemale && !Config::GetSingleton().GetFemaleEnable())
+            return true;
+        if (bipedSlot & BipedObjectSlot::kHead && !Config::GetSingleton().GetHeadEnable())
+            bipedSlot &= ~BipedObjectSlot::kHead;
+        updateSlotQueue[id] |= bipedSlot;
+        SetIsActiveActor(id, true);
+        logger::debug("{}::{:x}::{} : queue added 0x{:x}", __func__, id, actorName, bipedSlot);
+        return true;
+    }
 
-	bool TaskManager::QUpdateNormalMapImpl(RE::Actor* a_actor, std::unordered_set<RE::BSGeometry*> a_srcGeometies, bSlotbit bipedSlot)
+	bool TaskManager::QUpdateNormalMapImpl(RE::Actor* a_actor, GeometryList a_srcGeometies, bSlotbit bipedSlot)
 	{
 		if (!a_actor || bipedSlot == 0)
 			return false;
@@ -286,17 +319,17 @@ namespace Mus {
 		RE::FormID id = a_actor->formID;
 		std::string actorName = a_actor->GetName();
 		float detailStrength = condition.DetailStrength;
-		if (Papyrus::detailStrengthMap.find(id) != Papyrus::detailStrengthMap.end())
-			detailStrength = Papyrus::detailStrengthMap[id];
+        if (auto found = Papyrus::detailStrengthMap.find(id); found != Papyrus::detailStrengthMap.end())
+            detailStrength = found->second;
 		auto gender = GetSex(a_actor);
 		GeometryDataPtr newGeometryData = std::make_shared<GeometryData>();
 		UpdateSet newUpdateSet;
 		for (auto& geo : a_srcGeometies)
-		{
+        {
 			using State = RE::BSGeometry::States;
 			using Feature = RE::BSShaderMaterial::Feature;
 			if (!geo || geo->name.empty())
-				continue;
+                continue;
 			if (auto extraData = geo->GetExtraData<RE::NiIntegerExtraData>(NoDynamicNormalMapExtraDataName); extraData && extraData->value > 0)
 				continue;
 			if (!geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
@@ -324,7 +357,7 @@ namespace Mus {
 				}
 			}
 			if (!geo->GetGeometryRuntimeData().skinInstance)
-				continue;
+                continue;
 
 			bSlot slot = nif::GetBipedSlot(geo, condition.DynamicTriShapeAsHead);
 			if ((!condition.HeadEnable || !Config::GetSingleton().GetHeadEnable()) && slot == RE::BIPED_OBJECT::kHead)
@@ -333,35 +366,38 @@ namespace Mus {
 			newGeometryData->CopyGeometryData(geo);
 
 			if (bipedSlot & 1 << slot)
-			{
-				newUpdateSet[geo].slot = slot;
-				newUpdateSet[geo].geometryName = geo->name.c_str();
-				newUpdateSet[geo].textureName = GetTextureName(a_actor, slot, texturePath);
-				newUpdateSet[geo].srcTexturePath = texturePath;
+            {
+                UpdateTextureSet newSet;
+                newSet.slot = slot;
+                newSet.geometryName = geo->name.c_str();
+                newSet.textureName = GetTextureName(a_actor, slot, texturePath);
+                newSet.srcTexturePath = texturePath;
 
 				std::string saveDetailTexturePath = GetDetailNormalMapPath(a_actor);
-				newUpdateSet[geo].detailTexturePath = saveDetailTexturePath.empty() ? GetDetailNormalMapPath(texturePath, condition.ProxyDetailTextureFolder, condition.ProxyFirstScan) : saveDetailTexturePath;
+                newSet.detailTexturePath = saveDetailTexturePath.empty() ? GetDetailNormalMapPath(texturePath, condition.ProxyDetailTextureFolder, condition.ProxyFirstScan) : saveDetailTexturePath;
 
 				std::string saveOverlayTexturePath = GetOverlayNormalMapPath(a_actor);
-				newUpdateSet[geo].overlayTexturePath = saveOverlayTexturePath.empty() ? GetOverlayNormalMapPath(texturePath, condition.ProxyOverlayTextureFolder, condition.ProxyFirstScan) : saveOverlayTexturePath;
+                newSet.overlayTexturePath = saveOverlayTexturePath.empty() ? GetOverlayNormalMapPath(texturePath, condition.ProxyOverlayTextureFolder, condition.ProxyFirstScan) : saveOverlayTexturePath;
 
 				std::string saveMaskTexturePath = GetMaskNormalMapPath(a_actor);
-				newUpdateSet[geo].maskTexturePath = saveMaskTexturePath.empty() ? GetMaskNormalMapPath(texturePath, condition.ProxyMaskTextureFolder, condition.ProxyFirstScan) : saveMaskTexturePath;
+                newSet.maskTexturePath = saveMaskTexturePath.empty() ? GetMaskNormalMapPath(texturePath, condition.ProxyMaskTextureFolder, condition.ProxyFirstScan) : saveMaskTexturePath;
 
-				newUpdateSet[geo].detailStrength = detailStrength;
+				newSet.detailStrength = detailStrength;
 
 				logger::debug("{:x}::{} : {} - queue added on update object normalmap", id, actorName, geo->name.c_str());
 
 				if (!Config::GetSingleton().GetRevertNormalMap())
                 {
                     bool isFound = false;
-                    lastNormalMapLock.lock_shared();
-                    if (auto found = lastNormalMap.find(id); found != lastNormalMap.end())
-                        isFound = found->second.find({newUpdateSet[geo].slot, newUpdateSet[geo].textureName}) != found->second.end();
-					lastNormalMapLock.unlock_shared();
+                    {
+                        std::shared_lock sl(lastNormalMapLock);
+                        if (auto found = lastNormalMap.find(id); found != lastNormalMap.end())
+                            isFound = found->second.find({newSet.slot, newSet.textureName}) != found->second.cend();
+                    }
                     if (isFound)
-                        Shader::TextureLoadManager::CreateSourceTexture(newUpdateSet[geo].textureName, material->normalTexture);
-				}
+                        Shader::TextureLoadManager::CreateSourceTexture(newSet.textureName, material->normalTexture);
+                }
+                newUpdateSet.push_back(std::make_pair(geo, std::move(newSet)));
 
 				ActorVertexHasher::GetSingleton().Register(a_actor, geo);
 
@@ -377,26 +413,27 @@ namespace Mus {
 						overrideInterfaceAPI->RemoveNodeOverride(a_actor, gender == RE::SEX::kFemale, geo->name, OverrideInterfaceAPI::Key::ShaderTexture, RE::BGSTextureSet::Textures::kNormal);
 						logger::info("{:x}::{} : {} - remove node override for normalmap update", id, actorName, geo->name.c_str());
 					}
-				}
+                }
 			}
-		}
+        }
+
 		QUpdateNormalMapImpl(a_actor->formID, actorName, newGeometryData, newUpdateSet);
 		return true;
 	}
-	void TaskManager::QUpdateNormalMapImpl(RE::FormID a_actorID, std::string a_actorName, GeometryDataPtr a_geoData, UpdateSet a_updateSet)
+	void TaskManager::QUpdateNormalMapImpl(RE::FormID a_actorID, std::string a_actorName, GeometryDataPtr a_geoData, UpdateSet& a_updateSet)
 	{
-		if (!a_geoData || a_updateSet.empty() || isUpdating[a_actorID])
+        if (!a_geoData || a_updateSet.empty() || GetIsUpdating(a_actorID))
 			return;
 
-		isUpdating[a_actorID] = true;
-        auto func = [this, a_actorID, a_actorName, a_geoData, a_updateSet]() {
+		SetIsUpdating(a_actorID, true);
+        auto func = [this, a_actorID, a_actorName, a_geoData, a_updateSet = std::move(a_updateSet)]() mutable {
             if (Config::GetSingleton().GetFullUpdateTime())
-                PerformanceLog(std::string("QUpdateNormalMapImpl") + "::" + SetHex(a_actorID, 0), false, false);
+                PerformanceLog(std::string("QUpdateNormalMapImpl") + "::" + SetHex(a_actorID, false), false, false);
 
             if (!ObjectNormalMapUpdater::GetSingleton().CreateGeometryResourceData(a_actorID, a_geoData))
             {
                 logger::error("{:x}::{} : Failed to get geometry data", a_actorID, a_actorName);
-                isUpdating[a_actorID] = false;
+                SetIsUpdating(a_actorID, false);
                 return;
             }
 
@@ -408,16 +445,16 @@ namespace Mus {
             if (textures.empty())
             {
                 logger::error("{:x}::{} : Failed to update object normalmap", a_actorID, a_actorName);
-                isUpdating[a_actorID] = false;
+                SetIsUpdating(a_actorID, false);
                 return;
             }
 
-            RegisterDelayTask([this, a_actorID, a_actorName, textures]() {
+            RegisterDelayTask([this, a_actorID, a_actorName, textures = std::move(textures)]() {
                 auto actor = GetFormByID<RE::Actor*>(a_actorID);
                 if (IsInvalidActor(actor))
                 {
                     logger::error("{:x}::{} : invalid reference", a_actorID, a_actorName);
-                    isUpdating[a_actorID] = false;
+                    SetIsUpdating(a_actorID, false);
                     return;
                 }
 
@@ -536,18 +573,19 @@ namespace Mus {
                     if (Config::GetSingleton().GetDebugTexture())
                         material->diffuseTexture = normalmap;
                     material->normalTexture = normalmap;
-
-                    lastNormalMapLock.lock();
-                    lastNormalMap[a_actorID].insert({found->slot, found->textureName});
-                    lastNormalMapLock.unlock();
+					ActorVertexHasher::GetSingleton().RegisterCheckTexture(actor, geo);
+                    {
+                        std::lock_guard lg(lastNormalMapLock);
+                        lastNormalMap[a_actorID].insert({found->slot, found->textureName});
+                    }
                     logger::info("{:x}::{}::{} : update object normalmap done", a_actorID, a_actorName, geo->name.c_str());
                     return RE::BSVisit::BSVisitControl::kContinue;
                 });
-                isUpdating[a_actorID] = false;
+                SetIsUpdating(a_actorID, false);
             });
 
             if (Config::GetSingleton().GetFullUpdateTime())
-                PerformanceLog(std::string("QUpdateNormalMapImpl") + "::" + SetHex(a_actorID, 0), true, false);
+                PerformanceLog(std::string("QUpdateNormalMapImpl") + "::" + SetHex(a_actorID, false), true, false);
         };
         if (isImmediately)
         {
@@ -789,58 +827,54 @@ namespace Mus {
 			return info.texturePath;
 		return FixTexturePath(a_textureName);
 	}
-	bool TaskManager::IsCreatedByMDNM(std::string a_textureName)
-	{
-		return stringStartsWith(a_textureName, MDNMPrefix);
-	}
 
 	bool TaskManager::RemoveNormalMap(RE::Actor* a_actor)
-	{
-		if (IsInvalidActor(a_actor))
-			return false;
+    {
+        if (IsInvalidActor(a_actor))
+            return false;
 
-		for(auto& geo : GetAllGeometries(a_actor))
-		{
-			using State = RE::BSGeometry::States;
-			using Feature = RE::BSShaderMaterial::Feature;
-			if (!geo || geo->name.empty())
-				continue;
-			if (!geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
-				continue;
-			auto effect = geo->GetGeometryRuntimeData().properties[State::kEffect].get();
-			auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
-			if (!lightingShader || !lightingShader->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
-				continue;
-			if (auto property = geo->GetGeometryRuntimeData().properties[State::kProperty].get(); property)
-			{
-				if (auto alphaProperty = netimmerse_cast<RE::NiAlphaProperty*>(property); alphaProperty)
-					continue;
-			}
-			RE::BSLightingShaderMaterialBase* material = skyrim_cast<RE::BSLightingShaderMaterialBase*>(lightingShader->material);
-			if (!material || !material->normalTexture || !material->textureSet)
-				continue;
-			std::string texturePath = lowLetter(GetTexturePath(material->textureSet.get(), RE::BSTextureSet::Texture::kNormal));
-			if (texturePath.empty())
-				continue;
-			RE::NiPointer<RE::NiSourceTexture> texture;
-			Shader::TextureLoadManager::GetSingleton().LoadTexture(texturePath.c_str(), 1, texture, false);
-			if (!texture)
-				continue;
-			material->normalTexture = texture;
-		}
+        for (auto& geo : GetAllGeometries(a_actor))
+        {
+            using State = RE::BSGeometry::States;
+            using Feature = RE::BSShaderMaterial::Feature;
+            if (!geo || geo->name.empty())
+                continue;
+            if (!geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
+                continue;
+            auto effect = geo->GetGeometryRuntimeData().properties[State::kEffect].get();
+            auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
+            if (!lightingShader || !lightingShader->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
+                continue;
+            if (auto property = geo->GetGeometryRuntimeData().properties[State::kProperty].get(); property)
+            {
+                if (auto alphaProperty = netimmerse_cast<RE::NiAlphaProperty*>(property); alphaProperty)
+                    continue;
+            }
+            RE::BSLightingShaderMaterialBase* material = skyrim_cast<RE::BSLightingShaderMaterialBase*>(lightingShader->material);
+            if (!material || !material->normalTexture || !material->textureSet)
+                continue;
+            std::string texturePath = lowLetter(GetTexturePath(material->textureSet.get(), RE::BSTextureSet::Texture::kNormal));
+            if (texturePath.empty())
+                continue;
+            RE::NiPointer<RE::NiSourceTexture> texture;
+            Shader::TextureLoadManager::GetSingleton().LoadTexture(texturePath.c_str(), 1, texture, false);
+            if (!texture)
+                continue;
+            material->normalTexture = texture;
+        }
 
         SlotTexSet textures;
-		lastNormalMapLock.lock();
-        auto found = lastNormalMap.find(a_actor->formID);
-        if (found != lastNormalMap.end())
         {
-            textures = found->second;
-            lastNormalMap.erase(a_actor->formID);
+            std::lock_guard lg(lastNormalMapLock);
+			if (auto found = lastNormalMap.find(a_actor->formID); found != lastNormalMap.end())
+			{
+                textures = std::move(found->second);
+                lastNormalMap.erase(found);
+			}
         }
-		lastNormalMapLock.unlock();
         ReleaseNormalMap(textures);
-		return true;
-	}
+        return true;
+    }
 
 	EventResult TaskManager::ProcessEvent(const SKSE::NiNodeUpdateEvent* evn, RE::BSTEventSource<SKSE::NiNodeUpdateEvent>*)
 	{
@@ -940,33 +974,27 @@ namespace Mus {
 							RE::DebugNotification(notification.c_str());
 						}
 					}
-					else if (button->HeldDuration() >= 3.0f) //forced reset
-					{
-						if (isResetTasks)
-							return EventResult::kContinue;
+                    else if (button->HeldDuration() >= 3.0f) // forced reset
+                    {
+                        if (isResetTasks)
+                            return EventResult::kContinue;
                         if (ObjectNormalMapUpdater::GetSingleton().GetCount() > 0)
                         {
                             RE::DebugNotification("MDNM : Some normalmaps are still being updated");
                             logger::warn("Some normalmaps are still being updated...");
                             return EventResult::kContinue;
                         }
-						g_frameEventDispatcher.removeListener(gpuTask.get());
-						g_armorAttachEventEventDispatcher.removeListener(&Mus::ActorVertexHasher::GetSingleton());
-						g_facegenNiNodeEventDispatcher.removeListener(&Mus::ActorVertexHasher::GetSingleton());
-						g_actorChangeHeadPartEventDispatcher.removeListener(&ActorVertexHasher::GetSingleton());
-						if (const auto NiNodeEvent = SKSE::GetNiNodeUpdateEventSource(); NiNodeEvent)
-							NiNodeEvent->RemoveEventSink(&Mus::ActorVertexHasher::GetSingleton());
-						Mus::Config::GetSingleton().LoadConfig();
-						InitialSetting();
-						isUpdating.clear();
-						ConditionManager::GetSingleton().InitialConditionList();
-						static_cast<MultipleConfig*>(&Config::GetSingleton())->LoadConditionFile();
-						ConditionManager::GetSingleton().SortConditions();
-						ObjectNormalMapUpdater::GetSingleton().Init();
-						RE::DebugNotification("MDNM : Reload done");
-						logger::info("Reload done");
-						isResetTasks = true;
-					}
+                        Mus::Config::GetSingleton().LoadConfig();
+                        InitialSetting();
+                        isUpdating.clear();
+                        ConditionManager::GetSingleton().InitialConditionList();
+                        static_cast<MultipleConfig*>(&Config::GetSingleton())->LoadConditionFile();
+                        ConditionManager::GetSingleton().SortConditions();
+                        ObjectNormalMapUpdater::GetSingleton().Init();
+                        RE::DebugNotification("MDNM : Reload done");
+                        logger::info("Reload done");
+                        isResetTasks = true;
+                    }
 				}
 				else if (keyCode == 29) //ctrl
 				{
@@ -981,38 +1009,39 @@ namespace Mus {
 				}
 				else if (keyCode == 88) //F12
 				{
-					if (button->IsUp() && isPressedExportHotkey1)
-					{
-						if (Config::GetSingleton().GetLogLevel() >= 2)
-							continue;
+                    if (button->IsUp() && isPressedExportHotkey1)
+                    {
+                        if (Config::GetSingleton().GetLogLevel() >= 2)
+                            continue;
 
-						logger::info("Print textures...");
-						RE::Actor* target = nullptr;
-						if (auto consoleRef = RE::Console::GetSelectedRef(); consoleRef && Config::GetSingleton().GetUseConsoleRef())
-						{
-							target = skyrim_cast<RE::Actor*>(consoleRef.get());
-						}
-						if (auto crossHair = RE::CrosshairPickData::GetSingleton(); !target && crossHair && crossHair->targetActor)
-						{
+                        logger::info("Print textures...");
+                        RE::Actor* target = nullptr;
+                        if (auto consoleRef = RE::Console::GetSelectedRef(); consoleRef && Config::GetSingleton().GetUseConsoleRef())
+                        {
+                            target = skyrim_cast<RE::Actor*>(consoleRef.get());
+                        }
+                        if (auto crossHair = RE::CrosshairPickData::GetSingleton(); !target && crossHair && crossHair->targetActor)
+                        {
 #ifndef ENABLE_SKYRIM_VR
-							target = skyrim_cast<RE::Actor*>(crossHair->targetActor.get().get());
+                            target = skyrim_cast<RE::Actor*>(crossHair->targetActor.get().get());
 #else
-							for (std::uint32_t i = 0; i < RE::VRControls::VR_DEVICE::kTotal; i++)
-							{
-								target = skyrim_cast<RE::Actor*>(crossHair->targetActor[i].get().get());
-								if (target)
-									break;
-							}
+                            for (std::uint32_t i = 0; i < RE::VRControls::VR_DEVICE::kTotal; i++)
+                            {
+                                target = skyrim_cast<RE::Actor*>(crossHair->targetActor[i].get().get());
+                                if (target)
+                                    break;
+                            }
 #endif
-						}
-						if (!target)
-							target = RE::PlayerCharacter::GetSingleton();
+                        }
+                        if (!target)
+                            target = RE::PlayerCharacter::GetSingleton();
 
-						SlotTexSet textures;
-						lastNormalMapLock.lock_shared();
-                        if (auto found = lastNormalMap.find(target->formID); found != lastNormalMap.end())
-                            textures = found->second;
-						lastNormalMapLock.unlock_shared();
+                        SlotTexSet textures;
+                        {
+                            std::shared_lock sl(lastNormalMapLock);
+                            if (auto found = lastNormalMap.find(target->formID); found != lastNormalMap.end())
+                                textures = found->second;
+                        }
 
 						for (auto& pair : textures)
 						{
@@ -1085,53 +1114,52 @@ namespace Mus {
 
 	void TaskManager::ReleaseResourceOnUnloadActors()
 	{
-		memoryManageThreads->submitAsync([&]() {
-            lastNormalMapLock.lock_shared();
-            auto lastNormalMap_ = lastNormalMap;
-            lastNormalMapLock.unlock_shared();
-            if (lastNormalMap_.empty())
-                return;
-            std::size_t count = lastNormalMap_.size();
-            for (auto& map : lastNormalMap_)
-			{
-				RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
-				if (IsInvalidActor(actor))
-				{
-					if (isUpdating[map.first])
-					{
-						continue;
-					}
-					ReleaseNormalMap(map.second);
-					lastNormalMapLock.lock();
-                    lastNormalMap.erase(map.first);
-					lastNormalMapLock.unlock();
-                    count--;
-				}
-			}
-			if (count > 0)
-				logger::debug("Current remain NiTexture {}", count);
-		});
+        memoryManageThreads->submitAsync([&]() {
+            std::lock_guard lg(lastNormalMapLock);
+            auto count = lastNormalMap.size();
+            for (auto it = lastNormalMap.begin(); it != lastNormalMap.end();)
+            {
+                RE::Actor* actor = GetFormByID<RE::Actor*>(it->first);
+                if (!IsInvalidActor(actor))
+                {
+                    it++;
+                    continue;
+                }
+                if (GetIsUpdating(actor->formID))
+                {
+                    it++;
+                    continue;
+                }
+                ReleaseNormalMap(it->second);
+                it = lastNormalMap.erase(it);
+                count--;
+            }
+            if (count > 0)
+                logger::debug("Current remain NiTexture {}", count);
+        });
 	}
-	void TaskManager::ReleaseNormalMap(RE::FormID a_actorID, bSlot a_slot)
-	{
+    void TaskManager::ReleaseNormalMap(RE::FormID a_actorID, bSlot a_slot)
+    {
         SlotTexSet textures;
-		lastNormalMapLock.lock_shared();
-        if (auto found = lastNormalMap.find(a_actorID); found != lastNormalMap.end())
-            textures = found->second;
-		lastNormalMapLock.unlock_shared();
+        {
+            std::shared_lock sl(lastNormalMapLock);
+            if (auto found = lastNormalMap.find(a_actorID); found != lastNormalMap.end())
+                textures = found->second;
+        }
         for (auto& texture : textures)
-		{
-			if (texture.slot == a_slot && !texture.textureName.empty())
-			{
-				Shader::TextureLoadManager::GetSingleton().ReleaseNiTexture(texture.textureName);
-				logger::debug("{} : Removed unused NiTexture", texture.textureName);
-				lastNormalMapLock.lock();
-				lastNormalMap[a_actorID].erase(texture);
-				lastNormalMapLock.unlock();
-			}
-		}
-	}
-    void TaskManager::ReleaseNormalMap(SlotTexSet& textures)
+        {
+            if (texture.slot == a_slot && !texture.textureName.empty())
+            {
+                Shader::TextureLoadManager::GetSingleton().ReleaseNiTexture(texture.textureName);
+                logger::debug("{} : Removed unused NiTexture", texture.textureName);
+                {
+                    std::lock_guard lg(lastNormalMapLock);
+                    lastNormalMap[a_actorID].erase(texture);
+                }
+            }
+        }
+    }
+    void TaskManager::ReleaseNormalMap(const SlotTexSet& textures) const
 	{
         for (auto& texture : textures)
 		{

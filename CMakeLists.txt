@@ -6,7 +6,7 @@ message("Using toolchain file ${CMAKE_TOOLCHAIN_FILE}.")
 ########################################################################################################################
 project(
         MuDynamicNormalMap
-        VERSION 2.1.2
+        VERSION 2.1.3
         DESCRIPTION "MuDynamicNormalMap VR by Acro."
         LANGUAGES CXX
 )
@@ -32,6 +32,7 @@ set(headers
         include/Utility.hpp
         include/nifUtil.h
         include/Config.h
+        include/lString.h
         include/PapyrusScripts.h
         include/ShaderManager.h
         include/ObjectNormalMapUpdater.h

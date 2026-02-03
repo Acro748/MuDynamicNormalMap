@@ -384,6 +384,10 @@ namespace Mus {
                 {
                     DetectTickMS = GetIntValue(variableValue);
                 }
+                else if (variableName == "DetectTextureChange")
+                {
+                    DetectTextureChange = GetBoolValue(variableValue);
+                }
             }
         }
         if (UpdateDistance > floatPrecision && DetectDistance > floatPrecision)
@@ -558,7 +562,6 @@ namespace Mus {
         std::int32_t gpuTaskThreadCount = 1;
         isNoSplitGPU = false;
         isImmediately = false;
-        bool waitPreTask = false;
         std::clock_t taskQTickMS = 1000.0f;
         bool directTaskQ = false;
         bool usePCores = false;
@@ -572,7 +575,6 @@ namespace Mus {
             isNoSplitGPU = true;
             isImmediately = true;
 
-            waitPreTask = false;
             waitSleepTime = std::chrono::microseconds(100);
 
             actorThreadCount = 4;
@@ -588,7 +590,6 @@ namespace Mus {
             isNoSplitGPU = true;
             isImmediately = false;
 
-            waitPreTask = false;
             waitSleepTime = std::chrono::microseconds(100);
 
             actorThreadCount = 1;
@@ -597,18 +598,17 @@ namespace Mus {
             gpuTaskThreadCount = 1;
             break;
         case Config::AutoTaskQList::Faster:
-            taskQTickMS = Config::GetSingleton().GetTaskQTickMS();
+            taskQTickMS = 0;
             directTaskQ = true;
             divideTaskQ = 0;
 
             isNoSplitGPU = true;
             isImmediately = false;
 
-            waitPreTask = false;
             waitSleepTime = std::chrono::microseconds(100);
 
             actorThreadCount = 1;
-            processingThreadCount = std::max(1, std::max(4, coreCount / 2));
+            processingThreadCount = std::max(4, coreCount / 2);
             usePCores = false;
             gpuTaskThreadCount = 1;
             break;
@@ -621,11 +621,10 @@ namespace Mus {
             isNoSplitGPU = false;
             isImmediately = false;
 
-            waitPreTask = false;
             waitSleepTime = std::chrono::microseconds(1000);
 
             actorThreadCount = 1;
-            processingThreadCount = std::max(1, std::max(4, coreCount / 2));
+            processingThreadCount = std::max(4, coreCount / 2);
             usePCores = false;
             gpuTaskThreadCount = 1;
             break;
@@ -637,11 +636,10 @@ namespace Mus {
             isNoSplitGPU = false;
             isImmediately = false;
 
-            waitPreTask = true;
             waitSleepTime = std::chrono::microseconds(1000);
 
             actorThreadCount = 1;
-            processingThreadCount = std::max(1, std::min(4, coreCount / 2));
+            processingThreadCount = std::max(2, std::min(4, coreCount / 2));
             usePCores = false;
             gpuTaskThreadCount = 1;
             break;
@@ -653,7 +651,6 @@ namespace Mus {
             isNoSplitGPU = false;
             isImmediately = false;
 
-            waitPreTask = true;
             waitSleepTime = std::chrono::microseconds(1000);
 
             actorThreadCount = 1;
@@ -700,17 +697,17 @@ namespace Mus {
             }
         }
 
-        gpuTask = std::make_unique<ThreadPool_GPUTaskModule>(gpuTaskThreadCount, coreMask, taskQTickMS, directTaskQ, waitPreTask);
+        gpuTask = std::make_unique<ThreadPool_GPUTaskModule>(gpuTaskThreadCount, coreMask, taskQTickMS, directTaskQ);
 
         actorThreads = std::make_shared<ThreadPool_ParallelModule>(actorThreadCount, coreMask);
         actorThreadsFull = std::make_shared<ThreadPool_ParallelModule>(4, 0);
         logger::info("set actorThreads {} on {}", actorThreadCount, usePCores ? "all cores" : "all E-cores");
-        currentActorThreads.store(actorThreads);
+        currentActorThreads = actorThreads;
 
         processingThreads = std::make_unique<ThreadPool_ParallelModule>(processingThreadCount, coreMask);
         processingThreadsFull = std::make_unique<ThreadPool_ParallelModule>(coreCount, 0);
         logger::info("set processingThreads {} on {}", processingThreadCount, usePCores ? "all cores" : "all E-cores");
-        currentProcessingThreads.store(processingThreads);
+        currentProcessingThreads = processingThreads;
 
         memoryManageThreads = std::make_unique<ThreadPool_ParallelModule>(memoryManageThreadCount, coreMask);
         logger::info("set memoryManageThreads {} on {}", memoryManageThreadCount, usePCores ? "all cores" : "all E-cores");
@@ -744,7 +741,16 @@ namespace Mus {
             g_armorAttachEventEventDispatcher.addListener(&ActorVertexHasher::GetSingleton());
             g_facegenNiNodeEventDispatcher.addListener(&ActorVertexHasher::GetSingleton());
             g_actorChangeHeadPartEventDispatcher.addListener(&ActorVertexHasher::GetSingleton());
-            ActorVertexHasher::GetSingleton().Init();
+            if (const auto NiNodeEvent = SKSE::GetNiNodeUpdateEventSource(); NiNodeEvent)
+                NiNodeEvent->AddEventSink<SKSE::NiNodeUpdateEvent>(&Mus::ActorVertexHasher::GetSingleton());
+        }
+        else
+        {
+            g_armorAttachEventEventDispatcher.removeListener(&Mus::ActorVertexHasher::GetSingleton());
+            g_facegenNiNodeEventDispatcher.removeListener(&Mus::ActorVertexHasher::GetSingleton());
+            g_actorChangeHeadPartEventDispatcher.removeListener(&ActorVertexHasher::GetSingleton());
+            if (const auto NiNodeEvent = SKSE::GetNiNodeUpdateEventSource(); NiNodeEvent)
+                NiNodeEvent->RemoveEventSink(&Mus::ActorVertexHasher::GetSingleton());
         }
     }
     bool SetImmediately(bool a_Immediately)
@@ -784,15 +790,15 @@ namespace Mus {
         }
         if (isImmediately != isImmediately_)
         {
-            currentProcessingThreads.store(processingThreadsFull);
-            currentActorThreads.store(actorThreadsFull);
+            currentProcessingThreads = processingThreadsFull;
+            currentActorThreads = actorThreadsFull;
             isNoSplitGPU_ = isNoSplitGPU.load();
             isNoSplitGPU = true;
         }
         else
         {
-            currentProcessingThreads.store(processingThreads);
-            currentActorThreads.store(actorThreads);
+            currentProcessingThreads = processingThreads;
+            currentActorThreads = actorThreads;
             isNoSplitGPU = isNoSplitGPU_.load();
         }
         return true;

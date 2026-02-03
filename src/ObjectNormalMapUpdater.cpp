@@ -11,33 +11,24 @@ namespace Mus {
 			return;
 		lastTickTime = currentTime;
 		memoryManageThreads->submitAsync([&]() {
-            resourceDataMapLock.lock();
-            auto resourceDataMap_ = resourceDataMap;
-            resourceDataMap.clear();
-            resourceDataMapLock.unlock();
-
-            ResourceDataMap resourceDataMapAlt;
-			for (const auto& map : resourceDataMap_)
+            std::lock_guard lg(resourceDataMapLock);
+            for (auto it = resourceDataMap.begin(); it != resourceDataMap.end();)
 			{
-				if (map->time < 0)
+				if (it->get()->time < 0)
 				{
-					if (map->IsQueryDone())
-						map->time = currentTime;
+                    if (it->get()->IsQueryDone())
+                        it->get()->time = currentTime;
 				}
 				else
 				{
-					logger::debug("{} : Removed garbage texture resource", map->textureName);
+                    logger::debug("{} : Removed garbage texture resource", it->get()->textureName);
+                    it = resourceDataMap.erase(it);
 					continue;
 				}
-
-				resourceDataMapAlt.push_back(map);
+                it++;
             }
-            resourceDataMapLock.lock();
-            resourceDataMap.append_range(resourceDataMapAlt);
-            const std::size_t mapSize = resourceDataMap.size();
-            resourceDataMapLock.unlock();
-            if (mapSize > 0)
-                logger::debug("Current remain texture resource {}", mapSize);
+            if (resourceDataMap.size() > 0)
+                logger::debug("Current remain texture resource {}", resourceDataMap.size());
 		});
 	}
 
@@ -46,25 +37,20 @@ namespace Mus {
 		if (!e.IsChangedInOut)
 			return;
 		memoryManageThreads->submitAsync([&]() {
-            geometryResourceDataMapLock.lock_shared();
-			auto geometryResourceDataMap_ = geometryResourceDataMap;
-            geometryResourceDataMapLock.unlock_shared();
-			for (const auto& map : geometryResourceDataMap_)
+            std::lock_guard lg(geometryResourceDataMapLock);
+            for (auto it = geometryResourceDataMap.begin(); it != geometryResourceDataMap.end();)
 			{
-				RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
+				RE::Actor* actor = GetFormByID<RE::Actor*>(it->first);
 				if (!actor || !actor->loadedData || !actor->loadedData->data3D)
 				{
-                    geometryResourceDataMapLock.lock();
-                    geometryResourceDataMap.erase(map.first);
-                    geometryResourceDataMapLock.unlock();
-					logger::debug("{:x} : Removed garbage geometry resource", map.first);
+					logger::debug("{:x} : Removed garbage geometry resource", it->first);
+                    it = geometryResourceDataMap.erase(it);
+                    continue;
 				}
+                it++;
 			}
-            geometryResourceDataMapLock.lock_shared();
-            const std::size_t mapSize = geometryResourceDataMap.size();
-            geometryResourceDataMapLock.unlock_shared();
-			if (mapSize > 0)
-				logger::debug("Current remain geometry resource {}", mapSize);
+            if (geometryResourceDataMap.size() > 0)
+                logger::debug("Current remain geometry resource {}", geometryResourceDataMap.size());
 		});
 	}
 
@@ -134,22 +120,23 @@ namespace Mus {
 	void ObjectNormalMapUpdater::LoadCacheResource(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet& a_updateSet, MergedTextureGeometries& mergedTextureGeometries, ResourceDatas& resourceDatas, UpdateResult& results)
 	{
 		//hash update with geo hash + texture hash
-		for (auto& update : a_updateSet) {
+        for (auto it = a_updateSet.begin(); it != a_updateSet.end();)
+        {
 			const auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
-				return geosInfo.geometry == update.first;
+				return geosInfo.geometry == it->first;
 			});
 			if (found == a_data->geometries.end())
 			{
-				logger::error("{}::{:x} : Geometry {} not found in data", __func__, a_actorID, update.second.geometryName);
-				a_updateSet.erase(update.first);
+                logger::error("{}::{:x} : Geometry {} not found in data", __func__, a_actorID, it->second.geometryName);
+				it = a_updateSet.erase(it);
 				continue;
 			}
-			found->hash = GetHash(update.second, found->hash);
+            found->hash = GetHash(it->second, found->hash);
+            it++;
 		}
 
 		//find texture from cache
-		std::vector<std::pair<RE::BSGeometry*, UpdateTextureSet>> sortUpdateSet(a_updateSet.begin(), a_updateSet.end());
-		std::sort(sortUpdateSet.begin(), sortUpdateSet.end(), [&](std::pair<RE::BSGeometry*, UpdateTextureSet>& a, std::pair<RE::BSGeometry*, UpdateTextureSet>& b) {
+        std::sort(a_updateSet.begin(), a_updateSet.end(), [&](std::pair<RE::BSGeometry*, UpdateTextureSet>& a, std::pair<RE::BSGeometry*, UpdateTextureSet>& b) {
 			const auto aIt = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
 				return geosInfo.geometry == a.first;
 			});
@@ -163,71 +150,79 @@ namespace Mus {
 			return aIt->objInfo.vertexCount() > bIt->objInfo.vertexCount();
 		});
 		std::unordered_set<std::uint64_t> pairedHashesAll;
-		for (const auto& update : sortUpdateSet) {
-			const auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
-				return geosInfo.geometry == update.first;
-			});
-			if (found == a_data->geometries.end())
-			{
-				logger::error("{}::{:x} : Geometry {} not found in data", __func__, a_actorID, update.second.geometryName);
-				continue;
-			}
-			if (pairedHashesAll.find(found->hash) != pairedHashesAll.end())
-				continue;
+        for (auto it = a_updateSet.begin(); it != a_updateSet.end();)
+        {
+            const auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
+                return geosInfo.geometry == it->first;
+            });
+            if (found == a_data->geometries.end())
+            {
+                logger::error("{}::{:x} : Geometry {} not found in data", __func__, a_actorID, it->second.geometryName);
+                it++;
+                continue;
+            }
+            if (pairedHashesAll.find(found->hash) != pairedHashesAll.end())
+            {
+                it++;
+                continue;
+            }
 
-			TextureResourcePtr textureResource = nullptr;
-			bool diskCache = false;
-			NormalMapStore::GetSingleton().GetResource(found->hash, textureResource, diskCache);
-			if (textureResource)
-			{
-				std::unordered_set<std::uint64_t> pairedHashes;
-				if (!std::ranges::all_of(a_updateSet, [&](auto& updateAlt) {
-					if (update.first == updateAlt.first)
-						return true;
-					if (update.second.textureName != updateAlt.second.textureName)
-						return true;
-					const auto foundAlt = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
-						return geosInfo.geometry == updateAlt.first;
-					});
-					if (foundAlt == a_data->geometries.end())
-					{
-						logger::error("{}::{:x} : Geometry {} not found in data", __func__, a_actorID, update.second.geometryName);
-						return true;
-					}
-					pairedHashes.insert(found->hash);
-					pairedHashes.insert(foundAlt->hash);
-					return NormalMapStore::GetSingleton().IsPairHashes(found->hash, foundAlt->hash);
-				}))
-				{
-					NormalMapStore::GetSingleton().InitHashPair(found->hash);
-					logger::info("{}::{:x}::{} : Found exist resource from {} ({:x}), but lack of components. so skip", __func__, a_actorID, 
-								 update.second.geometryName, (diskCache ? "disk cache" : "GPU"), found->hash);
-					continue;
-				}
+            TextureResourcePtr textureResource = nullptr;
+            bool diskCache = false;
+            NormalMapStore::GetSingleton().GetResource(found->hash, textureResource, diskCache);
+            if (!textureResource)
+            {
+                it++;
+                continue;
+            }
+            std::unordered_set<std::uint64_t> pairedHashes;
+            if (!std::ranges::all_of(a_updateSet, [&](auto& updateAlt) {
+                    if (it->first == updateAlt.first)
+                        return true;
+                    if (it->second.textureName != updateAlt.second.textureName)
+                        return true;
+                    const auto foundAlt = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
+                        return geosInfo.geometry == updateAlt.first;
+                    });
+                    if (foundAlt == a_data->geometries.end())
+                    {
+                        logger::error("{}::{:x} : Geometry {} not found in data", __func__, a_actorID, it->second.geometryName);
+                        return true;
+                    }
+                    pairedHashes.insert(found->hash);
+                    pairedHashes.insert(foundAlt->hash);
+                    return NormalMapStore::GetSingleton().IsPairHashes(found->hash, foundAlt->hash);
+                }))
+            {
+                NormalMapStore::GetSingleton().InitHashPair(found->hash);
+                logger::info("{}::{:x}::{} : Found exist resource from {} ({:x}), but lack of components. so skip", __func__, a_actorID,
+                             it->second.geometryName, (diskCache ? "disk cache" : "GPU"), found->hash);
+                it++;
+                continue;
+            }
 
-				logger::info("{}::{:x}::{} : Found exist resource from {} ({:x})", __func__, a_actorID, update.second.geometryName, (diskCache ? "disk cache" : "GPU"), found->hash);
-				NormalMapResult newNormalMapResult;
-				newNormalMapResult.slot = update.second.slot;
-				newNormalMapResult.geometry = update.first;
-				newNormalMapResult.vertexCount = found->objInfo.vertexCount();
-				newNormalMapResult.geoName = update.second.geometryName;
-				newNormalMapResult.texturePath = update.second.srcTexturePath.empty() ? update.second.detailTexturePath : update.second.srcTexturePath;
-				newNormalMapResult.textureName = update.second.textureName;
-				newNormalMapResult.texture = textureResource;
-				newNormalMapResult.hash = found->hash;
-				newNormalMapResult.existResource = true;
-				newNormalMapResult.diskCache = diskCache;
-				results.push_back(newNormalMapResult);
+            logger::info("{}::{:x}::{} : Found exist resource from {} ({:x})", __func__, a_actorID, it->second.geometryName, (diskCache ? "disk cache" : "GPU"), found->hash);
+            NormalMapResult newNormalMapResult;
+            newNormalMapResult.slot = it->second.slot;
+            newNormalMapResult.geometry = it->first;
+            newNormalMapResult.vertexCount = found->objInfo.vertexCount();
+            newNormalMapResult.geoName = it->second.geometryName;
+            newNormalMapResult.texturePath = it->second.srcTexturePath.empty() ? it->second.detailTexturePath : it->second.srcTexturePath;
+            newNormalMapResult.textureName = it->second.textureName;
+            newNormalMapResult.texture = textureResource;
+            newNormalMapResult.hash = found->hash;
+            newNormalMapResult.existResource = true;
+            newNormalMapResult.diskCache = diskCache;
+            results.push_back(newNormalMapResult);
 
-				TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
-				newResourceData->textureName = update.second.textureName;
-				resourceDatas.push_back(newResourceData);
+            TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
+            newResourceData->textureName = it->second.textureName;
+            resourceDatas.push_back(newResourceData);
 
-				a_updateSet.erase(update.first);
+            it = a_updateSet.erase(it);
 
-				pairedHashesAll.insert(pairedHashes.begin(), pairedHashes.end());
-			}
-		}
+            pairedHashesAll.insert(pairedHashes.begin(), pairedHashes.end());
+        }
 
 		//shere resource and use GPU resource instead of disk cache if multiple cache is loaded on the same texture name
 		for (auto& result : results) {
@@ -273,34 +268,41 @@ namespace Mus {
 		}
 
 		//share resource if textureName is the same
-		auto updateSet_ = a_updateSet;
-		for (auto& update : updateSet_) {
+        for (auto it = a_updateSet.begin(); it != a_updateSet.end();)
+        {
 			const auto found = std::find_if(a_data->geometries.begin(), a_data->geometries.end(), [&](GeometryData::GeometriesInfo& geosInfo) {
-				return geosInfo.geometry == update.first;
+                return geosInfo.geometry == it->first;
 			});
 			if (found == a_data->geometries.end())
 			{
+                it++;
 				continue;
 			}
 
-			if (std::find_if(results.begin(), results.end(), [&](NormalMapResult& result) { return update.first == result.geometry; }) != results.end())
-				continue;
+			if (std::find_if(results.begin(), results.end(), [&](NormalMapResult& result) { return it->first == result.geometry; }) != results.end())
+            {
+                it++;
+                continue;
+            }
 
 			const auto resultFound = std::find_if(results.begin(), results.end(), [&](NormalMapResult& result) {
-				return update.first != result.geometry && update.second.textureName == result.textureName && result.existResource;
+                return it->first != result.geometry && it->second.textureName == result.textureName && result.existResource;
 			});
 			if (resultFound == results.end())
-				continue;
+            {
+                it++;
+                continue;
+            }
 
-			logger::info("{}::{:x}::{} : Use share resource {:x}", __func__, a_actorID, update.second.geometryName, resultFound->hash);
+			logger::info("{}::{:x}::{} : Use share resource {:x}", __func__, a_actorID, it->second.geometryName, resultFound->hash);
 
 			NormalMapResult newNormalMapResult;
-			newNormalMapResult.slot = update.second.slot;
-			newNormalMapResult.geometry = update.first;
+			newNormalMapResult.slot = it->second.slot;
+			newNormalMapResult.geometry = it->first;
 			newNormalMapResult.vertexCount = found->objInfo.vertexCount();
-			newNormalMapResult.geoName = update.second.geometryName;
-			newNormalMapResult.texturePath = update.second.srcTexturePath.empty() ? update.second.detailTexturePath : update.second.srcTexturePath;
-			newNormalMapResult.textureName = update.second.textureName;
+			newNormalMapResult.geoName = it->second.geometryName;
+			newNormalMapResult.texturePath = it->second.srcTexturePath.empty() ? it->second.detailTexturePath : it->second.srcTexturePath;
+			newNormalMapResult.textureName = it->second.textureName;
 			newNormalMapResult.texture = resultFound->texture;
 			newNormalMapResult.hash = found->hash;
 			newNormalMapResult.existResource = true;
@@ -308,11 +310,11 @@ namespace Mus {
 			results.push_back(newNormalMapResult);
 
 			TextureResourceDataPtr newResourceData = std::make_shared<TextureResourceData>();
-			newResourceData->textureName = update.second.textureName;
+			newResourceData->textureName = it->second.textureName;
 			resourceDatas.push_back(newResourceData);
 
-			mergedTextureGeometries.insert(update.first);
-			a_updateSet.erase(update.first);
+			mergedTextureGeometries.insert(it->first);
+            it = a_updateSet.erase(it);
 		}
 	}
 
@@ -328,7 +330,7 @@ namespace Mus {
 			return false;
 		}
 		a_data->Subdivision(Config::GetSingleton().GetSubdivision(), Config::GetSingleton().GetSubdivisionTriThreshold());
-		a_data->UpdateMap();
+		a_data->CreateVertexMap();
 		a_data->VertexSmoothByAngle(Config::GetSingleton().GetVertexSmoothByAngleThreshold1(), Config::GetSingleton().GetVertexSmoothByAngleThreshold2(), Config::GetSingleton().GetVertexSmoothByAngle());
 		a_data->VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
 		a_data->RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree());
@@ -365,8 +367,8 @@ namespace Mus {
 			if (!CreateStructuredBuffer(device, a_data->indices.data(), UINT(sizeof(std::uint32_t) * a_data->indices.size()), sizeof(std::uint32_t), newGeometryResourceData->indicesBuffer, newGeometryResourceData->indicesSRV))
 				return false;
 
-			geometryResourceDataMapLock.lock();
 			{
+                std::lock_guard lg(geometryResourceDataMapLock);
                 auto found = geometryResourceDataMap.find(a_actorID);
                 if (found == geometryResourceDataMap.end())
 				{
@@ -377,23 +379,20 @@ namespace Mus {
 					found->second = newGeometryResourceData;
 				}
 			}
-            geometryResourceDataMapLock.unlock();
 		}
 		return true;
 	}
 	void ObjectNormalMapUpdater::ClearGeometryResourceData()
 	{
-        geometryResourceDataMapLock.lock();
+        std::lock_guard lg(geometryResourceDataMapLock);
         geometryResourceDataMap.clear();
-        geometryResourceDataMapLock.unlock();
 	}
 
 	ObjectNormalMapUpdater::GeometryResourceDataPtr ObjectNormalMapUpdater::GetGeometryResourceData(RE::FormID a_actorID)
 	{
-        geometryResourceDataMapLock.lock_shared();
+        std::shared_lock sl(geometryResourceDataMapLock);
         auto found = geometryResourceDataMap.find(a_actorID);
         GeometryResourceDataPtr results = found != geometryResourceDataMap.end() ? found->second : nullptr;
-        geometryResourceDataMapLock.unlock_shared();
 		return results;
 	}
 
@@ -408,7 +407,7 @@ namespace Mus {
 										+ std::to_string(geoHash));
 	}
 
-	ObjectNormalMapUpdater::UpdateResult ObjectNormalMapUpdater::UpdateObjectNormalMap(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet a_updateSet)
+	ObjectNormalMapUpdater::UpdateResult ObjectNormalMapUpdater::UpdateObjectNormalMap(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet& a_updateSet)
     {
         RefGuard rg(this);
 
@@ -532,7 +531,7 @@ namespace Mus {
             std::uint8_t* maskData = nullptr;
 
 			{
-                Shader::ShaderLockGuard slg(&sl);
+                Shader::ShaderLockGuard slg(sl);
                 hr = context->Map(dstTexture2D.Get(), 0, D3D11_MAP_WRITE, 0, &dstMappedResource);
                 if (newResourceData->srcTexture2D)
                 {
@@ -800,7 +799,7 @@ namespace Mus {
 
             
 			{
-                Shader::ShaderLockGuard slg(&sl);
+                Shader::ShaderLockGuard slg(sl);
                 context->Unmap(dstTexture2D.Get(), 0);
                 if (hasSrcData)
                     context->Unmap(newResourceData->srcTexture2D.Get(), 0);
@@ -833,7 +832,7 @@ namespace Mus {
 		return results;
 	}
 
-	ObjectNormalMapUpdater::UpdateResult ObjectNormalMapUpdater::UpdateObjectNormalMapGPU(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet a_updateSet)
+	ObjectNormalMapUpdater::UpdateResult ObjectNormalMapUpdater::UpdateObjectNormalMapGPU(RE::FormID a_actorID, GeometryDataPtr a_data, UpdateSet& a_updateSet)
 	{
 		const std::string_view _func_ = __func__;
 		UpdateResult results;
@@ -990,7 +989,7 @@ namespace Mus {
 
             
 			{
-                Shader::ShaderLockGuard slg(&sl);
+                Shader::ShaderLockGuard slg(sl);
                 context->ClearUnorderedAccessViewUint(dstUnorderedAccessView.Get(), clearValue);
             }
 
@@ -1024,8 +1023,8 @@ namespace Mus {
 				{
                     D3D11_MAPPED_SUBRESOURCE mapped;
                     UpdateNormalMapBackup sb;
-                    Shader::ShaderLockGuard slg(&sl);
-                    ShaderBackupManager sbm(context, &sb);
+                    Shader::ShaderLockGuard slg(sl);
+                    ShaderBackupGuard sbg(context, sb);
                     hr = context->Map(updateNormalMapBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
                     *reinterpret_cast<UpdateNormalMapBufferData*>(mapped.pData) = cbData;
                     context->Unmap(updateNormalMapBuffer[isSecondGPUEnabled].Get(), 0);
@@ -1069,8 +1068,8 @@ namespace Mus {
 						{
                             D3D11_MAPPED_SUBRESOURCE mapped;
                             UpdateNormalMapBackup sb;
-                            Shader::ShaderLockGuard slg(&sl);
-                            ShaderBackupManager sbm(context, &sb);
+                            Shader::ShaderLockGuard slg(sl);
+                            ShaderBackupGuard sbg(context, sb);
                             context->Map(updateNormalMapBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
                             *reinterpret_cast<UpdateNormalMapBufferData*>(mapped.pData) = cbData_;
                             context->Unmap(updateNormalMapBuffer[isSecondGPUEnabled].Get(), 0);
@@ -1328,7 +1327,7 @@ namespace Mus {
 
 		if (sl.IsSecondGPU() || isNoSplitGPU || (dstWidth <= 256 && dstHeight <= 256))
 		{
-            Shader::ShaderLockGuard slg(&sl);
+            Shader::ShaderLockGuard slg(sl);
 			context->CopySubresourceRegion(dstTexture, dstMipMapLevel, 0, 0, 0, srcTexture, srcMipMapLevel, nullptr);
 			return true;
 		}
@@ -1355,7 +1354,7 @@ namespace Mus {
 									  + "::" + std::to_string(sy), false, false);
 
 				{
-                    Shader::ShaderLockGuard slg(&sl);
+                    Shader::ShaderLockGuard slg(sl);
                     context->CopySubresourceRegion(
                         dstTexture, dstMipMapLevel,
                         box.left, box.top, 0,
@@ -1410,7 +1409,7 @@ namespace Mus {
 								  , false, false);
 
 			{
-                Shader::ShaderLockGuard slg(&sl);
+                Shader::ShaderLockGuard slg(sl);
                 context->UpdateSubresource(dstTexture, mipLevel, nullptr, buffer.data(), rowPitch, 0);
             }
 
@@ -1469,7 +1468,7 @@ namespace Mus {
 									  + "::" + std::to_string(sy), false, false);
 
 				{
-                    Shader::ShaderLockGuard slg(&sl);
+                    Shader::ShaderLockGuard slg(sl);
                     context->UpdateSubresource(
                         dstTexture,
                         mipLevel,
@@ -1508,17 +1507,17 @@ namespace Mus {
 		//merge texture
 		{
 			bool merged = false;
-			auto results_ = results;
-			std::sort(results_.begin(), results_.end(), [](NormalMapResult& a, NormalMapResult& b) {
-				return a.vertexCount > b.vertexCount;
-			});
-			for (auto& dst : results_)
-			{
-				if (mergedTextureGeometries.find(dst.geometry) != mergedTextureGeometries.end())
-					continue;
+            auto results_ = results;
+            std::sort(results_.begin(), results_.end(), [](NormalMapResult& a, NormalMapResult& b) {
+                return a.vertexCount > b.vertexCount;
+            });
+            for (const auto& dst : results_)
+            {
+                if (mergedTextureGeometries.find(dst.geometry) != mergedTextureGeometries.end())
+                    continue;
 
-				for (auto& src : results)
-				{
+                for (auto& src : results)
+                {
 					if (src.geometry == dst.geometry)
 						continue;
 					if (mergedTextureGeometries.find(src.geometry) != mergedTextureGeometries.end())
@@ -1547,78 +1546,94 @@ namespace Mus {
 		}
 
 		const bool isSecondGPU = Shader::ShaderManager::GetSingleton().IsSecondGPUResource(context);
-		std::unordered_set<std::uint32_t> failedCopyResources;
+		std::unordered_set<RE::BSGeometry*> failedCopyResources;
         for (std::uint32_t i = 0; i < results.size(); i++)
         {
-            if (results[i].existResource)
+            auto& result = results[i];
+            auto& resourceData = resourceDatas[i];
+            if (result.existResource)
                 continue;
-            if (mergedTextureGeometries.find(results[i].geometry) != mergedTextureGeometries.end())
+            if (mergedTextureGeometries.find(result.geometry) != mergedTextureGeometries.end())
                 continue;
             if (Config::GetSingleton().GetUseMipMap())
             {
-                GenerateMips(device, context, resourceDatas[i], results[i].texture->normalmapTexture2D.Get());
+                GenerateMips(device, context, resourceData, result.texture->normalmapTexture2D.Get());
             }
-            CompressTexture(device, context, resourceDatas[i], results[i].texture->normalmapTexture2D);
+        }
+        for (std::uint32_t i = 0; i < results.size(); i++)
+        {
+            auto& result = results[i];
+            auto& resourceData = resourceDatas[i];
+            if (result.existResource)
+                continue;
+            if (mergedTextureGeometries.find(result.geometry) != mergedTextureGeometries.end())
+                continue;
+            CompressTexture(device, context, resourceData, result.texture->normalmapTexture2D);
+        }
+        for (std::uint32_t i = 0; i < results.size(); i++)
+        {
+            auto& result = results[i];
+            auto& resourceData = resourceDatas[i];
+            if (result.existResource)
+                continue;
+            if (mergedTextureGeometries.find(result.geometry) != mergedTextureGeometries.end())
+                continue;
             if (!isSecondGPU)
             {
                 D3D11_TEXTURE2D_DESC desc;
-                results[i].texture->normalmapTexture2D->GetDesc(&desc);
+                result.texture->normalmapTexture2D->GetDesc(&desc);
                 HRESULT hr;
                 if (!(desc.BindFlags & D3D11_BIND_SHADER_RESOURCE))
                 {
-                    resourceDatas[i]->stagingTexture2D = results[i].texture->normalmapTexture2D;
+                    resourceData->stagingTexture2D = result.texture->normalmapTexture2D;
                     desc.Usage = D3D11_USAGE_DEFAULT;
                     desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
                     desc.CPUAccessFlags = 0;
                     desc.MiscFlags = 0;
-                    hr = device->CreateTexture2D(&desc, nullptr, results[i].texture->normalmapTexture2D.ReleaseAndGetAddressOf());
+                    hr = device->CreateTexture2D(&desc, nullptr, result.texture->normalmapTexture2D.ReleaseAndGetAddressOf());
                     if (FAILED(hr))
                     {
-                        logger::error("{} : Failed to create Texture2D ({})", resourceDatas[i]->textureName, hr);
-                        failedCopyResources.insert(i);
+                        logger::error("{} : Failed to create Texture2D ({})", resourceData->textureName, hr);
+                        failedCopyResources.insert(result.geometry);
                         continue;
                     }
-                    CopySubresourceRegion(device, context, results[i].texture->normalmapTexture2D.Get(), resourceDatas[i]->stagingTexture2D.Get());
+                    CopySubresourceRegion(device, context, result.texture->normalmapTexture2D.Get(), resourceData->stagingTexture2D.Get());
                 }
                 D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
                 srvDesc.Format = desc.Format;
                 srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
                 srvDesc.Texture2D.MipLevels = desc.MipLevels;
                 srvDesc.Texture2D.MostDetailedMip = 0;
-                hr = device->CreateShaderResourceView(results[i].texture->normalmapTexture2D.Get(), &srvDesc, results[i].texture->normalmapShaderResourceView.ReleaseAndGetAddressOf());
+                hr = device->CreateShaderResourceView(result.texture->normalmapTexture2D.Get(), &srvDesc, result.texture->normalmapShaderResourceView.ReleaseAndGetAddressOf());
                 if (FAILED(hr))
                 {
-                    logger::error("{} : Failed to create ShaderResourceView ({})", resourceDatas[i]->textureName, hr);
-                    failedCopyResources.insert(i);
+                    logger::error("{} : Failed to create ShaderResourceView ({})", resourceData->textureName, hr);
+                    failedCopyResources.insert(result.geometry);
                     continue;
                 }
 
-                resourceDatas[i]->GetQuery(device, context);
-                resourceDataMapLock.lock();
-                resourceDataMap.push_back(resourceDatas[i]);
-                resourceDataMapLock.unlock();
-                logger::info("{} : normalmap created", results[i].textureName, results[i].geoName);
-                NormalMapStore::GetSingleton().AddResource(results[i].hash, results[i].texture);
+                resourceData->GetQuery(device, context);
+				{
+                    std::lock_guard lg(resourceDataMapLock);
+                    resourceDataMap.push_back(resourceData);
+                }
+                logger::info("{} : normalmap created", result.textureName, result.geoName);
+                NormalMapStore::GetSingleton().AddResource(result.hash, result.texture);
             }
             else
             {
-                if (CopyResourceSecondToMain(resourceDatas[i], results[i].texture->normalmapTexture2D, results[i].texture->normalmapShaderResourceView))
+                if (CopyResourceSecondToMain(resourceData, result.texture->normalmapTexture2D, result.texture->normalmapShaderResourceView))
                 {
-                    logger::info("{} : normalmap created", results[i].textureName, results[i].geoName);
-                    NormalMapStore::GetSingleton().AddResource(results[i].hash, results[i].texture);
+                    logger::info("{} : normalmap created", result.textureName, result.geoName);
+                    NormalMapStore::GetSingleton().AddResource(result.hash, result.texture);
                 }
                 else
-                    failedCopyResources.insert(i);
+                    failedCopyResources.insert(result.geometry);
             }
         }
-		auto results_ = results;
-		results.clear();
-		for (std::uint32_t i = 0; i < results_.size(); i++)
-		{
-			if (failedCopyResources.find(i) != failedCopyResources.end())
-				continue;
-			results.push_back(results_[i]);
-		}
+        std::erase_if(results, [&](const auto& result) {
+            return failedCopyResources.find(result.geometry) != failedCopyResources.end();
+        });
 	}
     void ObjectNormalMapUpdater::PostProcessingGPU(ID3D11Device* device, ID3D11DeviceContext* context, ResourceDatas& resourceDatas, UpdateResult& results, MergedTextureGeometries& mergedTextureGeometries)
     {
@@ -1629,7 +1644,7 @@ namespace Mus {
             std::sort(results_.begin(), results_.end(), [](NormalMapResult& a, NormalMapResult& b) {
                 return a.vertexCount > b.vertexCount;
             });
-            for (auto& dst : results_)
+            for (const auto& dst : results_)
             {
                 if (mergedTextureGeometries.find(dst.geometry) != mergedTextureGeometries.end())
                     continue;
@@ -1664,92 +1679,94 @@ namespace Mus {
         }
 
         const bool isSecondGPU = Shader::ShaderManager::GetSingleton().IsSecondGPUResource(context);
-        concurrency::concurrent_unordered_set<std::uint32_t> failedCopyResources;
+        std::unordered_set<RE::BSGeometry*> failedCopyResources;
         for (std::uint32_t i = 0; i < results.size(); i++)
         {
-            if (results[i].existResource)
+            auto& result = results[i];
+            auto& resourceData = resourceDatas[i];
+            if (result.existResource)
                 continue;
-            if (mergedTextureGeometries.find(results[i].geometry) != mergedTextureGeometries.end())
+            if (mergedTextureGeometries.find(result.geometry) != mergedTextureGeometries.end())
                 continue;
             if (Config::GetSingleton().GetUseMipMap())
             {
-                GenerateMipsGPU(device, context, resourceDatas[i], results[i].texture->normalmapShaderResourceView.Get(), results[i].texture->normalmapTexture2D.Get());
+                GenerateMipsGPU(device, context, resourceData, result.texture->normalmapShaderResourceView.Get(), result.texture->normalmapTexture2D.Get());
             }
         }
         for (std::uint32_t i = 0; i < results.size(); i++)
         {
-            if (results[i].existResource)
+            auto& result = results[i];
+            auto& resourceData = resourceDatas[i];
+            if (result.existResource)
                 continue;
-            if (mergedTextureGeometries.find(results[i].geometry) != mergedTextureGeometries.end())
+            if (mergedTextureGeometries.find(result.geometry) != mergedTextureGeometries.end())
                 continue;
-            CompressTexture(device, context, resourceDatas[i], results[i].texture->normalmapTexture2D);
+            CompressTexture(device, context, resourceData, result.texture->normalmapTexture2D);
         }
         for (std::uint32_t i = 0; i < results.size(); i++)
         {
-            if (results[i].existResource)
+            auto& result = results[i];
+            auto& resourceData = resourceDatas[i];
+            if (result.existResource)
                 continue;
-            if (mergedTextureGeometries.find(results[i].geometry) != mergedTextureGeometries.end())
+            if (mergedTextureGeometries.find(result.geometry) != mergedTextureGeometries.end())
                 continue;
             if (!isSecondGPU)
             {
                 D3D11_TEXTURE2D_DESC desc;
-                results[i].texture->normalmapTexture2D->GetDesc(&desc);
+                result.texture->normalmapTexture2D->GetDesc(&desc);
                 HRESULT hr;
                 if (!(desc.BindFlags & D3D11_BIND_SHADER_RESOURCE))
                 {
-                    resourceDatas[i]->stagingTexture2D = results[i].texture->normalmapTexture2D;
+                    resourceData->stagingTexture2D = result.texture->normalmapTexture2D;
                     desc.Usage = D3D11_USAGE_DEFAULT;
                     desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
                     desc.CPUAccessFlags = 0;
                     desc.MiscFlags = 0;
-                    hr = device->CreateTexture2D(&desc, nullptr, results[i].texture->normalmapTexture2D.ReleaseAndGetAddressOf());
+                    hr = device->CreateTexture2D(&desc, nullptr, result.texture->normalmapTexture2D.ReleaseAndGetAddressOf());
                     if (FAILED(hr))
                     {
-                        logger::error("{} : Failed to create Texture2D ({})", resourceDatas[i]->textureName, hr);
-                        failedCopyResources.insert(i);
+                        logger::error("{} : Failed to create Texture2D ({})", resourceData->textureName, hr);
+                        failedCopyResources.insert(result.geometry);
                         continue;
                     }
-                    CopySubresourceRegion(device, context, results[i].texture->normalmapTexture2D.Get(), resourceDatas[i]->stagingTexture2D.Get());
+                    CopySubresourceRegion(device, context, result.texture->normalmapTexture2D.Get(), resourceData->stagingTexture2D.Get());
                 }
                 D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
                 srvDesc.Format = desc.Format;
                 srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
                 srvDesc.Texture2D.MipLevels = desc.MipLevels;
                 srvDesc.Texture2D.MostDetailedMip = 0;
-                hr = device->CreateShaderResourceView(results[i].texture->normalmapTexture2D.Get(), &srvDesc, results[i].texture->normalmapShaderResourceView.ReleaseAndGetAddressOf());
+                hr = device->CreateShaderResourceView(result.texture->normalmapTexture2D.Get(), &srvDesc, result.texture->normalmapShaderResourceView.ReleaseAndGetAddressOf());
                 if (FAILED(hr))
                 {
-                    logger::error("{} : Failed to create ShaderResourceView ({})", resourceDatas[i]->textureName, hr);
-                    failedCopyResources.insert(i);
+                    logger::error("{} : Failed to create ShaderResourceView ({})", resourceData->textureName, hr);
+                    failedCopyResources.insert(result.geometry);
                     continue;
                 }
 
-                resourceDatas[i]->GetQuery(device, context);
-                resourceDataMapLock.lock();
-                resourceDataMap.push_back(resourceDatas[i]);
-                resourceDataMapLock.unlock();
-                logger::info("{} : normalmap created", results[i].textureName, results[i].geoName);
-                NormalMapStore::GetSingleton().AddResource(results[i].hash, results[i].texture);
+                resourceData->GetQuery(device, context);
+                {
+                    std::lock_guard lg(resourceDataMapLock);
+                    resourceDataMap.push_back(resourceData);
+                }
+                logger::info("{} : normalmap created", result.textureName, result.geoName);
+                NormalMapStore::GetSingleton().AddResource(result.hash, result.texture);
             }
             else
             {
-                if (CopyResourceSecondToMain(resourceDatas[i], results[i].texture->normalmapTexture2D, results[i].texture->normalmapShaderResourceView))
+                if (CopyResourceSecondToMain(resourceData, result.texture->normalmapTexture2D, result.texture->normalmapShaderResourceView))
                 {
-                    logger::info("{} : normalmap created", results[i].textureName, results[i].geoName);
-                    NormalMapStore::GetSingleton().AddResource(results[i].hash, results[i].texture);
+                    logger::info("{} : normalmap created", result.textureName, result.geoName);
+                    NormalMapStore::GetSingleton().AddResource(result.hash, result.texture);
                 }
                 else
-                    failedCopyResources.insert(i);
+                    failedCopyResources.insert(result.geometry);
             }
         }
-		auto results_ = results;
-		results.clear();
-		for (std::uint32_t i = 0; i < results_.size(); i++)
-		{
-			if (failedCopyResources.find(i) != failedCopyResources.end())
-				continue;
-			results.push_back(results_[i]);
-		}
+        std::erase_if(results, [&](const auto& result) {
+            return failedCopyResources.find(result.geometry) != failedCopyResources.end();
+        });
 	}
 
 	bool ObjectNormalMapUpdater::MergeTexture(ID3D11Device* device, ID3D11DeviceContext* context, TextureResourceDataPtr& srcResourceData, ID3D11Texture2D* dstTex, ID3D11Texture2D* srcTex)
@@ -1769,7 +1786,7 @@ namespace Mus {
 
 		D3D11_MAPPED_SUBRESOURCE dstMappedResource, srcMappedResource;
 		{
-            Shader::ShaderLockGuard slg(&sl);
+            Shader::ShaderLockGuard slg(sl);
             context->Map(dstTex, 0, D3D11_MAP_READ_WRITE, 0, &dstMappedResource);
             context->Map(srcTex, 0, D3D11_MAP_READ, 0, &srcMappedResource);
         }
@@ -1816,7 +1833,7 @@ namespace Mus {
 
 		
         {
-			Shader::ShaderLockGuard slg(&sl);
+			Shader::ShaderLockGuard slg(sl);
             context->Unmap(dstTex, 0);
             context->Unmap(srcTex, 0);
         }
@@ -1861,8 +1878,8 @@ namespace Mus {
 			{
                 D3D11_MAPPED_SUBRESOURCE mapped;
                 MergeTextureBackup sb;
-                Shader::ShaderLockGuard slg(&sl);
-                ShaderBackupManager sbm(context, &sb);
+                Shader::ShaderLockGuard slg(sl);
+                ShaderBackupGuard sbg(context, sb);
                 context->Map(mergeTextureBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
                 *reinterpret_cast<MergeTextureBufferData*>(mapped.pData) = cbData;
                 context->Unmap(mergeTextureBuffer[isSecondGPUEnabled].Get(), 0);
@@ -1898,8 +1915,8 @@ namespace Mus {
 					{
                         D3D11_MAPPED_SUBRESOURCE mapped;
                         MergeTextureBackup sb;
-                        Shader::ShaderLockGuard slg(&sl);
-                        ShaderBackupManager sbm(context, &sb);
+                        Shader::ShaderLockGuard slg(sl);
+                        ShaderBackupGuard sbg(context, sb);
                         context->Map(mergeTextureBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
                         *reinterpret_cast<MergeTextureBufferData*>(mapped.pData) = cbData_;
                         context->Unmap(mergeTextureBuffer[isSecondGPUEnabled].Get(), 0);
@@ -1947,7 +1964,7 @@ namespace Mus {
 
 		std::vector<D3D11_MAPPED_SUBRESOURCE> mappedResource(desc.MipLevels);
         {
-            Shader::ShaderLockGuard slg(&sl);
+            Shader::ShaderLockGuard slg(sl);
             for (UINT mipLevel = 0; mipLevel < desc.MipLevels; mipLevel++)
             {
                 hr = context->Map(resourceData->generateMipsData.texture2D.Get(), mipLevel, D3D11_MAP_READ_WRITE, 0, &mappedResource[mipLevel]);
@@ -1967,23 +1984,25 @@ namespace Mus {
 			DirectX::XMINT2(-1,  1), // left down
 			DirectX::XMINT2(0,  1), // down
 			DirectX::XMINT2(1,  1)  // right down
-		};
+        };
+        struct ColorMap
+        {
+            std::uint32_t* src = nullptr;
+            RGBA resultsColor;
+        };
 		for (std::uint8_t i = 0; i < 2; i++)
 		{
-			std::vector<std::future<void>> processes;
+            std::vector<std::future<std::vector<ColorMap>>> colorMapProcesses;
             const std::uint32_t threads = currentProcessingThreads.load()->GetThreads() * 16;
 			const std::uint32_t subY = std::min(height, std::min(width, threads) * std::min(height, threads));
 			const std::uint32_t unitY = (height + subY - 1) / subY;
 			std::uint8_t* pData = reinterpret_cast<std::uint8_t*>(mappedResource[0].pData);
-			struct ColorMap {
-				std::uint32_t* src = nullptr;
-				RGBA resultsColor;
-			};
-			concurrency::concurrent_vector<ColorMap> resultsColorMap;
+			std::vector<ColorMap> resultsColorMap;
 			for (std::uint32_t sy = 0; sy < subY; sy++) {
 				const std::uint32_t beginY = sy * unitY;
 				const std::uint32_t endY = std::min(beginY + unitY, height);
-                processes.push_back(currentProcessingThreads.load()->submitAsync([&, beginY, endY]() {
+                colorMapProcesses.push_back(currentProcessingThreads.load()->submitAsync([&, beginY, endY]() {
+                    std::vector<ColorMap> resultsColorMapFrag;
 					for (UINT y = beginY; y < endY; y++) {
 						std::uint8_t* rowData = pData + y * mappedResource[0].RowPitch;
 						for (UINT x = 0; x < width; x++)
@@ -2016,17 +2035,18 @@ namespace Mus {
 							if (validCount == 0)
 								continue;
 							RGBA resultsColor = averageColor / validCount;
-							resultsColorMap.push_back(ColorMap{ pixel, resultsColor });
+                            resultsColorMapFrag.push_back(ColorMap{pixel, resultsColor});
 						}
 					}
+                    return resultsColorMapFrag;
 				}));
 			}
-			for (auto& process : processes)
+            for (auto& process : colorMapProcesses)
 			{
-				process.get();
+                resultsColorMap.append_range(process.get());
 			}
-			processes.clear();
 
+            std::vector<std::future<void>> processes;
 			std::size_t sub = std::max(std::size_t(1), std::min(resultsColorMap.size(), currentProcessingThreads.load()->GetThreads()));
 			std::size_t unit = (resultsColorMap.size() + sub - 1) / sub;
 			for (std::size_t t = 0; t < sub; t++) {
@@ -2138,7 +2158,7 @@ namespace Mus {
 		}
 
 		{
-            Shader::ShaderLockGuard slg(&sl);
+            Shader::ShaderLockGuard slg(sl);
             for (UINT mipLevel = 0; mipLevel < desc.MipLevels; mipLevel++)
             {
                 context->Unmap(resourceData->generateMipsData.texture2D.Get(), mipLevel);
@@ -2236,8 +2256,8 @@ namespace Mus {
 						{
                             D3D11_MAPPED_SUBRESOURCE mapped;
                             GenerateMipsBackup sb;
-                            Shader::ShaderLockGuard slg(&sl);
-                            ShaderBackupManager sbm(context, &sb);
+                            Shader::ShaderLockGuard slg(sl);
+                            ShaderBackupGuard sbg(context, sb);
                             context->Map(generateMipsBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
                             *reinterpret_cast<GenerateMipsBufferData*>(mapped.pData) = cbData;
                             context->Unmap(generateMipsBuffer[isSecondGPUEnabled].Get(), 0);
@@ -2277,8 +2297,8 @@ namespace Mus {
 								{
                                     D3D11_MAPPED_SUBRESOURCE mapped;
                                     GenerateMipsBackup sb;
-                                    Shader::ShaderLockGuard slg(&sl);
-                                    ShaderBackupManager sbm(context, &sb);
+                                    Shader::ShaderLockGuard slg(sl);
+                                    ShaderBackupGuard sbg(context, sb);
                                     context->Map(generateMipsBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
                                     *reinterpret_cast<GenerateMipsBufferData*>(mapped.pData) = cbData_;
                                     context->Unmap(generateMipsBuffer[isSecondGPUEnabled].Get(), 0);
@@ -2338,8 +2358,8 @@ namespace Mus {
 					{
                         D3D11_MAPPED_SUBRESOURCE mapped;
                         GenerateMipsBackup sb;
-                        Shader::ShaderLockGuard slg(&sl);
-                        ShaderBackupManager sbm(context, &sb);
+                        Shader::ShaderLockGuard slg(sl);
+                        ShaderBackupGuard sbg(context, sb);
                         context->Map(generateMipsBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
                         *reinterpret_cast<GenerateMipsBufferData*>(mapped.pData) = cbData;
                         context->Unmap(generateMipsBuffer[isSecondGPUEnabled].Get(), 0);
@@ -2379,8 +2399,8 @@ namespace Mus {
 							{
                                 D3D11_MAPPED_SUBRESOURCE mapped;
                                 GenerateMipsBackup sb;
-                                Shader::ShaderLockGuard slg(&sl);
-                                ShaderBackupManager sbm(context, &sb);
+                                Shader::ShaderLockGuard slg(sl);
+                                ShaderBackupGuard sbg(context, sb);
                                 context->Map(generateMipsBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
                                 *reinterpret_cast<GenerateMipsBufferData*>(mapped.pData) = cbData_;
                                 context->Unmap(generateMipsBuffer[isSecondGPUEnabled].Get(), 0);
@@ -2515,7 +2535,7 @@ namespace Mus {
 
 		std::vector<D3D11_MAPPED_SUBRESOURCE> mappedResource(srcDesc.MipLevels);
         {
-            Shader::ShaderLockGuard slg(&sl);
+            Shader::ShaderLockGuard slg(sl);
             for (UINT mipLevel = 0; mipLevel < srcDesc.MipLevels; mipLevel++)
             {
                 context->Map(resourceData->textureCompressData.srcStagingTexture.Get(), mipLevel, D3D11_MAP_READ, 0, &mappedResource[mipLevel]);
@@ -2596,7 +2616,7 @@ namespace Mus {
             std::vector<std::uint32_t> pixelBuffer(bc7Width * bc7Height * 16);
 			std::uint8_t* srcData = reinterpret_cast<std::uint8_t*>(mappedResource[mipLevel].pData);
 			std::vector<std::future<void>> processes;
-            const std::uint32_t threads = std::max(std::size_t(1), currentProcessingThreads.load()->GetThreads() * (isImmediately ? 1 : 8));
+            const std::uint32_t threads = std::max(1ull, currentProcessingThreads.load()->GetThreads() * (isImmediately ? 1 : 8));
 			const std::uint32_t rowSub = std::max(1u, (bc7Height + threads - 1) / threads);
 			for (std::uint32_t threadNum = 0; threadNum < threads; threadNum++) {
 				const std::uint32_t beginY = threadNum * rowSub;
@@ -2638,7 +2658,7 @@ namespace Mus {
 		};
 
 		{
-            Shader::ShaderLockGuard slg(&sl);
+            Shader::ShaderLockGuard slg(sl);
             for (UINT mipLevel = 0; mipLevel < srcDesc.MipLevels; mipLevel++)
             {
                 context->Unmap(resourceData->textureCompressData.srcStagingTexture.Get(), mipLevel);
@@ -2843,7 +2863,7 @@ namespace Mus {
 			}
 
 			{
-                Shader::ShaderLockGuard slg(&sl);
+                Shader::ShaderLockGuard slg(sl);
                 context->Begin(gpuTimers[funcStr].disjointQuery.Get());
                 context->End(gpuTimers[funcStr].startQuery.Get());
             }
@@ -2852,7 +2872,7 @@ namespace Mus {
 		{
 			double tick = PerformanceCheckTick ? (double)(RE::GetSecondsSinceLastFrame() * 1000) : (double)(TimeTick60 * 1000);
             {
-                Shader::ShaderLockGuard slg(&sl);
+                Shader::ShaderLockGuard slg(sl);
                 context->Flush();
                 context->End(gpuTimers[funcStr].endQuery.Get());
                 context->End(gpuTimers[funcStr].disjointQuery.Get());
@@ -2860,7 +2880,7 @@ namespace Mus {
 
 			D3D11_QUERY_DATA_TIMESTAMP_DISJOINT disjointData = {};
             {
-                Shader::ShaderLockGuard slg(&sl);
+                Shader::ShaderLockGuard slg(sl);
                 while (context->GetData(gpuTimers[funcStr].disjointQuery.Get(), &disjointData, sizeof(disjointData), 0) != S_OK);
             }
 
@@ -2869,7 +2889,7 @@ namespace Mus {
 
 			UINT64 startTime = 0, endTime = 0;
             {
-                Shader::ShaderLockGuard slg(&sl);
+                Shader::ShaderLockGuard slg(sl);
                 while (context->GetData(gpuTimers[funcStr].startQuery.Get(), &startTime, sizeof(startTime), 0) != S_OK);
                 while (context->GetData(gpuTimers[funcStr].endQuery.Get(), &endTime, sizeof(endTime), 0) != S_OK);
             }
@@ -2928,7 +2948,7 @@ namespace Mus {
 		}
 		
         {
-            Shader::ShaderLockGuard slg(&sl);
+            Shader::ShaderLockGuard slg(sl);
             context->Flush();
             context->End(query.Get());
         }
@@ -2942,7 +2962,7 @@ namespace Mus {
 		HRESULT hr;
 		while (true) {
             {
-                Shader::ShaderLockGuard slg(&sl);
+                Shader::ShaderLockGuard slg(sl);
                 hr = context->GetData(query.Get(), nullptr, 0, 0);
             }
 			if (FAILED(hr))

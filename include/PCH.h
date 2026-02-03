@@ -156,20 +156,21 @@ using EventResult = RE::BSEventNotifyControl;
 #include "NiOverride/NiOverride.h"
 
 #include "RGBA.h"
+#include "lString.h"
+
+#include "Hook.h"
+#include "ThreadPool.h"
 
 #include "Store.h"
-#include "Geometry.h"
 #include "Common.h"
+
 #include "InputManager.h"
 #include "nifUtil.h"
 #include "Utility.hpp"
 
 #include "Condition.h"
 #include "Config.h"
-
-#include "Hook.h"
-#include "ThreadPool.h"
-
+#include "Geometry.h"
 #include "NormalMapStore.h"
 
 #include "ShaderManager.h"

@@ -123,29 +123,20 @@ namespace Mus {
 			logger::debug("{}::{} : get geometry data...", __func__, geo.objInfo.info.name);
 
 			const std::size_t beforeVertexCount = vertices.size();
-			const std::size_t beforeUVCount = uvs.size();
-			const std::size_t beforeNormalCount = normals.size();
-			const std::size_t beforeTangentCount = tangents.size();
-			const std::size_t beforeBitangentCount = bitangents.size();
-			vertices.resize(beforeVertexCount + geo.objInfo.info.vertexCount);
-			uvs.resize(beforeUVCount + geo.objInfo.info.vertexCount);
-			/*if (geo.objInfo.info.hasNormals)
-				normals.resize(beforeNormalCount + geo.objInfo.info.vertexCount);
-			if (geo.objInfo.info.hasTangents)
-				tangents.resize(beforeTangentCount + geo.objInfo.info.vertexCount);
-			if (geo.objInfo.info.hasBitangents)
-				bitangents.resize(beforeBitangentCount + geo.objInfo.info.vertexCount);*/
+            const std::size_t beforeUVCount = uvs.size();
+            const std::size_t beforeIndices = indices.size();
 
 			const std::uint32_t vertexSize = geo.objInfo.info.desc.GetSize();
+            const std::uint32_t triCount = geo.objInfo.indicesBlockData.size() / 3;
 
-			//float colorConvert = 1.0f / 255.0f;
-			for (std::uint32_t i = 0; i < geo.objInfo.info.vertexCount; i++) {
+			vertices.resize(beforeVertexCount + geo.objInfo.info.vertexCount);
+            uvs.resize(beforeUVCount + geo.objInfo.info.vertexCount);
+            indices.resize(beforeIndices + geo.objInfo.indicesBlockData.size());
+
+			for (std::size_t i = 0; i < geo.objInfo.info.vertexCount; i++) {
 				std::uint8_t* block = &geo.objInfo.geometryBlockData[i * vertexSize];
-				const std::uint32_t vi = beforeVertexCount + i;
-				const std::uint32_t ui = beforeUVCount + i;
-				/*const std::uint32_t ni = beforeNormalCount + i;
-				const std::uint32_t ti = beforeTangentCount + i;
-				const std::uint32_t bi = beforeBitangentCount + i;*/
+                const std::size_t vi = beforeVertexCount + i;
+                const std::size_t ui = beforeUVCount + i;
 
 				if (!geo.objInfo.dynamicBlockData1.empty())
 				{
@@ -158,16 +149,11 @@ namespace Mus {
 					vertices[vi].x = geo.objInfo.dynamicBlockData2[i].x;
 					vertices[vi].y = geo.objInfo.dynamicBlockData2[i].y;
 					vertices[vi].z = geo.objInfo.dynamicBlockData2[i].z;
-					/*if (geo.objInfo.info.hasBitangents)
-						bitangents[bi].x = geo.objInfo.dynamicBlockData[i].w*/
 				}
 				if (geo.objInfo.info.hasVertices)
 				{
 					vertices[vi] = *reinterpret_cast<DirectX::XMFLOAT3*>(block);
 					block += 12;
-
-					/*if (geo.objInfo.info.hasBitangents)
-						bitangents[bi].x = *reinterpret_cast<float*>(block);*/
 					block += 4;
 				}
 				if (geo.objInfo.info.hasUVs)
@@ -176,50 +162,20 @@ namespace Mus {
 					uvs[ui].y = DirectX::PackedVector::XMConvertHalfToFloat(*reinterpret_cast<std::uint16_t*>(block + 2));
 					block += 4;
 				}
-
-				/*if (geo.objInfo.info.hasNormals)
-				{
-					normals[ni].x = static_cast<float>(*block) * colorConvert;
-					normals[ni].y = static_cast<float>(*(block + 1)) * colorConvert;
-					normals[ni].z = static_cast<float>(*(block + 2)) * colorConvert;
-					block += 3;
-
-					if (geo.objInfo.info.hasBitangents)
-						bitangents[bi].y = static_cast<float>(*block);
-					block += 1;
-
-					if (geo.objInfo.info.hasTangents)
-					{
-						tangents[ti].x = static_cast<float>(*block) * colorConvert;
-						tangents[ti].y = static_cast<float>(*(block + 1)) * colorConvert;
-						tangents[ti].z = static_cast<float>(*(block + 2)) * colorConvert;
-						block += 3;
-
-						if (geo.objInfo.info.hasBitangents)
-							bitangents[bi].z = static_cast<float>(*block);
-					}
-				}*/
 			}
 
-			const std::size_t beforeIndices = indices.size();
-			indices.resize(beforeIndices + geo.objInfo.indicesBlockData.size());
-			for (std::uint32_t t = 0; t < geo.objInfo.indicesBlockData.size(); t += 3)
-			{
-				indices[beforeIndices + t + 0] = beforeVertexCount + geo.objInfo.indicesBlockData[t + 0];
-				indices[beforeIndices + t + 1] = beforeVertexCount + geo.objInfo.indicesBlockData[t + 1];
-				indices[beforeIndices + t + 2] = beforeVertexCount + geo.objInfo.indicesBlockData[t + 2];
+            for (std::uint32_t i = 0; i < triCount; i++)
+            {
+                const std::uint32_t offset = i * 3;
+                indices[beforeIndices + offset + 0] = beforeVertexCount + geo.objInfo.indicesBlockData[offset + 0];
+                indices[beforeIndices + offset + 1] = beforeVertexCount + geo.objInfo.indicesBlockData[offset + 1];
+                indices[beforeIndices + offset + 2] = beforeVertexCount + geo.objInfo.indicesBlockData[offset + 2];
 			}
 
 			geo.objInfo.vertexStart = beforeVertexCount;
 			geo.objInfo.vertexEnd = vertices.size();
 			geo.objInfo.uvStart = beforeUVCount;
 			geo.objInfo.uvEnd = uvs.size();
-			geo.objInfo.normalStart = beforeNormalCount;
-			geo.objInfo.normalEnd = normals.size();
-			geo.objInfo.tangentStart = beforeTangentCount;
-			geo.objInfo.tangentEnd = tangents.size();
-			geo.objInfo.bitangentStart = beforeBitangentCount;
-			geo.objInfo.bitangentEnd = bitangents.size();
 			geo.objInfo.indicesStart = beforeIndices;
 			geo.objInfo.indicesEnd = indices.size();
 
@@ -230,54 +186,42 @@ namespace Mus {
 			PerformanceLog(std::string(__func__) + "::" + mainInfo.name, true, false);
 	}
 
-	void GeometryData::UpdateMap() {
-		if (vertices.empty() || indices.empty())
-			return;
+	void GeometryData::CreateVertexMap()
+    {
+        if (vertices.empty() || indices.empty())
+            return;
 
-		const std::size_t triCount = indices.size() / 3;
+        const std::size_t triCount = indices.size() / 3;
         const std::size_t vertCount = vertices.size();
 
         if (Config::GetSingleton().GetGeometryDataTime())
             PerformanceLog(std::string(__func__) + "::" + std::to_string(triCount), false, false);
 
-        PerformanceLog(std::string(__func__) + "::1", false, false);
-
-        boundaryEdgeMap.clear();
-        vertexToFaceMap.clear();
         vertexToFaceMap.resize(vertCount);
-        boundaryEdgeVertexMap.resize(vertCount);
-
+        std::vector<Edge> edges(indices.size());
         std::vector<std::future<void>> processes;
         {
-            const std::size_t sub = std::max((std::size_t)1, std::min(triCount, currentProcessingThreads.load()->GetThreads() * 4));
+            const std::size_t sub = std::max(1ull, std::min(triCount, currentProcessingThreads.load()->GetThreads() * 4));
             const std::size_t unit = (triCount + sub - 1) / sub;
             for (std::size_t t = 0; t < sub; t++)
             {
                 const std::size_t begin = t * unit;
                 const std::size_t end = std::min(begin + unit, triCount);
-                processes.push_back(currentProcessingThreads.load()->submitAsync([&, begin, end]() {
+                processes.push_back(currentProcessingThreads.load()->submitAsync([&, t, begin, end]() {
                     for (std::size_t i = begin; i < end; i++)
                     {
                         const std::size_t offset = i * 3;
                         const std::uint32_t i0 = indices[offset + 0];
                         const std::uint32_t i1 = indices[offset + 1];
                         const std::uint32_t i2 = indices[offset + 2];
-
+                        edges[offset + 0] = {std::min(i0, i1), std::max(i0, i1)};
+                        edges[offset + 1] = {std::min(i1, i2), std::max(i1, i2)};
+                        edges[offset + 2] = {std::min(i2, i0), std::max(i2, i0)};
                         vertexToFaceMap[i0].push_back(i);
                         vertexToFaceMap[i1].push_back(i);
                         vertexToFaceMap[i2].push_back(i);
-
-                        boundaryEdgeMap[{i0, i1}].push_back(i);
-                        boundaryEdgeMap[{i0, i2}].push_back(i);
-                        boundaryEdgeMap[{i1, i2}].push_back(i);
-
-                        boundaryEdgeVertexMap[i0].push_back({i0, i1});
-                        boundaryEdgeVertexMap[i0].push_back({i0, i2});
-                        boundaryEdgeVertexMap[i1].push_back({i0, i1});
-                        boundaryEdgeVertexMap[i1].push_back({i1, i2});
-                        boundaryEdgeVertexMap[i2].push_back({i0, i2});
-                        boundaryEdgeVertexMap[i2].push_back({i1, i2});
                     }
+
                 }));
             }
         }
@@ -286,12 +230,32 @@ namespace Mus {
             process.get();
         }
 
+        parallel_sort(edges, currentProcessingThreads.load());
+
+        std::vector<std::uint8_t> isBoundaryVert(vertCount, 0);
+        std::size_t i = 0;
+        while (i < edges.size())
+        {
+            std::size_t count = 1;
+            while (i + count < edges.size() && edges[i] == edges[i + count])
+            {
+                count++;
+            }
+
+            if (count == 1)
+            {
+                isBoundaryVert[edges[i].v0] = 1;
+                isBoundaryVert[edges[i].v1] = 1;
+            }
+            i += count;
+        }
+
         std::vector<PosEntry> pMap(vertCount);
         std::vector<PosEntry> pbMap;
-        std::vector<std::vector<PosEntry>> tpbMap;
+        std::vector < std::vector<PosEntry>> tpbMap;
         processes.clear();
         {
-            const std::size_t sub = std::max((std::size_t)1, std::min(vertCount, currentProcessingThreads.load()->GetThreads() * 4));
+            const std::size_t sub = std::max(1ull, std::min(vertCount, currentProcessingThreads.load()->GetThreads() * 4));
             const std::size_t unit = (vertCount + sub - 1) / sub;
             tpbMap.resize(sub);
             for (std::size_t t = 0; t < sub; t++)
@@ -301,11 +265,9 @@ namespace Mus {
                 processes.push_back(currentProcessingThreads.load()->submitAsync([&, t, begin, end]() {
                     for (std::size_t i = begin; i < end; i++)
                     {
-                        const DirectX::XMFLOAT3& p = vertices[i];
-                        pMap[i] = PosEntry(MakePositionKey(p), static_cast<std::uint32_t>(i));
-                        if (IsBoundaryVertex(i))
-                            tpbMap[t].push_back(PosEntry(MakeBoundaryPositionKey(p), static_cast<std::uint32_t>(i)));
-                        std::sort(vertexToFaceMap[i].begin(), vertexToFaceMap[i].end());
+                        pMap[i] = PosEntry(MakePositionKey(vertices[i]), i);
+                        if (isBoundaryVert[i])
+                            tpbMap[t].emplace_back(MakeBoundaryPositionKey(vertices[i]), i);
                     }
                 }));
             }
@@ -314,22 +276,14 @@ namespace Mus {
         {
             process.get();
         }
-
-		for (auto& m : tpbMap)
+        for (auto& m : tpbMap)
         {
             pbMap.append_range(m);
         }
 
-		processes.clear();
-        processes.push_back(currentProcessingThreads.load()->submitAsync([&]() {
-            std::sort(pMap.begin(), pMap.end());
-        }));
-        processes.push_back(currentProcessingThreads.load()->submitAsync([&]() {
-            std::sort(pbMap.begin(), pbMap.end());
-        }));
-        for (auto& process : processes)
         {
-            process.get();
+            parallel_sort(pMap, currentProcessingThreads.load());
+            parallel_sort(pbMap, currentProcessingThreads.load());
         }
 
         linkedVertices.resize(vertCount);
@@ -364,7 +318,7 @@ namespace Mus {
         processes.clear();
         {
             const std::size_t size = linkedVertices.size();
-            const std::size_t sub = std::max((std::size_t)1, std::min(size, currentProcessingThreads.load()->GetThreads() * 4));
+            const std::size_t sub = std::max(1ull, std::min(size, currentProcessingThreads.load()->GetThreads() * 4));
             const std::size_t unit = (size + sub - 1) / sub;
             for (std::size_t t = 0; t < sub; t++)
             {
@@ -390,15 +344,12 @@ namespace Mus {
 
         if (Config::GetSingleton().GetGeometryDataTime())
             PerformanceLog(std::string(__func__) + "::" + std::to_string(triCount), true, false);
+        
+        CreateFaceData();
+    }
 
-        UpdateMapData();
-	}
-
-	void GeometryData::UpdateMapData()
+	void GeometryData::CreateFaceData()
     {
-        if (linkedVertices.empty())
-            return;
-
 		const std::size_t triCount = indices.size() / 3;
         if (Config::GetSingleton().GetGeometryDataTime())
             PerformanceLog(std::string(__func__) + "::" + std::to_string(triCount), false, false);
@@ -407,7 +358,7 @@ namespace Mus {
         faceTangents.resize(triCount);
 
 		std::vector<std::future<void>> processes;
-        const std::size_t sub = std::max((std::size_t)1, std::min(triCount, currentProcessingThreads.load()->GetThreads() * 4));
+        const std::size_t sub = std::max(1ull, std::min(triCount, currentProcessingThreads.load()->GetThreads() * 4));
         const std::size_t unit = (triCount + sub - 1) / sub;
         for (std::size_t t = 0; t < sub; t++)
         {
@@ -516,7 +467,7 @@ namespace Mus {
         const bool allowInvertNormalSmooth = Config::GetSingleton().GetAllowInvertNormalSmooth();
 
 		std::vector<std::future<void>> processes;
-        const std::size_t sub = std::max((std::size_t)1, std::min(vertices.size(), currentProcessingThreads.load()->GetThreads() * 4));
+        const std::size_t sub = std::max(1ull, std::min(vertices.size(), currentProcessingThreads.load()->GetThreads() * 4));
 		const std::size_t unit = (vertices.size() + sub - 1) / sub;
         for (std::size_t t = 0; t < sub; t++) {
 			const std::size_t begin = t * unit;
@@ -595,182 +546,197 @@ namespace Mus {
 	}
 
 	void GeometryData::Subdivision(std::uint32_t a_subCount, std::uint32_t a_triThreshold)
-	{
-		if (a_subCount == 0)
-			return;
+    {
+        if (a_subCount == 0)
+            return;
 
-		std::string subID = std::to_string(vertices.size());
-		if (Config::GetSingleton().GetGeometryDataTime())
-			PerformanceLog(std::string(__func__) + "::" + subID, false, false);
+        std::string subID = std::to_string(vertices.size());
+        if (Config::GetSingleton().GetGeometryDataTime())
+            PerformanceLog(std::string(__func__) + "::" + subID, false, false);
 
-		logger::debug("{} : {} subdivition({})...", __func__, vertices.size(), a_subCount);
+        logger::debug("{} : {} subdivition({})...", __func__, vertices.size(), a_subCount);
 
-		struct LocalDate {
-			RE::BSGeometry* geometry;
-			std::string geoName;
-			GeometryInfo geoInfo;
-			std::vector<DirectX::XMFLOAT3> vertices;
-			std::vector<DirectX::XMFLOAT2> uvs;
-			std::vector<std::uint32_t> indices;
-			ObjectInfo objInfo;
-		};
+        struct LocalDate
+        {
+            RE::BSGeometry* geometry;
+            std::string geoName;
+            GeometryInfo geoInfo;
+            std::vector<DirectX::XMFLOAT3> vertices;
+            std::vector<DirectX::XMFLOAT2> uvs;
+            std::vector<std::uint32_t> indices;
+            ObjectInfo objInfo;
+        };
 
-		std::vector<LocalDate> subdividedDatas;
-		for (auto& geometry : geometries)
-		{
-			LocalDate data(
-				geometry.geometry,
-				geometry.objInfo.info.name,
-				geometry.objInfo.info
-			);
+        std::vector<LocalDate> subdividedDatas;
+        for (auto& geometry : geometries)
+        {
+            LocalDate data = {
+                .geometry = geometry.geometry,
+                .geoName = geometry.objInfo.info.name,
+                .geoInfo = geometry.objInfo.info};
 
-			data.vertices.assign(vertices.begin() + geometry.objInfo.vertexStart, vertices.begin() + geometry.objInfo.vertexEnd);
-			data.uvs.assign(uvs.begin() + geometry.objInfo.uvStart, uvs.begin() + geometry.objInfo.uvEnd);
-			data.indices.assign(indices.begin() + geometry.objInfo.indicesStart, indices.begin() + geometry.objInfo.indicesEnd);
+            data.vertices.assign(vertices.begin() + geometry.objInfo.vertexStart, vertices.begin() + geometry.objInfo.vertexEnd);
+            data.uvs.assign(uvs.begin() + geometry.objInfo.uvStart, uvs.begin() + geometry.objInfo.uvEnd);
+            data.indices.assign(indices.begin() + geometry.objInfo.indicesStart, indices.begin() + geometry.objInfo.indicesEnd);
 
-			std::size_t triCount = data.indices.size() / 3;
-			std::vector<std::future<void>> processes;
-            const std::size_t sub = std::max((std::size_t)1, std::min(triCount, currentProcessingThreads.load()->GetThreads()));
-			const std::size_t unit = (triCount + sub - 1) / sub;
-			for (std::size_t t = 0; t < sub; t++) {
-				const std::size_t begin = t * unit;
-				const std::size_t end = std::min(begin + unit, triCount);
+            std::size_t triCount = data.indices.size() / 3;
+            std::vector<std::future<void>> processes;
+            const std::size_t sub = std::max(1ull, std::min(triCount, currentProcessingThreads.load()->GetThreads()));
+            const std::size_t unit = (triCount + sub - 1) / sub;
+            for (std::size_t t = 0; t < sub; t++)
+            {
+                const std::size_t begin = t * unit;
+                const std::size_t end = std::min(begin + unit, triCount);
                 processes.push_back(currentProcessingThreads.load()->submitAsync([&, begin, end]() {
-					for (std::size_t i = begin; i < end; i++)
-					{
-						std::size_t offset = i * 3;
-						data.indices[offset + 0] -= geometry.objInfo.vertexStart;
-						data.indices[offset + 1] -= geometry.objInfo.vertexStart;
-						data.indices[offset + 2] -= geometry.objInfo.vertexStart;
-					}
-				}));
-			}
-			for (auto& process : processes) {
-				process.get();
-			}
+                    for (std::size_t i = begin; i < end; i++)
+                    {
+                        std::size_t offset = i * 3;
+                        data.indices[offset + 0] -= geometry.objInfo.vertexStart;
+                        data.indices[offset + 1] -= geometry.objInfo.vertexStart;
+                        data.indices[offset + 2] -= geometry.objInfo.vertexStart;
+                    }
+                }));
+            }
+            for (auto& process : processes)
+            {
+                process.get();
+            }
 
-			data.objInfo = geometry.objInfo;
+            data.objInfo = geometry.objInfo;
 
-			subdividedDatas.push_back(data);
-		}
+            subdividedDatas.push_back(data);
+        }
 
-		vertices.clear();
-		uvs.clear();
-		indices.clear();
-		geometries.clear();
+        vertices.clear();
+        uvs.clear();
+        indices.clear();
+        geometries.clear();
 
-		for (auto& data : subdividedDatas)
+        std::vector<std::future<void>> processes;
+        for (std::size_t i = 0; i < subdividedDatas.size(); i++)
+        {
+            if (subdividedDatas[i].indices.size() / 3 > a_triThreshold)
+                continue;
+            processes.push_back(currentProcessingThreads.load()->submitAsync([&, i]() {
+                auto& data = subdividedDatas[i];
+                for (std::uint32_t doSubdivision = 0; doSubdivision < a_subCount; doSubdivision++)
+                {
+                    std::unordered_map<std::size_t, std::uint32_t> midpointMap;
+                    auto getMidpointIndex = [&](std::uint32_t i0, std::uint32_t i1) -> std::uint32_t {
+                        auto createKey = [](std::uint32_t i0, std::uint32_t i1) -> std::size_t {
+                            std::uint32_t a = (std::min)(i0, i1);
+                            std::uint32_t b = std::max(i0, i1);
+                            return (static_cast<std::size_t>(a) << 32) | b;
+                        };
+
+                        auto key = createKey(i0, i1);
+                        if (auto it = midpointMap.find(key); it != midpointMap.end())
+                            return it->second;
+
+                        std::size_t index = data.vertices.size();
+
+                        const auto& v0 = data.vertices[i0];
+                        const auto& v1 = data.vertices[i1];
+                        DirectX::XMFLOAT3 midVertex = {
+                            (v0.x + v1.x) * 0.5f,
+                            (v0.y + v1.y) * 0.5f,
+                            (v0.z + v1.z) * 0.5f};
+                        data.vertices.push_back(midVertex);
+
+                        const auto& u0 = data.uvs[i0];
+                        const auto& u1 = data.uvs[i1];
+                        DirectX::XMFLOAT2 midUV = {
+                            (u0.x + u1.x) * 0.5f,
+                            (u0.y + u1.y) * 0.5f};
+                        data.uvs.push_back(midUV);
+
+                        midpointMap[key] = index;
+                        return index;
+                    };
+
+                    auto oldIndices = data.indices;
+                    data.indices.resize(data.indices.size() * 4);
+                    for (std::size_t i = 0; i < oldIndices.size() / 3; i++)
+                    {
+                        std::size_t offset = i * 3;
+                        std::uint32_t v0 = oldIndices[offset + 0];
+                        std::uint32_t v1 = oldIndices[offset + 1];
+                        std::uint32_t v2 = oldIndices[offset + 2];
+
+                        std::uint32_t m01 = getMidpointIndex(v0, v1);
+                        std::uint32_t m12 = getMidpointIndex(v1, v2);
+                        std::uint32_t m20 = getMidpointIndex(v2, v0);
+
+                        std::size_t triOffset = offset * 4;
+                        data.indices[triOffset + 0] = v0;
+                        data.indices[triOffset + 1] = m01;
+                        data.indices[triOffset + 2] = m20;
+
+                        data.indices[triOffset + 3] = v1;
+                        data.indices[triOffset + 4] = m12;
+                        data.indices[triOffset + 5] = m01;
+
+                        data.indices[triOffset + 6] = v2;
+                        data.indices[triOffset + 7] = m20;
+                        data.indices[triOffset + 8] = m12;
+
+                        data.indices[triOffset + 9] = m01;
+                        data.indices[triOffset + 10] = m12;
+                        data.indices[triOffset + 11] = m20;
+                    }
+                }
+            }));
+        }
+		for (auto& process : processes)
 		{
-			if (data.indices.size() / 3 < a_triThreshold)
-			{
-				for (std::uint32_t doSubdivision = 0; doSubdivision < a_subCount; doSubdivision++)
-				{
-					std::unordered_map<std::size_t, std::uint32_t> midpointMap;
-					auto getMidpointIndex = [&](std::uint32_t i0, std::uint32_t i1) -> std::uint32_t {
-						auto createKey = [](std::uint32_t i0, std::uint32_t i1) -> std::size_t {
-							std::uint32_t a = (std::min)(i0, i1);
-							std::uint32_t b = std::max(i0, i1);
-							return (static_cast<std::size_t>(a) << 32) | b;
-						};
-
-						auto key = createKey(i0, i1);
-						if (auto it = midpointMap.find(key); it != midpointMap.end())
-							return it->second;
-
-						std::size_t index = data.vertices.size();
-
-						const auto& v0 = data.vertices[i0];
-						const auto& v1 = data.vertices[i1];
-						DirectX::XMFLOAT3 midVertex = {
-							(v0.x + v1.x) * 0.5f,
-							(v0.y + v1.y) * 0.5f,
-							(v0.z + v1.z) * 0.5f
-						};
-						data.vertices.push_back(midVertex);
-
-						const auto& u0 = data.uvs[i0];
-						const auto& u1 = data.uvs[i1];
-						DirectX::XMFLOAT2 midUV = {
-							(u0.x + u1.x) * 0.5f,
-							(u0.y + u1.y) * 0.5f
-						};
-						data.uvs.push_back(midUV);
-
-						midpointMap[key] = index;
-							return index;
-						};
-
-					auto oldIndices = data.indices;
-					data.indices.resize(data.indices.size() * 4);
-					for (std::size_t i = 0; i < oldIndices.size() / 3; i++)
-					{
-						std::size_t offset = i * 3;
-						std::uint32_t v0 = oldIndices[offset + 0];
-						std::uint32_t v1 = oldIndices[offset + 1];
-						std::uint32_t v2 = oldIndices[offset + 2];
-
-						std::uint32_t m01 = getMidpointIndex(v0, v1);
-						std::uint32_t m12 = getMidpointIndex(v1, v2);
-						std::uint32_t m20 = getMidpointIndex(v2, v0);
-
-						std::size_t triOffset = offset * 4;
-						data.indices[triOffset + 0] = v0;
-						data.indices[triOffset + 1] = m01;
-						data.indices[triOffset + 2] = m20;
-
-						data.indices[triOffset + 3] = v1;
-						data.indices[triOffset + 4] = m12;
-						data.indices[triOffset + 5] = m01;
-
-						data.indices[triOffset + 6] = v2;
-						data.indices[triOffset + 7] = m20;
-						data.indices[triOffset + 8] = m12;
-
-						data.indices[triOffset + 9] = m01;
-						data.indices[triOffset + 10] = m12;
-						data.indices[triOffset + 11] = m20;
-					}
-				}
-			}
-
-			ObjectInfo newObjInfo;
-			newObjInfo.info = data.geoInfo;
-			newObjInfo.vertexStart = vertices.size();
-			newObjInfo.uvStart = uvs.size();
-			newObjInfo.indicesStart = indices.size();
-
-			vertices.insert(vertices.end(), data.vertices.begin(), data.vertices.end());
-			uvs.insert(uvs.end(), data.uvs.begin(), data.uvs.end());
-
-			std::size_t triCount = data.indices.size() / 3;
-			std::vector<std::future<void>> processes;
-            const std::size_t sub = std::max((std::size_t)1, std::min(triCount, currentProcessingThreads.load()->GetThreads()));
-			const std::size_t unit = (triCount + sub - 1) / sub;
-			for (std::size_t t = 0; t < sub; t++) {
-				const std::size_t begin = t * unit;
-				const std::size_t end = std::min(begin + unit, triCount);
-                processes.push_back(currentProcessingThreads.load()->submitAsync([&, begin, end]() {
-					for (std::size_t i = begin; i < end; i++)
-					{
-						std::size_t offset = i * 3;
-						data.indices[offset + 0] += newObjInfo.vertexStart;
-						data.indices[offset + 1] += newObjInfo.vertexStart;
-						data.indices[offset + 2] += newObjInfo.vertexStart;
-					}
-				}));
-			}
-			for (auto& process : processes) {
-				process.get();
-			}
-
-			indices.insert(indices.end(), data.indices.begin(), data.indices.end());
-
-			newObjInfo.vertexEnd = vertices.size();
-			newObjInfo.uvEnd = uvs.size();
-			newObjInfo.indicesEnd = indices.size();
-
-			geometries.push_back(GeometriesInfo{ data.geometry, newObjInfo });
+			process.get();
 		}
+		for (std::size_t i = 0; i < subdividedDatas.size(); i++)
+        {
+            auto& data = subdividedDatas[i];
+            data.objInfo.info = data.geoInfo;
+            data.objInfo.vertexStart = vertices.size();
+            data.objInfo.uvStart = uvs.size();
+
+            vertices.append_range(data.vertices);
+            uvs.append_range(data.uvs);
+
+            data.objInfo.vertexEnd = vertices.size();
+            data.objInfo.uvEnd = uvs.size();
+
+            data.objInfo.indicesStart = indices.size();
+            std::size_t triCount = data.indices.size() / 3;
+            const std::size_t sub = std::max(1ull, std::min(triCount, currentProcessingThreads.load()->GetThreads()));
+            const std::size_t unit = (triCount + sub - 1) / sub;
+            processes.clear();
+            for (std::size_t t = 0; t < sub; t++)
+            {
+                const std::size_t begin = t * unit;
+                const std::size_t end = std::min(begin + unit, triCount);
+                processes.push_back(currentProcessingThreads.load()->submitAsync([&, begin, end]() {
+                    for (std::size_t i = begin; i < end; i++)
+                    {
+                        std::size_t offset = i * 3;
+                        data.indices[offset + 0] += data.objInfo.vertexStart;
+                        data.indices[offset + 1] += data.objInfo.vertexStart;
+                        data.indices[offset + 2] += data.objInfo.vertexStart;
+                    }
+                }));
+            }
+            for (auto& process : processes)
+            {
+                process.get();
+            }
+
+            indices.append_range(data.indices);
+            data.objInfo.indicesEnd = indices.size();
+
+            GeometriesInfo newGeoInfo = {
+                .geometry = data.geometry,
+                .objInfo = std::move(data.objInfo)
+            };
+            geometries.push_back(std::move(newGeoInfo));
+        }
 
 		logger::debug("{} : {} subdivition done", __func__, vertices.size());
 
@@ -793,7 +759,7 @@ namespace Mus {
 
 			auto tempVertices = vertices;
 			std::vector<std::future<void>> processes;
-            const std::size_t sub = std::max((std::size_t)1, std::min(vertices.size(), currentProcessingThreads.load()->GetThreads() * 8));
+            const std::size_t sub = std::max(1ull, std::min(vertices.size(), currentProcessingThreads.load()->GetThreads() * 8));
 			const std::size_t unit = (vertices.size() + sub - 1) / sub;
 			for (std::size_t t = 0; t < sub; t++) {
 				const std::size_t begin = t * unit;
@@ -837,9 +803,9 @@ namespace Mus {
 
 			if (Config::GetSingleton().GetGeometryDataTime())
 				PerformanceLog(std::string(__func__) + "::" + std::to_string(vertices.size()), true, false);
-
-			UpdateMapData();
-		}
+            
+            CreateFaceData();
+        }
 
 		logger::debug("{} : {} vertex smooth done", __func__, vertices.size());
 		return;
@@ -863,7 +829,7 @@ namespace Mus {
 
 			const auto tempVertices = vertices;
 			std::vector<std::future<void>> processes;
-            const std::size_t sub = std::max((std::size_t)1, std::min(vertices.size(), currentProcessingThreads.load()->GetThreads() * 8));
+            const std::size_t sub = std::max(1ull, std::min(vertices.size(), currentProcessingThreads.load()->GetThreads() * 8));
 			const std::size_t unit = (vertices.size() + sub - 1) / sub;
 			for (std::size_t t = 0; t < sub; t++) {
 				const std::size_t begin = t * unit;
@@ -928,9 +894,9 @@ namespace Mus {
 
 			if (Config::GetSingleton().GetGeometryDataTime())
 				PerformanceLog(std::string(__func__) + "::" + std::to_string(vertices.size()), true, false);
-
-			UpdateMapData();
-		}
+            
+            CreateFaceData();
+        }
 	}
 
 	void GeometryData::CreateGeometryHash()
@@ -941,13 +907,214 @@ namespace Mus {
         }
     }
 
-	float GeometryData::SmoothStepRange(float x, float A, float B)
-	{
-		if (x > A)
-			return 0.0f;
-		else if (x <= B)
-			return 1.0f;
-		const float t = (A - x) / (A - B);
-		return t * t * (3.0f - 2.0f * t);
-	}
+    void GeometryData::ApplyNormals()
+    {
+        for (auto& geo : geometries)
+        {
+            if (!geo.geometry)
+                continue;
+
+            const RE::NiPointer<RE::NiSkinPartition> skinPartition = GetSkinPartition(geo.geometry);
+            if (!skinPartition)
+                continue;
+            RE::NiPointer<RE::NiSkinPartition> newSkinPartition = nullptr;
+            {
+                RE::NiPointer<RE::NiObject> niObj;
+                skinPartition->CreateDeepCopy(niObj);
+                newSkinPartition = RE::NiPointer(netimmerse_cast<RE::NiSkinPartition*>(niObj.get()));
+            }
+            if (!newSkinPartition)
+                continue;
+
+            auto dynamicTriShape = geo.geometry->AsDynamicTriShape();
+            if (dynamicTriShape)
+                dynamicTriShape->GetDynamicTrishapeRuntimeData().lock.Lock();
+
+            auto oldVertexDesc = skinPartition->partitions[0].buffData->vertexDesc;
+            auto oldVertexSize = oldVertexDesc.GetSize();
+            bool hasVertices = oldVertexDesc.HasFlag(RE::BSGraphics::Vertex::Flags::VF_VERTEX);
+            bool hasUVs = oldVertexDesc.HasFlag(RE::BSGraphics::Vertex::Flags::VF_UV);
+            bool hasNormals = oldVertexDesc.HasFlag(RE::BSGraphics::Vertex::Flags::VF_NORMAL);
+            bool hasTangents = oldVertexDesc.HasFlag(RE::BSGraphics::Vertex::Flags::VF_TANGENT);
+            auto newVertexDesc = oldVertexDesc;
+            newVertexDesc.SetFlag(RE::BSGraphics::Vertex::Flags::VF_NORMAL);
+            newVertexDesc.SetFlag(RE::BSGraphics::Vertex::Flags::VF_TANGENT);
+
+            std::vector<std::uint8_t> newVertexBlocks(geo.objInfo.vertexCount() * newVertexDesc.GetSize());
+            auto round_v = [](float num) {
+                return (num > 0.0) ? floor(num + 0.5) : ceil(num - 0.5);
+            };
+            for (std::size_t i = 0; i < geo.objInfo.vertexCount(); i++)
+            {
+                std::uint8_t* srcBlock = &skinPartition->partitions[0].buffData->rawVertexData[i * oldVertexSize];
+                std::uint8_t* dstBlock = &newVertexBlocks[i * newVertexDesc.GetSize()];
+                std::uint32_t currentOffset = 0;
+                const std::uint32_t iOffset = i + geo.objInfo.vertexStart;
+                if (hasVertices)
+                {
+                    std::memcpy(dstBlock, srcBlock, 12); // X,Y,Z
+
+                    srcBlock += 12;
+                    dstBlock += 12;
+                    currentOffset += 12;
+
+                    std::memcpy(dstBlock, reinterpret_cast<std::uint8_t*>(&bitangents[iOffset].x), 4);
+                    srcBlock += 4;
+                    dstBlock += 4;
+                    currentOffset += 4;
+                }
+                if (hasUVs)
+                {
+                    std::memcpy(dstBlock, srcBlock, 4); // X,Y
+                    srcBlock += 4;
+                    dstBlock += 4;
+                    currentOffset += 4;
+                }
+
+                *reinterpret_cast<std::int8_t*>(dstBlock) = static_cast<std::uint8_t>(round_v(((normals[iOffset].x + 1.0f) / 2.0f) * 255.0f));
+                dstBlock += 1;
+                *reinterpret_cast<std::int8_t*>(dstBlock) = static_cast<std::uint8_t>(round_v(((normals[iOffset].y + 1.0f) / 2.0f) * 255.0f));
+                dstBlock += 1;
+                *reinterpret_cast<std::int8_t*>(dstBlock) = static_cast<std::uint8_t>(round_v(((normals[iOffset].z + 1.0f) / 2.0f) * 255.0f));
+                dstBlock += 1;
+                *reinterpret_cast<std::int8_t*>(dstBlock) = static_cast<std::uint8_t>(round_v(((bitangents[iOffset].y + 1.0f) / 2.0f) * 255.0f));
+                dstBlock += 1;
+
+                *reinterpret_cast<std::int8_t*>(dstBlock) = static_cast<std::uint8_t>(round_v(((tangents[iOffset].x + 1.0f) / 2.0f) * 255.0f));
+                dstBlock += 1;
+                *reinterpret_cast<std::int8_t*>(dstBlock) = static_cast<std::uint8_t>(round_v(((tangents[iOffset].y + 1.0f) / 2.0f) * 255.0f));
+                dstBlock += 1;
+                *reinterpret_cast<std::int8_t*>(dstBlock) = static_cast<std::uint8_t>(round_v(((tangents[iOffset].z + 1.0f) / 2.0f) * 255.0f));
+                dstBlock += 1;
+                *reinterpret_cast<std::int8_t*>(dstBlock) = static_cast<std::uint8_t>(round_v(((bitangents[iOffset].z + 1.0f) / 2.0f) * 255.0f));
+                dstBlock += 1;
+
+                if (hasNormals)
+                {
+                    srcBlock += 4;
+                    currentOffset += 4;
+                    if (hasTangents)
+                    {
+                        srcBlock += 4;
+                        currentOffset += 4;
+                    }
+                }
+
+                if (currentOffset < oldVertexSize)
+                    std::memcpy(dstBlock, srcBlock, oldVertexSize - currentOffset);
+            }
+            for (auto& partition : newSkinPartition->partitions)
+            {
+                if (!partition.buffData)
+                    continue;
+                partition.vertexDesc.SetFlag(RE::BSGraphics::Vertex::Flags::VF_NORMAL);
+                partition.vertexDesc.SetFlag(RE::BSGraphics::Vertex::Flags::VF_TANGENT);
+                partition.buffData->vertexDesc.SetFlag(RE::BSGraphics::Vertex::Flags::VF_NORMAL);
+                partition.buffData->vertexDesc.SetFlag(RE::BSGraphics::Vertex::Flags::VF_TANGENT);
+            }
+            geo.geometry->GetGeometryRuntimeData().vertexDesc.SetFlag(RE::BSGraphics::Vertex::Flags::VF_NORMAL);
+            geo.geometry->GetGeometryRuntimeData().vertexDesc.SetFlag(RE::BSGraphics::Vertex::Flags::VF_TANGENT);
+            if (dynamicTriShape)
+                dynamicTriShape->GetDynamicTrishapeRuntimeData().lock.Unlock();
+
+            for (auto& partition : newSkinPartition->partitions)
+            {
+                if (oldVertexSize != newVertexDesc.GetSize())
+                {
+                    partition.buffData->rawVertexData = reinterpret_cast<std::uint8_t*>(RE::malloc(newVertexBlocks.size()));
+                }
+                memcpy(partition.buffData->rawVertexData, newVertexBlocks.data(), newVertexBlocks.size());
+            }
+
+            auto context = Shader::ShaderManager::GetSingleton().GetContext();
+            Shader::ShaderLocker sl(context);
+            {
+                Shader::ShaderLockGuard slg(sl);
+                auto skinInstance = geo.geometry->GetGeometryRuntimeData().skinInstance;
+                EnterCriticalSection(&skinInstance->lock);
+
+                auto rendererData = geo.geometry->GetGeometryRuntimeData().rendererData;
+                if (rendererData)
+                {
+                    rendererData->vertexDesc.SetFlag(RE::BSGraphics::Vertex::Flags::VF_NORMAL);
+                    rendererData->vertexDesc.SetFlag(RE::BSGraphics::Vertex::Flags::VF_TANGENT);
+                }
+
+                D3D11_BUFFER_DESC desc;
+                reinterpret_cast<ID3D11Buffer*>(newSkinPartition->partitions[0].buffData->vertexBuffer)->GetDesc(&desc);
+                if (desc.Usage != D3D11_USAGE_DYNAMIC)
+                {
+                    D3D11_BUFFER_DESC newDesc = desc;
+                    newDesc.Usage = D3D11_USAGE_DYNAMIC;
+                    newDesc.CPUAccessFlags |= D3D11_CPU_ACCESS_WRITE;
+                    newDesc.ByteWidth = newVertexBlocks.size();
+
+                    Microsoft::WRL::ComPtr<ID3D11Buffer> buffer = nullptr;
+                    D3D11_SUBRESOURCE_DATA data;
+                    data.pSysMem = newSkinPartition->partitions[0].buffData->rawVertexData;
+                    data.SysMemPitch = newVertexBlocks.size();
+                    data.SysMemSlicePitch = 0;
+
+                    if (SUCCEEDED(Shader::ShaderManager::GetSingleton().GetDevice()->CreateBuffer(&newDesc, &data, &buffer)))
+                    {
+                        for (auto& partition : newSkinPartition->partitions)
+                        {
+                            auto oldVertexBuffer = reinterpret_cast<ID3D11Buffer*>(partition.buffData->vertexBuffer);
+                            partition.buffData->vertexBuffer = reinterpret_cast<RE::ID3D11Buffer*>(buffer.Get());
+                            buffer->AddRef();
+                            oldVertexBuffer->Release();
+                        }
+                        if (rendererData)
+                        {
+                            rendererData->vertexBuffer = newSkinPartition->partitions[0].buffData->vertexBuffer;
+                            buffer->AddRef();
+                        }
+                        desc = newDesc;
+                    }
+                }
+                if (desc.CPUAccessFlags & D3D11_CPU_ACCESS_WRITE)
+                {
+                    D3D11_MAPPED_SUBRESOURCE mappedResource;
+                    auto vertexBuffer = reinterpret_cast<ID3D11Buffer*>(newSkinPartition->partitions[0].buffData->vertexBuffer);
+                    if (context->Map(vertexBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource) == S_OK)
+                    {
+                        memcpy(mappedResource.pData, newSkinPartition->partitions[0].buffData->rawVertexData, newVertexBlocks.size());
+                        context->Unmap(vertexBuffer, 0);
+                    }
+
+                    for (std::uint32_t p = 1; p < newSkinPartition->partitions.size(); p++)
+                    {
+                        if (newSkinPartition->partitions[p].buffData->vertexBuffer != newSkinPartition->partitions[0].buffData->vertexBuffer)
+                        {
+                            context->CopyResource(
+                                reinterpret_cast<ID3D11Buffer*>(newSkinPartition->partitions[p].buffData->vertexBuffer),
+                                vertexBuffer);
+                        }
+                    }
+                    /*for (std::uint32_t p = 1; p < newSkinPartition->partitions.size(); p++)
+                    {
+                        if (newSkinPartition->partitions[p].buffData->vertexBuffer != newSkinPartition->partitions[0].buffData->vertexBuffer)
+                        {
+                            if (context->Map(reinterpret_cast<ID3D11Buffer*>(newSkinPartition->partitions[p].buffData->vertexBuffer), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource) == S_OK)
+                            {
+                                memcpy(mappedResource.pData, newSkinPartition->partitions[p].buffData->rawVertexData, newVertexBlocks.size());
+                                context->Unmap(reinterpret_cast<ID3D11Buffer*>(newSkinPartition->partitions[p].buffData->vertexBuffer), 0);
+                            }
+                        }
+                    }*/
+                }
+                if (rendererData)
+                {
+                    if (oldVertexSize != newVertexDesc.GetSize())
+                    {
+                        rendererData->rawVertexData = reinterpret_cast<std::uint8_t*>(RE::malloc(newVertexBlocks.size()));
+                    }
+                    memcpy(rendererData->rawVertexData, newVertexBlocks.data(), newVertexBlocks.size());
+                }
+
+                LeaveCriticalSection(&skinInstance->lock);
+                skinInstance->skinPartition = newSkinPartition;
+            }
+        }
+    }
 }

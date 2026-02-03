@@ -1,38 +1,38 @@
 #pragma once
 
 namespace Mus {
-	typedef std::uint32_t bSlot; //RE::BIPED_OBJECT
-	typedef std::uint32_t bSlotbit; //1 << bSlot
+    typedef std::uint32_t bSlot;    // RE::BIPED_OBJECT
+    typedef std::uint32_t bSlotbit; // 1 << bSlot
 
-	struct TaskID {
-		RE::FormID refrID;
-		std::string taskName;
-		std::int64_t taskID;
-	};
+    struct TaskID {
+        RE::FormID refrID;
+        std::string taskName;
+        std::int64_t taskID;
+    };
 
-	struct UpdateTextureSet {
-		bSlot slot = 0;
+    struct UpdateTextureSet {
+        bSlot slot = 0;
 
-		std::string geometryName;
-		std::string textureName;
-		std::string srcTexturePath;
-		std::string detailTexturePath;
-		std::string overlayTexturePath;
-		std::string maskTexturePath;
-		float detailStrength = 0.5f;
-	};
-	typedef std::unordered_map<RE::BSGeometry*, UpdateTextureSet> UpdateSet;
+        std::string geometryName;
+        std::string textureName;
+        std::string srcTexturePath;
+        std::string detailTexturePath;
+        std::string overlayTexturePath;
+        std::string maskTexturePath;
+        float detailStrength = 0.5f;
+    };
+    typedef std::vector<std::pair<RE::BSGeometry*, UpdateTextureSet>> UpdateSet;
 
-	struct TextureInfo {
-		RE::FormID actorID;
-		bSlot bipedSlot;
-		std::string texturePath;
-	};
+    struct TextureInfo {
+        RE::FormID actorID;
+        bSlot bipedSlot;
+        std::string texturePath;
+    };
 
-	struct TextureResource {
-		Microsoft::WRL::ComPtr<ID3D11Texture2D> normalmapTexture2D = nullptr;
-		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> normalmapShaderResourceView = nullptr;
+    struct TextureResource {
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> normalmapTexture2D = nullptr;
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> normalmapShaderResourceView = nullptr;
         Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> normalmapUnorderedAccessView = nullptr;
-	};
-	typedef std::shared_ptr<TextureResource> TextureResourcePtr;
-}
+    };
+    typedef std::shared_ptr<TextureResource> TextureResourcePtr;
+} // namespace Mus

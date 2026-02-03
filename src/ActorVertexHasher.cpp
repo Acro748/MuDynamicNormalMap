@@ -3,8 +3,7 @@
 namespace Mus {
 	void ActorVertexHasher::Init()
 	{
-		if (const auto NiNodeEvent = SKSE::GetNiNodeUpdateEventSource(); NiNodeEvent)
-			NiNodeEvent->AddEventSink<SKSE::NiNodeUpdateEvent>(this);
+
 	}
 
 	void ActorVertexHasher::onEvent(const FrameEvent& e)
@@ -65,20 +64,45 @@ namespace Mus {
 			return false;
 		if (IsInvalidActor(a_actor))
 			return false;
-		actorHashLock.lock_shared();
-		if (actorHash.find(a_actor->formID) == actorHash.end())
+        std::lock_guard lg(actorHashLock);
+        auto actorIt = actorHash.find(a_actor->formID);
+        if (actorIt == actorHash.end())
 		{
 			auto condition = ConditionManager::GetSingleton().GetCondition(a_actor);
-			actorHash[a_actor->formID].IsDynamicTriShapeAsHead = condition.DynamicTriShapeAsHead;
+            actorHash[a_actor->formID].IsDynamicTriShapeAsHead = condition.DynamicTriShapeAsHead;
+            actorIt = actorHash.find(a_actor->formID);
+            if (actorIt == actorHash.end())
+                return false;
 		}
-		auto found = actorHash[a_actor->formID].hash.find(a_geo);
-		if (found == actorHash[a_actor->formID].hash.end())
+        auto hashIt = actorIt->second.hash.find(a_geo);
+        if (hashIt != actorIt->second.hash.end())
+        {
+            hashIt->second->SetCheckTexture(false);
+            return hashIt->second->Update(a_geo);
+		}
+		else
 		{
-			actorHash[a_actor->formID].hash.insert(std::make_pair(a_geo, std::make_shared<Hash>(a_geo)));
-			logger::debug("{:x} {} {}: registered for ActorVertexHasher", a_actor->formID, a_actor->GetName(), a_geo->name.c_str());
+            auto newHash = std::make_shared<Hash>(a_geo);
+            newHash->SetCheckTexture(false);
+            newHash->Update(a_geo);
+            actorIt->second.hash.insert(std::make_pair(a_geo, newHash));
+            logger::debug("{:x} {} {}: registered for ActorVertexHasher", a_actor->formID, a_actor->GetName(), a_geo->name.c_str());
 		}
-		actorHashLock.unlock_shared();
-		return true;
+        return true;
+    }
+	bool ActorVertexHasher::RegisterCheckTexture(RE::Actor* a_actor, RE::BSGeometry* a_geo)
+	{
+        if (!Config::GetSingleton().GetDetectTextureChange())
+            return true;
+        std::lock_guard lg(actorHashLock);
+        auto actorIt = actorHash.find(a_actor->formID);
+        if (actorIt == actorHash.end())
+            return false;
+        auto hashIt = actorIt->second.hash.find(a_geo);
+        if (hashIt == actorIt->second.hash.end())
+            return false;
+        hashIt->second->SetCheckTexture(true);
+        return true;
 	}
 
 	void ActorVertexHasher::CheckingActorHash()
@@ -92,33 +116,35 @@ namespace Mus {
 		const std::string funcName = __func__;
 		auto cameraPosition = camera->GetRuntimeData2().pos;
 
-		auto actorHashFunc = [&, funcName, cameraPosition](std::pair<RE::FormID, GeometryHashData> map) {
-			RE::NiPointer<RE::Actor> actor = RE::NiPointer(GetFormByID<RE::Actor*>(map.first));
-			if (!actor || !actor->loadedData || !actor->loadedData->data3D)
+		auto actorHashFunc = [&, funcName, cameraPosition](const RE::FormID& id, GeometryHashData& data) {
+			RE::NiPointer<RE::Actor> actor = RE::NiPointer(GetFormByID<RE::Actor*>(id));
+            if (IsInvalidActor(actor.get()))
 			{
-				actorHashLock.lock();
-				actorHash.unsafe_erase(map.first);
-				actorHashLock.unlock();
-				return;
+				return false;
 			}
 			if (Config::GetSingleton().GetActorVertexHasherTime2())
-				PerformanceLog(funcName + "::" + GetHexStr(map.first), false, true);
+				PerformanceLog(funcName + "::" + GetHexStr(id), false, true);
 
 			if (IsBlocked(actor->formID))
-				return;
+				return true;
 			if (!IsPlayer(actor->formID) && (Config::GetSingleton().GetDetectDistance() > floatPrecision && cameraPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) > Config::GetSingleton().GetDetectDistance()))
-				return;
-			if (!GetHash(actor.get(), map.second.hash))
-				return;
+                return true;
+            if (!GetHash(actor.get(), data.hash))
+                return true;
 
 			bSlotbit bipedSlot = 0;
-			for (auto& hash : map.second.hash)
-			{
+            for (auto& hash : data.hash)
+            {
+                bSlot slot = nif::GetBipedSlot(hash.first, data.IsDynamicTriShapeAsHead);
 				if (hash.second->GetHash() != hash.second->GetOldHash())
 				{
-					bSlot slot = nif::GetBipedSlot(hash.first, map.second.IsDynamicTriShapeAsHead);
 					bipedSlot |= 1 << slot;
 					logger::trace("{:x} {} {} : found different hash {:x}", actor->formID, actor->GetName(), slot, hash.second->GetHash());
+				}
+				else if (hash.second->IsChangedTexture())
+				{
+                    bipedSlot = TaskManager::BipedObjectSlot::kAll;
+                    logger::trace("{:x} {} {} : found different texture", actor->formID, actor->GetName(), slot);
 				}
 			}
 			if (bipedSlot > 0)
@@ -128,7 +154,8 @@ namespace Mus {
 			}
 
 			if (Config::GetSingleton().GetActorVertexHasherTime2())
-				PerformanceLog(funcName + "::" + GetHexStr(map.first), true, true);
+				PerformanceLog(funcName + "::" + GetHexStr(id), true, true);
+            return true;
 		};
 
 		if (Config::GetSingleton().GetRealtimeDetectOnBackGround())
@@ -136,26 +163,31 @@ namespace Mus {
 			if (Config::GetSingleton().GetActorVertexHasherTime1())
 				PerformanceLog(funcName, false, true);
 
-			blockActorsLock.lock();
-			blockActors.clear();
-			blockActorsLock.unlock();
+			{
+                std::lock_guard lg(blockActorsLock);
+                blockActors.clear();
+            }
 
 			backGroundHasherThreads->submitAsync([&, actorHashFunc, funcName]() {
 				isDetecting.store(true);
-
-				actorHashLock.lock_shared();
-				auto ActorHash_ = actorHash;
-				actorHashLock.unlock_shared();
-
-				for (auto& map : ActorHash_) {
-					actorHashFunc(map);
-				}
-				
-				if (Config::GetSingleton().GetActorVertexHasherTime1())
-					PerformanceLog(funcName, true, true, ActorHash_.size());
-
+				{
+                    std::lock_guard lg(actorHashLock);
+                    for (auto it = actorHash.begin(); it != actorHash.end();)
+                    {
+						if (!actorHashFunc(it->first, it->second))
+						{
+                            it = actorHash.erase(it);
+						}
+						else
+                        {
+                            it++;
+						}
+                    }
+                    if (Config::GetSingleton().GetActorVertexHasherTime1())
+                        PerformanceLog(funcName, true, true, actorHash.size());
+                    logger::trace("Check hashes done {}", actorHash.size());
+                }
 				isDetecting.store(false);
-				logger::trace("Check hashes done {}", ActorHash_.size());
 			});
 		}
 		else
@@ -163,16 +195,20 @@ namespace Mus {
 			if (Config::GetSingleton().GetActorVertexHasherTime1())
 				PerformanceLog(std::string(__func__), false, true);
 
-			actorHashLock.lock_shared();
-			auto ActorHash_ = actorHash;
-			actorHashLock.unlock_shared();
-			concurrency::parallel_for_each(ActorHash_.begin(), ActorHash_.end(), [&](auto& map) {
-				actorHashFunc(map);
+            std::lock_guard lg(actorHashLock);
+            concurrency::concurrent_vector<RE::FormID> garbages;
+            concurrency::parallel_for_each(actorHash.begin(), actorHash.end(), [&](auto& map) {
+				if (!actorHashFunc(map.first, map.second))
+                    garbages.push_back(map.first);
 			});
-			logger::trace("Check hashes done {}", ActorHash_.size());
+            for (auto& id : garbages)
+            {
+                actorHash.erase(id);
+            }
+            logger::trace("Check hashes done {}", actorHash.size());
 
 			if (Config::GetSingleton().GetActorVertexHasherTime1())
-				PerformanceLog(std::string(__func__), true, true, ActorHash_.size());
+                PerformanceLog(std::string(__func__), true, true, actorHash.size());
 		}
 	}
 
@@ -181,13 +217,12 @@ namespace Mus {
 		if (IsInvalidActor(a_actor))
 			return false;
 		if (IsBlocked(a_actor->formID))
-			return false;
+            return false;
 
 		if (Config::GetSingleton().GetActorVertexHasherTime2())
 			PerformanceLog(std::string(__func__), false, false);
 
 		std::unordered_set<RE::BSGeometry*> existGeometries;
-		auto data_ = data;
 		auto root = a_actor->loadedData->data3D;
 		RE::BSVisit::TraverseScenegraphGeometries(root.get(), [&](RE::BSGeometry* geo) -> RE::BSVisit::BSVisitControl {
 			using State = RE::BSGeometry::States;
@@ -196,7 +231,7 @@ namespace Mus {
 				return RE::BSVisit::BSVisitControl::kStop;
 			if (!geo || geo->name.empty())
 				return RE::BSVisit::BSVisitControl::kContinue;
-			auto found = data_.find(geo);
+            auto found = data.find(geo);
 			if (found == data.end())
 				return RE::BSVisit::BSVisitControl::kContinue;
 			if (found->second->Update(geo))
@@ -204,11 +239,13 @@ namespace Mus {
 			return RE::BSVisit::BSVisitControl::kContinue;
 		});
 
-		for (auto& d : data_) {
-			if (existGeometries.find(d.first) != existGeometries.end())
-				continue;
-			data.unsafe_erase(d.first);
-		}
+		for (auto it = data.begin(); it != data.end();)
+		{
+			if (existGeometries.find(it->first) == existGeometries.end())
+				it = data.erase(it);
+			else
+				it++;
+        }
 
 		if (Config::GetSingleton().GetActorVertexHasherTime2())
 			PerformanceLog(std::string(__func__), true, false);
@@ -254,6 +291,19 @@ namespace Mus {
 				return false;
 			Update(skinPartition->partitions[0].buffData->rawVertexData, sizeof(std::uint8_t) * vertexCount * desc.GetSize());
 		}
+
+		if (isCheckTexture)
+        {
+            using State = RE::BSGeometry::States;
+            using Feature = RE::BSShaderMaterial::Feature;
+            auto effect = a_geo->GetGeometryRuntimeData().properties[State::kEffect].get();
+            auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
+            RE::BSLightingShaderMaterialBase* material = skyrim_cast<RE::BSLightingShaderMaterialBase*>(lightingShader->material);
+            if (material && material->normalTexture && !material->normalTexture->name.empty())
+            {
+                isMDNMTexture = IsCreatedByMDNM(material->normalTexture->name.c_str());
+            }
+        }
 		GetNewHash();
 		return true;
 	}
