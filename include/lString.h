@@ -153,7 +153,7 @@ namespace std {
     template <>
     struct hash<Mus::lString> {
         size_t operator()(const Mus::lString& k) const {
-            return std::hash<std::string>()(static_cast<const std::string&>(k));
+            return std::hash<std::string>()(k.string());
         }
     };
 } // namespace std
@@ -162,7 +162,7 @@ namespace fmt {
     template <>
     struct formatter<Mus::lString> : formatter<std::string> {
         auto format(const Mus::lString& obj, format_context& ctx) const {
-            return formatter<std::string>::format(static_cast<const std::string&>(obj), ctx);
+            return formatter<std::string>::format(obj.string(), ctx);
         }
     };
 } // namespace fmt

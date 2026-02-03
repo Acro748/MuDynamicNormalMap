@@ -1031,7 +1031,9 @@ namespace Mus {
             {
                 Shader::ShaderLockGuard slg(sl);
                 auto skinInstance = geo.geometry->GetGeometryRuntimeData().skinInstance;
+#ifdef SKYRIM_CROSS_VR
                 EnterCriticalSection(&skinInstance->lock);
+#endif
 
                 auto rendererData = geo.geometry->GetGeometryRuntimeData().rendererData;
                 if (rendererData)
@@ -1111,8 +1113,9 @@ namespace Mus {
                     }
                     memcpy(rendererData->rawVertexData, newVertexBlocks.data(), newVertexBlocks.size());
                 }
-
+#ifdef SKYRIM_CROSS_VR
                 LeaveCriticalSection(&skinInstance->lock);
+#endif
                 skinInstance->skinPartition = newSkinPartition;
             }
         }
