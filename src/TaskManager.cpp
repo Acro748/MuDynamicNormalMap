@@ -86,7 +86,6 @@ namespace Mus {
 
 	void TaskManager::RunUpdateQueue()
 	{
-
 		if (Config::GetSingleton().GetQueueTime())
 			PerformanceLog(std::string("updateSlotQueue"), false, false);
 
@@ -1125,7 +1124,7 @@ namespace Mus {
                     it++;
                     continue;
                 }
-                if (GetIsUpdating(actor->formID))
+                if (GetIsUpdating(it->first))
                 {
                     it++;
                     continue;
