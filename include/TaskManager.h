@@ -117,8 +117,9 @@ namespace Mus {
 
 		std::string FixTexturePath(std::string texturePath);
 
-		typedef concurrency::concurrent_unordered_map<RE::FormID, bSlotbit> UpdateSlotQueue;
+		typedef std::unordered_map<RE::FormID, bSlotbit> UpdateSlotQueue;
         UpdateSlotQueue updateSlotQueue;
+        mutable std::mutex updateSlotQueueLock;
 
 		std::unordered_map<RE::FormID, bool> isActiveActors; // ActorID, isActive
         mutable std::shared_mutex isActiveActorsLock;
@@ -141,27 +142,23 @@ namespace Mus {
             return it != isUpdating.end() ? it->second : false;
         }
 
-		struct SlotTexKey {
-			bSlot slot;
-			std::string textureName;
-			bool operator==(const SlotTexKey& other) const {
-				return slot == other.slot && textureName == other.textureName;
-			}
+		class LastNormalMapData {
+            std::string textureName = "";
+        public:
+            LastNormalMapData() {};
+            LastNormalMapData(const std::string& a_textureName) noexcept : textureName(a_textureName) {};
+			~LastNormalMapData() noexcept { 
+				if (!textureName.empty())
+					Shader::TextureLoadManager::GetSingleton().ReleaseNiTexture(textureName); 
+			};
+
+			std::string GetTextureName() const { return textureName; };
 		};
-		struct SlotTexHash {
-			std::size_t operator()(const SlotTexKey k) const {
-				std::size_t h1 = std::hash<std::uint32_t>()(k.slot);
-				std::size_t h2 = std::hash<std::string>()(k.textureName);
-				return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
-			}
-		};
-		typedef std::unordered_set<SlotTexKey, SlotTexHash> SlotTexSet;
-        std::unordered_map<RE::FormID, SlotTexSet> lastNormalMap;
+        typedef std::unordered_map<bSlot, LastNormalMapData> LastNormalMapSet;
+        std::unordered_map<RE::FormID, LastNormalMapSet> lastNormalMap;
         mutable std::shared_mutex lastNormalMapLock;
 
 		void ReleaseResourceOnUnloadActors();
-
 		void ReleaseNormalMap(RE::FormID a_actorID, bSlot a_slot);
-        void ReleaseNormalMap(const SlotTexSet& textures) const;
 	};
 }

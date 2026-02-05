@@ -252,7 +252,7 @@ namespace Mus {
 
         std::vector<PosEntry> pMap(vertCount);
         std::vector<PosEntry> pbMap;
-        std::vector < std::vector<PosEntry>> tpbMap;
+        std::vector<std::vector<PosEntry>> tpbMap;
         processes.clear();
         {
             const std::size_t sub = std::max(1ull, std::min(vertCount, currentProcessingThreads.load()->GetThreads() * 4));

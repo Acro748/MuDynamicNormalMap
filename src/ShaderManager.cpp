@@ -399,9 +399,9 @@ namespace Mus {
 			{
 				if (GetContext())
 				{
-					ShaderContextLock();
+                    ShaderLocker sl(GetContext());
+                    ShaderLockGuard slg(sl);
 					GetContext()->GetDevice(&device_);
-					ShaderContextUnlock();
 				}
 			}
 			return device_;
@@ -750,10 +750,13 @@ namespace Mus {
 			if (!device || !context)
 				return false;
 
+            HRESULT hr;
 			DirectX::ScratchImage image;
-			ShaderManager::GetSingleton().ShaderContextLock();
-			HRESULT hr = DirectX::CaptureTexture(device, context, texture, image);
-			ShaderManager::GetSingleton().ShaderContextUnlock();
+            {
+                ShaderLocker sl(context);
+                ShaderLockGuard slg(sl);
+                hr = DirectX::CaptureTexture(device, context, texture, image);
+            }
 			if (FAILED(hr))
 			{
 				logger::error("Failed to capture texture ({})", hr);

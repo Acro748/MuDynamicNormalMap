@@ -42,8 +42,8 @@ namespace Mus {
 			inline void ShaderSecondContextUnlock() { LeaveCriticalSection(&subContextLock); };
 			inline void SetSearchSecondGPU(bool isSearch) { isSearchSecondGPU = isSearch; };
 
-			bool IsSecondGPUResource(ID3D11DeviceContext* context) { return context == secondContext_.Get(); };
-			bool IsSecondGPUResource(ID3D11Device* device) { return device == secondDevice_.Get(); };
+			bool IsSecondGPUResource(ID3D11DeviceContext* context) const { return context == secondContext_.Get(); };
+            bool IsSecondGPUResource(ID3D11Device* device) const { return device == secondDevice_.Get(); };
 
 			bool IsFailedShader(std::string shaderName);
 
@@ -128,6 +128,139 @@ namespace Mus {
 
 		private:
             ShaderLocker& sl;
+		};
+
+		class MapGuard {
+        public:
+            MapGuard() = delete;
+            MapGuard(ID3D11DeviceContext* a_context, ID3D11Resource* a_resource, UINT a_mipLevel, D3D11_MAP a_mapType, bool a_needLock = true)
+                : context(a_context), resource(a_resource), mipLevel(a_mipLevel), mapType(a_mapType), needLock(a_needLock) { Map(); }
+            ~MapGuard() { Unmap(); }
+
+            MapGuard(const MapGuard&) = delete;
+            MapGuard& operator=(const MapGuard&) = delete;
+            MapGuard& operator=(MapGuard&& other) = delete;
+
+            MapGuard(MapGuard&& other) noexcept
+                : context(other.context), resource(other.resource), mipLevel(other.mipLevel), mapType(other.mapType), needLock(other.needLock)
+				, mapped(other.mapped), success(other.success), hr(other.hr) {
+                other.success = false;
+                other.context = nullptr;
+            }
+
+			bool IsValid() const { return success; }
+            HRESULT GetHR() const { return hr; }
+			template <typename T>
+            T* Get() const { return success ? reinterpret_cast<T*>(mapped.pData) : nullptr; }
+            UINT GetRowPitch() const { return success ? mapped.RowPitch : 0; }
+            UINT GetDepthPitch() const { return success ? mapped.DepthPitch : 0; }
+
+        private:
+            ID3D11DeviceContext* context;
+            ID3D11Resource* resource;
+            const D3D11_MAP mapType;
+            const UINT mipLevel;
+            const bool needLock = true;
+            D3D11_MAPPED_SUBRESOURCE mapped;
+            bool success = false;
+            HRESULT hr;
+            void Map() {
+                if (!context || !resource)
+                    return;
+                if (needLock) {
+                    ShaderLocker sl(context);
+                    ShaderLockGuard slg(sl);
+                    hr = context->Map(resource, mipLevel, mapType, 0, &mapped);
+                } 
+				else
+                    hr = context->Map(resource, mipLevel, mapType, 0, &mapped);
+
+				if (FAILED(hr)) {
+                    success = false;
+                    return;
+				}
+                success = true;
+            };
+			void Unmap() {
+                if (!success || !resource)
+                    return;
+                if (needLock) {
+                    if (!context)
+                        return;
+                    ShaderLocker sl(context);
+                    ShaderLockGuard slg(sl);
+                    context->Unmap(resource, mipLevel);
+                } 
+				else
+                    context->Unmap(resource, mipLevel);
+                success = false;
+			}
+		};
+
+		class MultiMapGuard {
+        public:
+            MultiMapGuard() = delete;
+            MultiMapGuard(ID3D11DeviceContext* a_context, ID3D11Resource* a_resource, UINT a_mipLevels, D3D11_MAP a_mapType, bool a_needLock = true)
+                : context(a_context), resource(a_resource), mipLevels(a_mipLevels), mapType(a_mapType), needLock(a_needLock) { Map(); };
+            ~MultiMapGuard() { Unmap(); };
+
+            MultiMapGuard(const MultiMapGuard&) = delete;
+            MultiMapGuard(MultiMapGuard&&) = delete;
+            MultiMapGuard& operator=(const MultiMapGuard&) = delete;
+            MultiMapGuard& operator=(MultiMapGuard&& other) = delete;
+
+            bool IsValid() const {
+                return mgs.empty() ? false : std::ranges::all_of(mgs.cbegin(), mgs.cend(), [](const MapGuard& mg) { return mg.IsValid(); });
+            }
+            HRESULT GetHR() const {
+                for (const auto& mg : mgs) {
+                    if (!mg.IsValid())
+                        return mg.GetHR();
+                }
+                return S_OK;
+            }
+			template <typename T>
+            T* Get(UINT a_mipLevel) const { return mgs[a_mipLevel].IsValid() ? mgs[a_mipLevel].Get<T>() : nullptr; }
+            UINT GetRowPitch(UINT a_mipLevel) const { return mgs[a_mipLevel].IsValid() ? mgs[a_mipLevel].GetRowPitch() : 0; }
+            UINT GetDepthPitch(UINT a_mipLevel) const { return mgs[a_mipLevel].IsValid() ? mgs[a_mipLevel].GetDepthPitch() : 0; }
+
+        private:
+            ID3D11DeviceContext* context;
+            ID3D11Resource* resource;
+            const D3D11_MAP mapType;
+            const UINT mipLevels;
+            const bool needLock = true;
+            std::vector<MapGuard> mgs;
+
+			void Map() {
+                if (!context || !resource)
+                    return;
+                if (needLock) {
+                    ShaderLocker sl(context);
+                    ShaderLockGuard slg(sl);
+                    for (UINT mipLevel = 0; mipLevel < mipLevels; mipLevel++) {
+                        mgs.emplace_back(context, resource, mipLevel, mapType, false);
+                    }
+				} 
+				else {
+                    for (UINT mipLevel = 0; mipLevel < mipLevels; mipLevel++) {
+                        mgs.emplace_back(context, resource, mipLevel, mapType, false);
+                    }
+				}
+            };
+
+			void Unmap() {
+                if (needLock) {
+					if (!context)
+						return;
+                    ShaderLocker sl(context);
+                    ShaderLockGuard slg(sl);
+                    mgs.clear();
+				} 
+				else {
+                    mgs.clear();
+				}
+            };
 		};
 
 		class TextureLoadManager {

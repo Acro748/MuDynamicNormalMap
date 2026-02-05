@@ -524,38 +524,38 @@ namespace Mus {
                 continue;
             }
 
-            D3D11_MAPPED_SUBRESOURCE dstMappedResource, srcMappedResource, detailMappedResource, overlayMappedResource, maskMappedResource;
-            std::uint8_t* srcData = nullptr;
-            std::uint8_t* detailData = nullptr;
-            std::uint8_t* overlayData = nullptr;
-            std::uint8_t* maskData = nullptr;
-
-			{
-                Shader::ShaderLockGuard slg(sl);
-                hr = context->Map(dstTexture2D.Get(), 0, D3D11_MAP_WRITE, 0, &dstMappedResource);
-                if (newResourceData->srcTexture2D)
-                {
-                    hr = context->Map(newResourceData->srcTexture2D.Get(), 0, D3D11_MAP_READ, 0, &srcMappedResource);
-                    srcData = reinterpret_cast<std::uint8_t*>(srcMappedResource.pData);
-                }
-                if (newResourceData->detailTexture2D)
-                {
-                    hr = context->Map(newResourceData->detailTexture2D.Get(), 0, D3D11_MAP_READ, 0, &detailMappedResource);
-                    detailData = reinterpret_cast<std::uint8_t*>(detailMappedResource.pData);
-                }
-                if (newResourceData->overlayTexture2D)
-                {
-                    hr = context->Map(newResourceData->overlayTexture2D.Get(), 0, D3D11_MAP_READ, 0, &overlayMappedResource);
-                    overlayData = reinterpret_cast<std::uint8_t*>(overlayMappedResource.pData);
-                }
-                if (newResourceData->maskTexture2D)
-                {
-                    hr = context->Map(newResourceData->maskTexture2D.Get(), 0, D3D11_MAP_READ, 0, &maskMappedResource);
-                    maskData = reinterpret_cast<std::uint8_t*>(maskMappedResource.pData);
-                }
+			Shader::MapGuard dstmg(context, dstTexture2D.Get(), 0, D3D11_MAP_WRITE);
+            if (!dstmg.IsValid())
+            {
+                logger::error("{}::{:x}::{} : Failed to map dst texture ({})", _func_, a_actorID, update.second.geometryName, dstmg.GetHR());
+                continue;
+            }
+            Shader::MapGuard srcmg(context, newResourceData->srcTexture2D.Get(), 0, D3D11_MAP_READ);
+            if (newResourceData->srcTexture2D && !srcmg.IsValid())
+            {
+                logger::error("{}::{:x}::{} : Failed to map src texture ({})", _func_, a_actorID, update.second.geometryName, srcmg.GetHR());
+			}
+            Shader::MapGuard detailmg(context, newResourceData->detailTexture2D.Get(), 0, D3D11_MAP_READ);
+            if (newResourceData->detailTexture2D && !detailmg.IsValid())
+            {
+                logger::error("{}::{:x}::{} : Failed to map detail texture ({})", _func_, a_actorID, update.second.geometryName, detailmg.GetHR());
+            }
+            Shader::MapGuard overlaymg(context, newResourceData->overlayTexture2D.Get(), 0, D3D11_MAP_READ);
+            if (newResourceData->overlayTexture2D && !overlaymg.IsValid())
+            {
+                logger::error("{}::{:x}::{} : Failed to map overlay texture ({})", _func_, a_actorID, update.second.geometryName, overlaymg.GetHR());
+            }
+            Shader::MapGuard maskmg(context, newResourceData->maskTexture2D.Get(), 0, D3D11_MAP_READ);
+            if (newResourceData->maskTexture2D && !maskmg.IsValid())
+            {
+                logger::error("{}::{:x}::{} : Failed to map mask texture ({})", _func_, a_actorID, update.second.geometryName, maskmg.GetHR());
             }
 
-            std::uint8_t* dstData = reinterpret_cast<std::uint8_t*>(dstMappedResource.pData);
+            std::uint8_t* dstData = dstmg.Get<std::uint8_t>();
+            std::uint8_t* srcData = srcmg.IsValid() ? srcmg.Get<std::uint8_t>() : nullptr;
+            std::uint8_t* detailData = detailmg.IsValid() ? detailmg.Get<std::uint8_t>() : nullptr; 
+            std::uint8_t* overlayData = overlaymg.IsValid() ? overlaymg.Get<std::uint8_t>() : nullptr;
+            std::uint8_t* maskData = maskmg.IsValid() ? maskmg.Get<std::uint8_t>() : nullptr;
 
             const UINT width = dstDesc.Width;
             const UINT height = dstDesc.Height;
@@ -572,7 +572,7 @@ namespace Mus {
                     processes.push_back(currentProcessingThreads.load()->submitAsync([&, beginY, endY]() {
                         for (UINT y = beginY; y < endY; y++)
                         {
-                            std::uint8_t* rowData = dstData + y * dstMappedResource.RowPitch;
+                            std::uint8_t* rowData = dstData + y * dstmg.GetRowPitch();
                             for (UINT x = 0; x < width; x++)
                             {
                                 std::uint32_t* pixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
@@ -666,31 +666,31 @@ namespace Mus {
                             if (hasSrcData)
                             {
                                 const float srcY = mY * srcHeightF;
-                                srcRowData = srcData + static_cast<const UINT>(srcY) * srcMappedResource.RowPitch;
+                                srcRowData = srcData + static_cast<const UINT>(srcY) * srcmg.GetRowPitch();
                             }
 
                             uint8_t* detailRowData = nullptr;
                             if (hasDetailData)
                             {
                                 const float detailY = mY * detailHeightF;
-                                detailRowData = detailData + static_cast<const UINT>(detailY) * detailMappedResource.RowPitch;
+                                detailRowData = detailData + static_cast<const UINT>(detailY) * detailmg.GetRowPitch();
                             }
 
                             uint8_t* overlayRowData = nullptr;
                             if (hasOverlayData)
                             {
                                 const float overlayY = mY * overlayHeightF;
-                                overlayRowData = overlayData + static_cast<const UINT>(overlayY) * overlayMappedResource.RowPitch;
+                                overlayRowData = overlayData + static_cast<const UINT>(overlayY) * overlaymg.GetRowPitch();
                             }
 
                             uint8_t* maskRowData = nullptr;
                             if (hasMaskData)
                             {
                                 const float maskY = mY * maskHeightF;
-                                maskRowData = maskData + static_cast<const UINT>(maskY) * maskMappedResource.RowPitch;
+                                maskRowData = maskData + static_cast<const UINT>(maskY) * maskmg.GetRowPitch();
                             }
 
-                            std::uint8_t* rowData = dstData + y * dstMappedResource.RowPitch;
+                            std::uint8_t* rowData = dstData + y * dstmg.GetRowPitch();
                             for (std::int32_t x = minX; x < maxX; x++)
                             {
                                 DirectX::XMFLOAT3 bary;
@@ -796,21 +796,6 @@ namespace Mus {
             }
             if (Config::GetSingleton().GetUpdateNormalMapTime2())
                 PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, true, false);
-
-            
-			{
-                Shader::ShaderLockGuard slg(sl);
-                context->Unmap(dstTexture2D.Get(), 0);
-                if (hasSrcData)
-                    context->Unmap(newResourceData->srcTexture2D.Get(), 0);
-                if (hasDetailData)
-                    context->Unmap(newResourceData->detailTexture2D.Get(), 0);
-                if (hasOverlayData)
-                    context->Unmap(newResourceData->overlayTexture2D.Get(), 0);
-                if (hasMaskData)
-                    context->Unmap(newResourceData->maskTexture2D.Get(), 0);
-            }
-            
 
             NormalMapResult newNormalMapResult;
             newNormalMapResult.slot = update.second.slot;
@@ -1021,13 +1006,18 @@ namespace Mus {
                     GPUPerformanceLog(device, context, std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, false, false);
 
 				{
-                    D3D11_MAPPED_SUBRESOURCE mapped;
                     UpdateNormalMapBackup sb;
                     Shader::ShaderLockGuard slg(sl);
                     ShaderBackupGuard sbg(context, sb);
-                    hr = context->Map(updateNormalMapBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-                    *reinterpret_cast<UpdateNormalMapBufferData*>(mapped.pData) = cbData;
-                    context->Unmap(updateNormalMapBuffer[isSecondGPUEnabled].Get(), 0);
+                    {
+                        Shader::MapGuard mg(context, updateNormalMapBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, false);
+                        if (!mg.IsValid())
+                        {
+                            logger::error("{}::{:x}::{} : Failed to map buffer ({})", _func_, a_actorID, update.second.geometryName, mg.GetHR());
+                            continue;
+                        }
+                        *mg.Get<UpdateNormalMapBufferData>() = cbData;
+                    }
                     context->CSSetShader(updateNormalMapShader[isSecondGPUEnabled].Get(), nullptr, 0);
                     context->CSSetConstantBuffers(0, 1, updateNormalMapBuffer[isSecondGPUEnabled].GetAddressOf());
                     context->CSSetShaderResources(0, 1, geoData->vertexSRV.GetAddressOf());
@@ -1066,13 +1056,18 @@ namespace Mus {
                             GPUPerformanceLog(device, context, std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName + "::" + std::to_string(subIndex), false, false);
 
 						{
-                            D3D11_MAPPED_SUBRESOURCE mapped;
                             UpdateNormalMapBackup sb;
                             Shader::ShaderLockGuard slg(sl);
                             ShaderBackupGuard sbg(context, sb);
-                            context->Map(updateNormalMapBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-                            *reinterpret_cast<UpdateNormalMapBufferData*>(mapped.pData) = cbData_;
-                            context->Unmap(updateNormalMapBuffer[isSecondGPUEnabled].Get(), 0);
+                            {
+                                Shader::MapGuard mg(context, updateNormalMapBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, false);
+                                if (!mg.IsValid())
+                                {
+                                    logger::error("{}::{:x}::{} : Failed to map buffer ({})", _func_, a_actorID, update.second.geometryName, mg.GetHR());
+                                    return;
+                                }
+                                *mg.Get<UpdateNormalMapBufferData>() = cbData_;
+                            }
                             context->CSSetShader(updateNormalMapShader[isSecondGPUEnabled].Get(), nullptr, 0);
                             context->CSSetConstantBuffers(0, 1, updateNormalMapBuffer[isSecondGPUEnabled].GetAddressOf());
                             context->CSSetShaderResources(0, 1, geoData->vertexSRV.GetAddressOf());
@@ -1384,10 +1379,10 @@ namespace Mus {
 			return false;
 
 		for (UINT mipLevel = 0; mipLevel < dstDesc.MipLevels; mipLevel++) {
-			CopySubresourceRegion(device, context, dstTexture, srcTexture, mipLevel, mipLevel);
+            if (!CopySubresourceRegion(device, context, dstTexture, srcTexture, mipLevel, mipLevel))
+                return false;
 		}
-
-		return false;
+        return true;
 	}
 
 	bool ObjectNormalMapUpdater::CopySubresourceFromBuffer(ID3D11Device* device, ID3D11DeviceContext* context, std::vector<std::uint8_t>& buffer, UINT rowPitch, UINT mipLevel, ID3D11Texture2D* dstTexture)
@@ -1784,18 +1779,24 @@ namespace Mus {
 		D3D11_TEXTURE2D_DESC desc;
 		dstTex->GetDesc(&desc);
 
-		D3D11_MAPPED_SUBRESOURCE dstMappedResource, srcMappedResource;
-		{
-            Shader::ShaderLockGuard slg(sl);
-            context->Map(dstTex, 0, D3D11_MAP_READ_WRITE, 0, &dstMappedResource);
-            context->Map(srcTex, 0, D3D11_MAP_READ, 0, &srcMappedResource);
+		Shader::MapGuard dstmg(context, dstTex, 0, D3D11_MAP_READ_WRITE);
+        if (!dstmg.IsValid())
+        {
+            logger::error("{}::{} : Failed to map dst texture ({})", __func__, srcResourceData->textureName, dstmg.GetHR());
+            return false;
+        }
+        Shader::MapGuard srcmg(context, srcTex, 0, D3D11_MAP_READ);
+        if (!srcmg.IsValid())
+        {
+            logger::error("{}::{} : Failed to map src texture ({})", __func__, srcResourceData->textureName, srcmg.GetHR());
+            return false;
         }
 
 		const UINT width = desc.Width;
 		const UINT height = desc.Height;
 
-		std::uint8_t* dst_pData = reinterpret_cast<std::uint8_t*>(dstMappedResource.pData);
-		std::uint8_t* src_pData = reinterpret_cast<std::uint8_t*>(srcMappedResource.pData);
+		std::uint8_t* dst_pData = dstmg.Get<std::uint8_t>();
+        std::uint8_t* src_pData = srcmg.Get<std::uint8_t>();
 		std::vector<std::future<void>> processes;
         const std::uint32_t threads = currentProcessingThreads.load()->GetThreads() * 8;
 		const std::uint32_t subY = std::min(height, std::min(width, threads) * std::min(height, threads));
@@ -1809,8 +1810,8 @@ namespace Mus {
                 {
                     for (UINT x = 0; x < width; x++)
                     {
-                        std::uint8_t* dstRowData = dst_pData + y * dstMappedResource.RowPitch;
-                        std::uint8_t* srcRowData = src_pData + y * srcMappedResource.RowPitch;
+                        std::uint8_t* dstRowData = dst_pData + y * dstmg.GetRowPitch();
+                        std::uint8_t* srcRowData = src_pData + y * srcmg.GetRowPitch();
                         std::uint32_t* dstPixel = reinterpret_cast<uint32_t*>(dstRowData + x * 4);
                         std::uint32_t* srcPixel = reinterpret_cast<uint32_t*>(srcRowData + x * 4);
                         RGBA dstPixelColor, srcPixelColor;
@@ -1830,13 +1831,6 @@ namespace Mus {
 		{
 			process.get();
 		}
-
-		
-        {
-			Shader::ShaderLockGuard slg(sl);
-            context->Unmap(dstTex, 0);
-            context->Unmap(srcTex, 0);
-        }
 
 		if (Config::GetSingleton().GetMergeTime())
 			PerformanceLog(std::string(__func__) + "::" + srcResourceData->textureName, true, false);
@@ -1876,13 +1870,18 @@ namespace Mus {
 								  , false, false);
 
 			{
-                D3D11_MAPPED_SUBRESOURCE mapped;
                 MergeTextureBackup sb;
                 Shader::ShaderLockGuard slg(sl);
                 ShaderBackupGuard sbg(context, sb);
-                context->Map(mergeTextureBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-                *reinterpret_cast<MergeTextureBufferData*>(mapped.pData) = cbData;
-                context->Unmap(mergeTextureBuffer[isSecondGPUEnabled].Get(), 0);
+                {
+                    Shader::MapGuard mg(context, mergeTextureBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, false);
+                    if (!mg.IsValid())
+                    {
+                        logger::error("{}::{} : Failed to map buffer ({})", _func_, resourceData->textureName, mg.GetHR());
+                        return false;
+                    }
+                    *mg.Get<MergeTextureBufferData>() = cbData;
+                }
                 context->CSSetShader(mergeTexture[isSecondGPUEnabled].Get(), nullptr, 0);
                 context->CSSetConstantBuffers(0, 1, mergeTextureBuffer[isSecondGPUEnabled].GetAddressOf());
                 context->CSSetShaderResources(0, 1, &srcSRV);
@@ -1913,13 +1912,18 @@ namespace Mus {
 										  + "::" + std::to_string(sy), false, false);
 
 					{
-                        D3D11_MAPPED_SUBRESOURCE mapped;
                         MergeTextureBackup sb;
                         Shader::ShaderLockGuard slg(sl);
                         ShaderBackupGuard sbg(context, sb);
-                        context->Map(mergeTextureBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-                        *reinterpret_cast<MergeTextureBufferData*>(mapped.pData) = cbData_;
-                        context->Unmap(mergeTextureBuffer[isSecondGPUEnabled].Get(), 0);
+                        {
+                            Shader::MapGuard mg(context, mergeTextureBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, false);
+                            if (!mg.IsValid())
+                            {
+                                logger::error("{}::{} : Failed to map buffer ({})", _func_, resourceData->textureName, mg.GetHR());
+                                return;
+                            }
+                            *mg.Get<MergeTextureBufferData>() = cbData_;
+                        }
                         context->CSSetShader(mergeTexture[isSecondGPUEnabled].Get(), nullptr, 0);
                         context->CSSetConstantBuffers(0, 1, mergeTextureBuffer[isSecondGPUEnabled].GetAddressOf());
                         context->CSSetShaderResources(0, 1, &srcSRV);
@@ -1962,13 +1966,11 @@ namespace Mus {
 		D3D11_TEXTURE2D_DESC desc;
 		resourceData->generateMipsData.texture2D->GetDesc(&desc);
 
-		std::vector<D3D11_MAPPED_SUBRESOURCE> mappedResource(desc.MipLevels);
+		Shader::MultiMapGuard mmg(context, resourceData->generateMipsData.texture2D.Get(), desc.MipLevels, D3D11_MAP_READ_WRITE);
+        if (!mmg.IsValid())
         {
-            Shader::ShaderLockGuard slg(sl);
-            for (UINT mipLevel = 0; mipLevel < desc.MipLevels; mipLevel++)
-            {
-                hr = context->Map(resourceData->generateMipsData.texture2D.Get(), mipLevel, D3D11_MAP_READ_WRITE, 0, &mappedResource[mipLevel]);
-            }
+            logger::error("{}::{} : Failed to map buffer ({})", _func_, resourceData->textureName, mmg.GetHR());
+            return false;
         }
 
 		const UINT width = desc.Width;
@@ -1996,15 +1998,16 @@ namespace Mus {
             const std::uint32_t threads = currentProcessingThreads.load()->GetThreads() * 16;
 			const std::uint32_t subY = std::min(height, std::min(width, threads) * std::min(height, threads));
 			const std::uint32_t unitY = (height + subY - 1) / subY;
-			std::uint8_t* pData = reinterpret_cast<std::uint8_t*>(mappedResource[0].pData);
+            std::uint8_t* pData = mmg.Get<std::uint8_t>(0);
 			std::vector<ColorMap> resultsColorMap;
+            const UINT rowPitch = mmg.GetRowPitch(0);
 			for (std::uint32_t sy = 0; sy < subY; sy++) {
 				const std::uint32_t beginY = sy * unitY;
 				const std::uint32_t endY = std::min(beginY + unitY, height);
                 colorMapProcesses.push_back(currentProcessingThreads.load()->submitAsync([&, beginY, endY]() {
                     std::vector<ColorMap> resultsColorMapFrag;
 					for (UINT y = beginY; y < endY; y++) {
-						std::uint8_t* rowData = pData + y * mappedResource[0].RowPitch;
+                        std::uint8_t* rowData = pData + y * rowPitch;
 						for (UINT x = 0; x < width; x++)
 						{
 							std::uint32_t* pixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
@@ -2022,7 +2025,7 @@ namespace Mus {
 									nearCoord.x >= width || nearCoord.y >= height)
 									continue;
 
-								std::uint8_t* nearRowData = pData + nearCoord.y * mappedResource[0].RowPitch;
+								std::uint8_t* nearRowData = pData + nearCoord.y * rowPitch;
 								std::uint32_t* nearPixel = reinterpret_cast<uint32_t*>(nearRowData + nearCoord.x * 4);
 								RGBA nearColor;
 								nearColor.SetReverse(*nearPixel);
@@ -2079,8 +2082,10 @@ namespace Mus {
 			const UINT srcMipWidth = std::max(width >> srcMipLevel, 1u);
 			const UINT srcMipHeight = std::max(height >> srcMipLevel, 1u);
 
-			std::uint8_t* dst_pData = reinterpret_cast<std::uint8_t*>(mappedResource[mipLevel].pData);
-			std::uint8_t* src_pData = reinterpret_cast<std::uint8_t*>(mappedResource[srcMipLevel].pData);
+			std::uint8_t* dst_pData = mmg.Get<std::uint8_t>(mipLevel);
+            std::uint8_t* src_pData = mmg.Get<std::uint8_t>(srcMipLevel);
+            const UINT dstRowPitch = mmg.GetRowPitch(mipLevel);
+            const UINT srcRowPitch = mmg.GetRowPitch(srcMipLevel);
 			std::vector<std::future<void>> processes;
             const std::uint32_t threads = currentProcessingThreads.load()->GetThreads() * 8;
 			const std::uint32_t subY = std::min(mipHeight, std::min(mipWidth, threads) * std::min(mipHeight, threads));
@@ -2090,7 +2095,7 @@ namespace Mus {
 				std::uint32_t endY = std::min(beginY + unitY, mipHeight);
                 processes.push_back(currentProcessingThreads.load()->submitAsync([&, beginY, endY]() {
 					for (UINT y = beginY; y < endY; y++) {
-						std::uint8_t* dstRowData = dst_pData + y * mappedResource[mipLevel].RowPitch;
+                        std::uint8_t* dstRowData = dst_pData + y * dstRowPitch;
 						for (UINT x = 0; x < mipWidth; x++)
 						{
 							std::uint32_t* pixel = reinterpret_cast<uint32_t*>(dstRowData + x * 4);
@@ -2102,7 +2107,7 @@ namespace Mus {
 								DirectX::XMUINT2 srcCoord = { x * 2 + sampleOffsets[i].x, y * 2 + sampleOffsets[i].y };
 								if (srcCoord.x >= srcMipWidth || srcCoord.y >= srcMipHeight)
 									continue;
-								std::uint8_t* srcRowData = src_pData + mappedResource[srcMipLevel].RowPitch;
+                                std::uint8_t* srcRowData = src_pData + srcRowPitch;
 								std::uint32_t* srcPixel = reinterpret_cast<uint32_t*>(srcRowData + srcCoord.x * 4);
 								RGBA srcColor;
 								srcColor.SetReverse(*srcPixel);
@@ -2127,7 +2132,7 @@ namespace Mus {
 										DirectX::XMUINT2 srcCoord = { nearCoord.x * 2 + sampleOffsets[j].x, nearCoord.y * 2 + sampleOffsets[j].y };
 										if (srcCoord.x >= srcMipWidth || srcCoord.y >= srcMipHeight)
 											continue;
-										std::uint8_t* srcRowData = src_pData + srcCoord.y * mappedResource[srcMipLevel].RowPitch;
+                                        std::uint8_t* srcRowData = src_pData + srcCoord.y * srcRowPitch;
 										std::uint32_t* srcPixel = reinterpret_cast<uint32_t*>(srcRowData + srcCoord.x * 4);
 										RGBA srcColor;
 										srcColor.SetReverse(*srcPixel);
@@ -2156,15 +2161,6 @@ namespace Mus {
 				process.get();
 			}
 		}
-
-		{
-            Shader::ShaderLockGuard slg(sl);
-            for (UINT mipLevel = 0; mipLevel < desc.MipLevels; mipLevel++)
-            {
-                context->Unmap(resourceData->generateMipsData.texture2D.Get(), mipLevel);
-            }
-        }
-
 		logger::debug("{}::{} : Generate Mips done", _func_, resourceData->textureName);
 
 		if (Config::GetSingleton().GetGenerateMipsTime())
@@ -2254,13 +2250,18 @@ namespace Mus {
 											  , false, false);
 
 						{
-                            D3D11_MAPPED_SUBRESOURCE mapped;
                             GenerateMipsBackup sb;
                             Shader::ShaderLockGuard slg(sl);
                             ShaderBackupGuard sbg(context, sb);
-                            context->Map(generateMipsBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-                            *reinterpret_cast<GenerateMipsBufferData*>(mapped.pData) = cbData;
-                            context->Unmap(generateMipsBuffer[isSecondGPUEnabled].Get(), 0);
+                            {
+                                Shader::MapGuard mg(context, generateMipsBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, false);
+                                if (!mg.IsValid())
+                                {
+                                    logger::error("{}::{} : Failed to map buffer ({})", _func_, resourceData->textureName, mg.GetHR());
+                                    return false;
+                                }
+                                *mg.Get<GenerateMipsBufferData>() = cbData;
+                            }
                             context->CSSetShader(generateMips[isSecondGPUEnabled].Get(), nullptr, 0);
                             context->CSSetConstantBuffers(0, 1, generateMipsBuffer[isSecondGPUEnabled].GetAddressOf());
                             context->CSSetShaderResources(0, 1, srcSRV.GetAddressOf());
@@ -2295,13 +2296,18 @@ namespace Mus {
 													  , false, false);
 
 								{
-                                    D3D11_MAPPED_SUBRESOURCE mapped;
                                     GenerateMipsBackup sb;
                                     Shader::ShaderLockGuard slg(sl);
                                     ShaderBackupGuard sbg(context, sb);
-                                    context->Map(generateMipsBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-                                    *reinterpret_cast<GenerateMipsBufferData*>(mapped.pData) = cbData_;
-                                    context->Unmap(generateMipsBuffer[isSecondGPUEnabled].Get(), 0);
+                                    {
+                                        Shader::MapGuard mg(context, generateMipsBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, false);
+                                        if (!mg.IsValid())
+                                        {
+                                            logger::error("{}::{} : Failed to map buffer ({})", _func_, resourceData->textureName, mg.GetHR());
+                                            return;
+                                        }
+                                        *mg.Get<GenerateMipsBufferData>() = cbData_;
+                                    }
                                     context->CSSetShader(generateMips[isSecondGPUEnabled].Get(), nullptr, 0);
                                     context->CSSetConstantBuffers(0, 1, generateMipsBuffer[isSecondGPUEnabled].GetAddressOf());
                                     context->CSSetShaderResources(0, 1, srcSRV.GetAddressOf());
@@ -2356,13 +2362,18 @@ namespace Mus {
 										  , false, false);
 
 					{
-                        D3D11_MAPPED_SUBRESOURCE mapped;
                         GenerateMipsBackup sb;
                         Shader::ShaderLockGuard slg(sl);
                         ShaderBackupGuard sbg(context, sb);
-                        context->Map(generateMipsBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-                        *reinterpret_cast<GenerateMipsBufferData*>(mapped.pData) = cbData;
-                        context->Unmap(generateMipsBuffer[isSecondGPUEnabled].Get(), 0);
+                        {
+                            Shader::MapGuard mg(context, generateMipsBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, false);
+                            if (!mg.IsValid())
+                            {
+                                logger::error("{}::{} : Failed to map buffer ({})", _func_, resourceData->textureName, mg.GetHR());
+                                return false;
+                            }
+                            *mg.Get<GenerateMipsBufferData>() = cbData;
+                        }
                         context->CSSetShader(generateMips[isSecondGPUEnabled].Get(), nullptr, 0);
                         context->CSSetConstantBuffers(0, 1, generateMipsBuffer[isSecondGPUEnabled].GetAddressOf());
                         context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
@@ -2397,13 +2408,18 @@ namespace Mus {
 												  , false, false);
 
 							{
-                                D3D11_MAPPED_SUBRESOURCE mapped;
                                 GenerateMipsBackup sb;
                                 Shader::ShaderLockGuard slg(sl);
                                 ShaderBackupGuard sbg(context, sb);
-                                context->Map(generateMipsBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-                                *reinterpret_cast<GenerateMipsBufferData*>(mapped.pData) = cbData_;
-                                context->Unmap(generateMipsBuffer[isSecondGPUEnabled].Get(), 0);
+                                {
+                                    Shader::MapGuard mg(context, generateMipsBuffer[isSecondGPUEnabled].Get(), 0, D3D11_MAP_WRITE_DISCARD, false);
+                                    if (!mg.IsValid())
+                                    {
+                                        logger::error("{}::{} : Failed to map buffer ({})", _func_, resourceData->textureName, mg.GetHR());
+                                        return;
+                                    }
+                                    *mg.Get<GenerateMipsBufferData>() = cbData_;
+                                }
                                 context->CSSetShader(generateMips[isSecondGPUEnabled].Get(), nullptr, 0);
                                 context->CSSetConstantBuffers(0, 1, generateMipsBuffer[isSecondGPUEnabled].GetAddressOf());
                                 context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
@@ -2527,20 +2543,11 @@ namespace Mus {
 			hr = device->CreateTexture2D(&stagingDesc, nullptr, &resourceData->textureCompressData.srcStagingTexture);
 			if (FAILED(hr))
 			{
-				logger::error("Failed to create staging texture");
+                logger::error("{}::{} : Failed to create staging texture ({})", __func__, resourceData->textureName, hr);
 				return false;
 			}
 			CopySubresourceRegion(device, context, resourceData->textureCompressData.srcStagingTexture.Get(), texInOut.Get());
 		}
-
-		std::vector<D3D11_MAPPED_SUBRESOURCE> mappedResource(srcDesc.MipLevels);
-        {
-            Shader::ShaderLockGuard slg(sl);
-            for (UINT mipLevel = 0; mipLevel < srcDesc.MipLevels; mipLevel++)
-            {
-                context->Map(resourceData->textureCompressData.srcStagingTexture.Get(), mipLevel, D3D11_MAP_READ, 0, &mappedResource[mipLevel]);
-            }
-        }
 
 		std::vector<D3D11_SUBRESOURCE_DATA> initData(srcDesc.MipLevels);
 		std::vector<std::vector<std::uint8_t>> bc7Buffers(srcDesc.MipLevels);
@@ -2605,7 +2612,13 @@ namespace Mus {
         }
 
 		for (UINT mipLevel = 0; mipLevel < srcDesc.MipLevels; mipLevel++)
-		{
+        {
+            Shader::MapGuard mg(context, resourceData->textureCompressData.srcStagingTexture.Get(), mipLevel, D3D11_MAP_READ);
+            if (!mg.IsValid())
+            {
+                logger::error("{}::{} : Failed to src map ({})", __func__, resourceData->textureName, mg.GetHR());
+                return false;
+            }
 			const UINT mipWidth = std::max(1u, srcDesc.Width >> mipLevel);
 			const UINT mipHeight = std::max(1u, srcDesc.Height >> mipLevel);
 			const UINT bc7Width = (mipWidth + 4 - 1) / 4;
@@ -2614,7 +2627,8 @@ namespace Mus {
             rowPitches[mipLevel] = bc7Width * 16;
 
             std::vector<std::uint32_t> pixelBuffer(bc7Width * bc7Height * 16);
-			std::uint8_t* srcData = reinterpret_cast<std::uint8_t*>(mappedResource[mipLevel].pData);
+            std::uint8_t* srcData = mg.Get<std::uint8_t>();
+            const UINT rowPitch = mg.GetRowPitch();
 			std::vector<std::future<void>> processes;
             const std::uint32_t threads = std::max(1ull, currentProcessingThreads.load()->GetThreads() * (isImmediately ? 1 : 8));
 			const std::uint32_t rowSub = std::max(1u, (bc7Height + threads - 1) / threads);
@@ -2629,18 +2643,18 @@ namespace Mus {
                     std::uint64_t* dstBlocks = reinterpret_cast<std::uint64_t*>(bc7Buffers[mipLevel].data()) + (beginY * bc7Width * 2);
 					std::size_t pixelIndex = 0;
 					for (UINT by = beginY; by < endY; by++) {
-                        UINT by_ = by * 4;
+                        const UINT by_ = by * 4;
 						for (UINT bx = 0; bx < bc7Width; bx++) {
-                            UINT bx_ = bx * 4;
+                            const UINT bx_ = bx * 4;
 #pragma unroll(4)
                             for (UINT y = 0; y < 4; y++) {
-                                UINT py = by_ + y;
-								UINT clampedPy = std::min(py, mipHeight - 1);
-                                const std::uint8_t* rowData = srcData + (clampedPy * mappedResource[mipLevel].RowPitch);
+                                const UINT py = by_ + y;
+                                const UINT clampedPy = std::min(py, mipHeight - 1);
+                                const std::uint8_t* rowData = srcData + (clampedPy * rowPitch);
 #pragma unroll(4)
 								for (UINT x = 0; x < 4; x++) {
-                                    UINT px = bx_ + x;
-									UINT clampedPx = std::min(px, mipWidth - 1);
+                                    const UINT px = bx_ + x;
+                                    const UINT clampedPx = std::min(px, mipWidth - 1);
                                     pixels[pixelIndex++] = *reinterpret_cast<const std::uint32_t*>(rowData + clampedPx * 4);
 								}
 							}
@@ -2657,14 +2671,6 @@ namespace Mus {
 			initData[mipLevel].SysMemSlicePitch = 0;
 		};
 
-		{
-            Shader::ShaderLockGuard slg(sl);
-            for (UINT mipLevel = 0; mipLevel < srcDesc.MipLevels; mipLevel++)
-            {
-                context->Unmap(resourceData->textureCompressData.srcStagingTexture.Get(), mipLevel);
-            }
-        }
-
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D;
 		D3D11_TEXTURE2D_DESC dstDesc = srcDesc;
 		if (sl.IsSecondGPU())
@@ -2677,7 +2683,7 @@ namespace Mus {
 			hr = device->CreateTexture2D(&dstDesc, initData.data(), &texture2D);
 			if (FAILED(hr))
 			{
-				logger::error("Failed to create dst texture 2d");
+                logger::error("{}::{} : Failed to create dst texture 2d ({})", __func__, resourceData->textureName, hr);
 				return false;
 			}
 		}
@@ -2691,7 +2697,7 @@ namespace Mus {
 			hr = device->CreateTexture2D(&dstDesc, nullptr, &texture2D);
 			if (FAILED(hr))
 			{
-				logger::error("Failed to create dst texture 2d");
+                logger::error("{}::{} : Failed to create dst texture 2d ({})", __func__, resourceData->textureName, hr);
 				return false;
 			}
 
@@ -2737,13 +2743,13 @@ namespace Mus {
 
 			hr = Shader::ShaderManager::GetSingleton().GetSecondDevice()->CreateTexture2D(&copyDesc, nullptr, &resourceData->copySecondToMainData.copyTexture2D);
 			if (FAILED(hr)) {
-				logger::error("Failed to create copy texture : {}", hr);
+                logger::error("{}::{} : Failed to create copy texture : {}", __func__, resourceData->textureName, hr);
 				return false;
 			}
 
-			Shader::ShaderManager::GetSingleton().ShaderSecondContextLock();
+			Shader::ShaderLocker sl(Shader::ShaderManager::GetSingleton().GetSecondContext());
+            Shader::ShaderLockGuard slg(sl);
 			Shader::ShaderManager::GetSingleton().GetSecondContext()->CopyResource(resourceData->copySecondToMainData.copyTexture2D.Get(), texInOut.Get());
-			Shader::ShaderManager::GetSingleton().ShaderSecondContextUnlock();
 		}
 
 		std::vector<std::vector<std::uint8_t>> buffers(desc.MipLevels);
@@ -2753,17 +2759,14 @@ namespace Mus {
 			const UINT height = std::max(desc.Height >> mipLevel, 1u);
 			std::size_t blockHeight = 0;
 
-			D3D11_MAPPED_SUBRESOURCE mapped;
-			Shader::ShaderManager::GetSingleton().ShaderSecondContextLock();
-			hr = Shader::ShaderManager::GetSingleton().GetSecondContext()->Map(resourceData->copySecondToMainData.copyTexture2D.Get(), mipLevel, D3D11_MAP_READ, 0, &mapped);
-			Shader::ShaderManager::GetSingleton().ShaderSecondContextUnlock();
-			if (FAILED(hr))
+			Shader::MapGuard mg(Shader::ShaderManager::GetSingleton().GetSecondContext(), resourceData->copySecondToMainData.copyTexture2D.Get(), mipLevel, D3D11_MAP_READ);
+            if (!mg.IsValid())
 			{
-				logger::error("Failed to map copy texture : {}", hr);
+                logger::error("{}::{} : Failed to map copy texture : {}", __func__, resourceData->textureName, mg.GetHR());
 				return false;
 			}
 
-			rowPitches[mipLevel] = mapped.RowPitch;
+			rowPitches[mipLevel] = mg.GetRowPitch();
 
 			if (desc.Format == DXGI_FORMAT_BC7_UNORM || desc.Format == DXGI_FORMAT_BC3_UNORM || desc.Format == DXGI_FORMAT_BC1_UNORM)
 			{
@@ -2780,12 +2783,8 @@ namespace Mus {
 
 			buffers[mipLevel].resize(rowPitches[mipLevel] * blockHeight);
 			for (std::size_t y = 0; y < blockHeight; y++) {
-				memcpy(buffers[mipLevel].data() + y * rowPitches[mipLevel], reinterpret_cast<std::uint8_t*>(mapped.pData) + y * rowPitches[mipLevel], rowPitches[mipLevel]);
+				memcpy(buffers[mipLevel].data() + y * rowPitches[mipLevel], mg.Get<std::uint8_t>() + y * rowPitches[mipLevel], rowPitches[mipLevel]);
 			}
-
-			Shader::ShaderManager::GetSingleton().ShaderSecondContextLock();
-			Shader::ShaderManager::GetSingleton().GetSecondContext()->Unmap(resourceData->copySecondToMainData.copyTexture2D.Get(), mipLevel);
-			Shader::ShaderManager::GetSingleton().ShaderSecondContextUnlock();
 		}
 
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D;
@@ -2795,7 +2794,7 @@ namespace Mus {
 		desc.MiscFlags = 0;
 		hr = Shader::ShaderManager::GetSingleton().GetDevice()->CreateTexture2D(&desc, nullptr, &texture2D);
 		if (FAILED(hr)) {
-			logger::error("Failed to create dst texture : {}", hr);
+            logger::error("{}::{} : Failed to create dst texture : {}", __func__, resourceData->textureName, hr);
 			return false;
 		}
 

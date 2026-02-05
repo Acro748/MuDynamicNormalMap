@@ -143,14 +143,20 @@ namespace Mus {
 				}
 				else if (hash.second->IsChangedTexture())
 				{
+                    hash.second->SetCheckTexture(false);
                     bipedSlot = TaskManager::BipedObjectSlot::kAll;
                     logger::trace("{:x} {} {} : found different texture", actor->formID, actor->GetName(), slot);
 				}
 			}
 			if (bipedSlot > 0)
 			{
-				logger::debug("{:x} {} : detected changed slot {:x}", actor->formID, actor->GetName(), bipedSlot);
-                TaskManager::GetSingleton().QUpdateNormalMap(actor.get());
+				logger::debug("{:x} {} : detected state change {:x}", actor->formID, actor->GetName(), bipedSlot);
+                TaskManager::GetSingleton().RegisterDelayTask([id]() {
+                    auto actor = GetFormByID<RE::Actor*>(id);
+                    if (IsInvalidActor(actor))
+                        return;
+                    TaskManager::GetSingleton().QUpdateNormalMap(actor);
+                });
 			}
 
 			if (Config::GetSingleton().GetActorVertexHasherTime2())

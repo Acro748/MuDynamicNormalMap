@@ -1,7 +1,5 @@
 #include "Config.h"
 
-using namespace Mus;
-
 namespace Mus {
     bool Config::LoadLogging()
     {
