@@ -32,6 +32,7 @@ namespace Mus {
 			}
 			~Hash() { XXH3_freeState(state); }
 			bool Update(RE::BSGeometry* a_geo);
+			bool CheckTexture(RE::BSGeometry* a_geo);
             void Update(const void* input, std::size_t len) { XXH3_64bits_update(state, input, len); }
             void Reset() { XXH3_64bits_reset(state); }
 			std::size_t GetNewHash() { 

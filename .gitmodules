@@ -1,3 +1,6 @@
 [submodule "extern/bc7enc_rdo"]
 	path = extern/bc7enc_rdo
 	url = https://github.com/richgel999/bc7enc_rdo.git
+[submodule "extern/tinygltf"]
+	path = extern/tinygltf
+	url = https://github.com/syoyo/tinygltf.git

@@ -194,12 +194,12 @@ namespace Mus::nif {
         if (a_angles.entry[1][0] > 0.998) { // singularity at north pole
             a_point.x = 0;
             a_point.y = atan2(a_angles.entry[0][2], a_angles.entry[2][2]);
-            a_point.z = MATH_PI / 2;
+            a_point.z = PI / 2;
         }
         else if (a_angles.entry[1][0] < -0.998) { // singularity at south pole
             a_point.x = 0;
             a_point.y = atan2(a_angles.entry[0][2], a_angles.entry[2][2]);
-            a_point.z = -MATH_PI / 2;
+            a_point.z = -PI / 2;
         }
         else {
             a_point.x = atan2(-a_angles.entry[1][2], a_angles.entry[1][1]);

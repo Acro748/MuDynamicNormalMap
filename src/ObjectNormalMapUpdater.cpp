@@ -328,13 +328,8 @@ namespace Mus {
 		{
 			logger::error("{} : Invalid parameters", __func__);
 			return false;
-		}
-		a_data->Subdivision(Config::GetSingleton().GetSubdivision(), Config::GetSingleton().GetSubdivisionTriThreshold());
-		a_data->CreateVertexMap();
-		a_data->VertexSmoothByAngle(Config::GetSingleton().GetVertexSmoothByAngleThreshold1(), Config::GetSingleton().GetVertexSmoothByAngleThreshold2(), Config::GetSingleton().GetVertexSmoothByAngle());
-		a_data->VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
-		a_data->RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree());
-        a_data->CreateGeometryHash();
+        }
+        a_data->GeometryProcessing();
 
 		if (a_data->vertices.size() != a_data->uvs.size() ||
 			a_data->vertices.size() != a_data->normals.size() ||

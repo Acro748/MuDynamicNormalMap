@@ -297,20 +297,27 @@ namespace Mus {
 				return false;
 			Update(skinPartition->partitions[0].buffData->rawVertexData, sizeof(std::uint8_t) * vertexCount * desc.GetSize());
 		}
-
-		if (isCheckTexture)
-        {
-            using State = RE::BSGeometry::States;
-            using Feature = RE::BSShaderMaterial::Feature;
-            auto effect = a_geo->GetGeometryRuntimeData().properties[State::kEffect].get();
-            auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
-            RE::BSLightingShaderMaterialBase* material = skyrim_cast<RE::BSLightingShaderMaterialBase*>(lightingShader->material);
-            if (material && material->normalTexture && !material->normalTexture->name.empty())
-            {
-                isMDNMTexture = IsCreatedByMDNM(material->normalTexture->name.c_str());
-            }
-        }
-		GetNewHash();
+        GetNewHash();
+        if (isCheckTexture)
+            isCheckTexture = CheckTexture(a_geo);
 		return true;
 	}
+
+	bool ActorVertexHasher::Hash::CheckTexture(RE::BSGeometry* a_geo)
+    {
+        isMDNMTexture = false;
+        if (!a_geo)
+            return false;
+        if (!a_geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
+            return false;
+        auto effect = a_geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect].get();
+        auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
+        if (!lightingShader || !lightingShader->material)
+            return false;
+        RE::BSLightingShaderMaterialBase* material = skyrim_cast<RE::BSLightingShaderMaterialBase*>(lightingShader->material);
+        if (!material || !material->normalTexture || material->normalTexture->name.empty())
+            return false;
+        isMDNMTexture = IsCreatedByMDNM(material->normalTexture->name.c_str());
+        return true;
+    }
 }

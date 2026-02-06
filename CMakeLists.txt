@@ -6,7 +6,7 @@ message("Using toolchain file ${CMAKE_TOOLCHAIN_FILE}.")
 ########################################################################################################################
 project(
         MuDynamicNormalMap
-        VERSION 2.1.4
+        VERSION 2.1.5
         DESCRIPTION "MuDynamicNormalMap by Acro."
         LANGUAGES CXX
 )
@@ -23,6 +23,7 @@ configure_file(
 )
 
 set(headers
+        extern/tinygltf/tiny_gltf.h
         include/bc7e_ispc_avx.h
         include/bc7e_ispc_avx2.h
         include/bc7e_ispc_sse2.h
@@ -86,6 +87,7 @@ find_package(DirectXTex CONFIG REQUIRED)
 find_package(detours)
 find_package(xxhash CONFIG REQUIRED)
 find_package(lz4 CONFIG REQUIRED)
+find_package(tinygltf)
 
 add_commonlibsse_plugin(${PROJECT_NAME} SOURCES ${headers} ${sources})
 add_library("${PROJECT_NAME}::${PROJECT_NAME}" ALIAS "${PROJECT_NAME}")
@@ -113,6 +115,7 @@ target_include_directories(
         $<INSTALL_INTERFACE:src>
         ${DETOURS_INCLUDE_DIRS}
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/extern/tinygltf>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/ExtraRE/include>
 )
 

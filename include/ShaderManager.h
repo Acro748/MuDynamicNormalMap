@@ -210,19 +210,19 @@ namespace Mus {
             MultiMapGuard& operator=(MultiMapGuard&& other) = delete;
 
             bool IsValid() const {
-                return mgs.empty() ? false : std::ranges::all_of(mgs.cbegin(), mgs.cend(), [](const MapGuard& mg) { return mg.IsValid(); });
+                return mgs.empty() ? false : std::ranges::all_of(mgs.cbegin(), mgs.cend(), [](const MapGuardPtr& mg) { return mg->IsValid(); });
             }
             HRESULT GetHR() const {
                 for (const auto& mg : mgs) {
-                    if (!mg.IsValid())
-                        return mg.GetHR();
+                    if (!mg->IsValid())
+                        return mg->GetHR();
                 }
                 return S_OK;
             }
 			template <typename T>
-            T* Get(UINT a_mipLevel) const { return mgs[a_mipLevel].IsValid() ? mgs[a_mipLevel].Get<T>() : nullptr; }
-            UINT GetRowPitch(UINT a_mipLevel) const { return mgs[a_mipLevel].IsValid() ? mgs[a_mipLevel].GetRowPitch() : 0; }
-            UINT GetDepthPitch(UINT a_mipLevel) const { return mgs[a_mipLevel].IsValid() ? mgs[a_mipLevel].GetDepthPitch() : 0; }
+            T* Get(UINT a_mipLevel) const { return mgs[a_mipLevel]->IsValid() ? mgs[a_mipLevel]->Get<T>() : nullptr; }
+            UINT GetRowPitch(UINT a_mipLevel) const { return mgs[a_mipLevel]->IsValid() ? mgs[a_mipLevel]->GetRowPitch() : 0; }
+            UINT GetDepthPitch(UINT a_mipLevel) const { return mgs[a_mipLevel]->IsValid() ? mgs[a_mipLevel]->GetDepthPitch() : 0; }
 
         private:
             ID3D11DeviceContext* context;
@@ -230,7 +230,8 @@ namespace Mus {
             const D3D11_MAP mapType;
             const UINT mipLevels;
             const bool needLock = true;
-            std::vector<MapGuard> mgs;
+            typedef std::unique_ptr<MapGuard> MapGuardPtr;
+            std::vector<MapGuardPtr> mgs;
 
 			void Map() {
                 if (!context || !resource)
@@ -239,12 +240,12 @@ namespace Mus {
                     ShaderLocker sl(context);
                     ShaderLockGuard slg(sl);
                     for (UINT mipLevel = 0; mipLevel < mipLevels; mipLevel++) {
-                        mgs.emplace_back(context, resource, mipLevel, mapType, false);
+                        mgs.emplace_back(std::make_unique<MapGuard>(context, resource, mipLevel, mapType, false));
                     }
 				} 
 				else {
                     for (UINT mipLevel = 0; mipLevel < mipLevels; mipLevel++) {
-                        mgs.emplace_back(context, resource, mipLevel, mapType, false);
+                        mgs.emplace_back(std::make_unique<MapGuard>(context, resource, mipLevel, mapType, false));
                     }
 				}
             };
@@ -295,7 +296,7 @@ namespace Mus {
 				REL::Relocation<func_t> func{ offset };
 				return func(name);
 			}
-			static std::int8_t CreateSourceTexture(std::string name, RE::NiPointer<RE::NiSourceTexture>& output) // -1 : failed to load/create, 0 : loaded, 1 : created
+            static std::int8_t CreateSourceTexture(const std::string& name, RE::NiPointer<RE::NiSourceTexture>& output) // -1 : failed to load/create, 0 : loaded, 1 : created
 			{
 				if (auto found = GetSingleton().niTextures.find(name); found != GetSingleton().niTextures.end())
 				{
@@ -339,14 +340,14 @@ namespace Mus {
 		
 			std::int8_t IsCompressFormat(DXGI_FORMAT format); // -1 non compress, 1 cpu compress, 2 gpu compress
 
-			std::int8_t CreateNiTexture(std::string name, Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTex, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> dstSRV, RE::NiPointer<RE::NiSourceTexture>& output);
-			Microsoft::WRL::ComPtr<ID3D11Texture2D> GetNiTexture(std::string name);
-			void ReleaseNiTexture(std::string name);
+			std::int8_t CreateNiTexture(const std::string& name, Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTex, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> dstSRV, RE::NiPointer<RE::NiSourceTexture>& output);
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> GetNiTexture(const std::string& name);
+            void ReleaseNiTexture(const std::string& name);
 
-			bool PrintTexture(std::string filePath, ID3D11Texture2D* texture);
+			bool PrintTexture(const std::string& filePath, ID3D11Texture2D* texture);
 		private:
 			bool ConvertD3D11(ID3D11Device* device, DirectX::ScratchImage& image, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Resource>& output);
-			bool UpdateNiTexture(std::string filePath);
+            bool UpdateNiTexture(const std::string& filePath);
 
 			concurrency::concurrent_unordered_map<std::string, RE::NiPointer<RE::NiSourceTexture>> niTextures;
 		};

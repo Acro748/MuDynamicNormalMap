@@ -241,6 +241,14 @@ namespace Mus {
                 {
                     SubdivisionTriThreshold = GetUIntValue(variableValue);
                 }
+                else if (variableName == "SubdivisionVertexSmooth")
+                {
+                    SubdivisionVertexSmooth = GetUIntValue(variableValue);
+                }
+                else if (variableName == "SubdivisionVertexSmoothStrength")
+                {
+                    SubdivisionVertexSmoothStrength = GetFloatValue(variableValue);
+                }
                 else if (variableName == "VertexSmooth")
                 {
                     VertexSmooth = GetUIntValue(variableValue);

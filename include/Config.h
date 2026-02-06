@@ -150,6 +150,12 @@ namespace Mus {
         [[nodiscard]] inline auto GetSubdivisionTriThreshold() const noexcept {
             return SubdivisionTriThreshold;
         }
+        [[nodiscard]] inline auto GetSubdivisionVertexSmooth() const noexcept {
+            return SubdivisionVertexSmooth;
+        }
+        [[nodiscard]] inline auto GetSubdivisionVertexSmoothStrength() const noexcept {
+            return SubdivisionVertexSmoothStrength;
+        }
         [[nodiscard]] inline auto GetVertexSmooth() const noexcept {
             return VertexSmooth;
         }
@@ -256,7 +262,6 @@ namespace Mus {
         [[nodiscard]] inline auto GetDetectTextureChange() const noexcept {
             return DetectTextureChange;
         }
-
     protected:
         //Debug
         spdlog::level::level_enum logLevel{ spdlog::level::level_enum::info };
@@ -305,6 +310,8 @@ namespace Mus {
         bool AllowInvertNormalSmooth = false;
         std::uint8_t Subdivision = 0;
         std::uint32_t SubdivisionTriThreshold = 65535;
+        std::uint8_t SubdivisionVertexSmooth = 1;
+        float SubdivisionVertexSmoothStrength = 0.5f;
         std::uint8_t VertexSmooth = 0;
         float VertexSmoothStrength = 0.5f;
         std::uint8_t VertexSmoothByAngle = 0;

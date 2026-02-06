@@ -678,7 +678,7 @@ namespace Mus {
 			}
 		}
 
-		std::int8_t TextureLoadManager::CreateNiTexture(std::string name, Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTex, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> dstSRV, RE::NiPointer<RE::NiSourceTexture>& output)
+		std::int8_t TextureLoadManager::CreateNiTexture(const std::string& name, Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTex, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> dstSRV, RE::NiPointer<RE::NiSourceTexture>& output)
 		{
 			RE::NiPointer<RE::NiSourceTexture> newTexture;
 			auto result = TextureLoadManager::CreateSourceTexture(name, newTexture);
@@ -709,19 +709,19 @@ namespace Mus {
 			return result;
 		}
 
-		Microsoft::WRL::ComPtr<ID3D11Texture2D> TextureLoadManager::GetNiTexture(std::string name)
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> TextureLoadManager::GetNiTexture(const std::string& name)
 		{
             Microsoft::WRL::ComPtr<ID3D11Texture2D> texture = nullptr;
 			auto found = niTextures.find(name);
 			if (found != niTextures.end())
 			{
-                if (found->second && found->second->rendererTexture)
+                if (found->second && found->second->rendererTexture && found->second->rendererTexture->texture)
                     found->second->rendererTexture->texture->QueryInterface(texture.GetAddressOf());
 			}
             return texture;
 		}
 
-		void TextureLoadManager::ReleaseNiTexture(std::string name)
+		void TextureLoadManager::ReleaseNiTexture(const std::string& name)
 		{
 			auto found = niTextures.find(name);
 			if (found != niTextures.end())
@@ -740,7 +740,7 @@ namespace Mus {
 			}
 		}
 
-		bool TextureLoadManager::PrintTexture(std::string filePath, ID3D11Texture2D* texture)
+		bool TextureLoadManager::PrintTexture(const std::string& filePath, ID3D11Texture2D* texture)
 		{
 			if (filePath.empty() || !texture)
 				return false;
@@ -930,7 +930,7 @@ namespace Mus {
 			logger::info("Update NiTexture Done : {}", filePath);
 			return true;
 		}
-		bool TextureLoadManager::UpdateNiTexture(std::string filePath)
+        bool TextureLoadManager::UpdateNiTexture(const std::string& filePath)
 		{
 			if (!IsExistFile(filePath, ExistType::textures, true))
 				return true;
