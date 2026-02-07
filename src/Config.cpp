@@ -1,7 +1,5 @@
 #include "Config.h"
 
-using namespace Mus;
-
 namespace Mus {
     bool Config::LoadLogging()
     {
@@ -242,6 +240,14 @@ namespace Mus {
                 else if (variableName == "SubdivisionTriThreshold")
                 {
                     SubdivisionTriThreshold = GetUIntValue(variableValue);
+                }
+                else if (variableName == "SubdivisionVertexSmooth")
+                {
+                    SubdivisionVertexSmooth = GetUIntValue(variableValue);
+                }
+                else if (variableName == "SubdivisionVertexSmoothStrength")
+                {
+                    SubdivisionVertexSmoothStrength = GetFloatValue(variableValue);
                 }
                 else if (variableName == "VertexSmooth")
                 {

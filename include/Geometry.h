@@ -19,24 +19,24 @@ namespace Mus {
         };
         struct ObjectInfo {
             GeometryInfo info;
-            std::size_t vertexStart = 0;
-            std::size_t vertexEnd = 0;
-            std::size_t vertexCount() const { return vertexEnd - vertexStart; }
-            std::size_t uvStart = 0;
-            std::size_t uvEnd = 0;
-            std::size_t uvCount() const { return uvEnd - uvStart; }
-            std::size_t normalStart = 0;
-            std::size_t normalEnd = 0;
-            std::size_t normalCount() const { return normalEnd - normalStart; }
-            std::size_t tangentStart = 0;
-            std::size_t tangentEnd = 0;
-            std::size_t tangentCount() const { return tangentEnd - tangentStart; }
-            std::size_t bitangentStart = 0;
-            std::size_t bitangentEnd = 0;
-            std::size_t bitangentCount() const { return bitangentEnd - bitangentStart; }
-            std::size_t indicesStart = 0;
-            std::size_t indicesEnd = 0;
-            std::size_t indicesCount() const { return indicesEnd - indicesStart; }
+            std::uint32_t vertexStart = 0;
+            std::uint32_t vertexEnd = 0;
+            std::uint32_t vertexCount() const { return vertexEnd - vertexStart; }
+            std::uint32_t uvStart = 0;
+            std::uint32_t uvEnd = 0;
+            std::uint32_t uvCount() const { return uvEnd - uvStart; }
+            std::uint32_t normalStart = 0;
+            std::uint32_t normalEnd = 0;
+            std::uint32_t normalCount() const { return normalEnd - normalStart; }
+            std::uint32_t tangentStart = 0;
+            std::uint32_t tangentEnd = 0;
+            std::uint32_t tangentCount() const { return tangentEnd - tangentStart; }
+            std::uint32_t bitangentStart = 0;
+            std::uint32_t bitangentEnd = 0;
+            std::uint32_t bitangentCount() const { return bitangentEnd - bitangentStart; }
+            std::uint32_t indicesStart = 0;
+            std::uint32_t indicesEnd = 0;
+            std::uint32_t indicesCount() const { return indicesEnd - indicesStart; }
             std::vector<std::uint8_t> geometryBlockData;
             std::vector<RE::NiPoint3> dynamicBlockData1;      // without expression
             std::vector<DirectX::XMFLOAT4> dynamicBlockData2; // with expression
@@ -48,14 +48,16 @@ namespace Mus {
         bool GetGeometryInfo(RE::BSGeometry* a_geo, GeometryInfo& info);
         bool CopyGeometryData(RE::BSGeometry* a_geo);
         void GetGeometryData();
-        void CreateVertexMap();
+        void PreProcessing();
         void CreateFaceData();
         void RecalculateNormals(float a_smoothDegree);
-        void Subdivision(std::uint32_t a_subCount, std::uint32_t a_triThreshold);
+        void Subdivision(std::uint32_t a_subCount, std::uint32_t a_triThreshold, float a_strength, std::uint32_t a_smoothCount);
         void VertexSmooth(float a_strength, std::uint32_t a_smoothCount);
         void VertexSmoothByAngle(float a_smoothThreshold1, float a_smoothThreshold2, std::uint32_t a_smoothCount);
         void CreateGeometryHash();
+        void GeometryProcessing();
         void ApplyNormals();
+        bool PrintGeometry(const lString& filePath);
 
         GeometryInfo mainInfo;
         std::vector<DirectX::XMFLOAT3> vertices;
@@ -74,13 +76,13 @@ namespace Mus {
         std::uint32_t mainGeometryIndex = 0;
 
     private:
-        inline float SmoothStepRange(float x, float A, float B) {
+        inline float SmoothStepRange(float x, float A, float B) const {
             if (x > A)
                 return 0.0f;
             else if (x <= B)
                 return 1.0f;
             const float t = (A - x) / (A - B);
-            return t * t * (3.0f - 2.0f * t);
+            return std::clamp(t * t * (3.0f - 2.0f * t), 0.0f, 1.0f);
         }
 
         struct Edge {
@@ -127,20 +129,23 @@ namespace Mus {
             PosEntry() {};
             PosEntry(const PositionKey& a_key, std::uint32_t a_index) : key(PositionKeyHash()(a_key)), index(a_index) {}
         };
-        inline PositionKey MakePositionKey(const DirectX::XMFLOAT3& pos) {
+        inline PositionKey MakePositionKey(const DirectX::XMFLOAT3& pos) const {
             return {
                 std::int32_t(std::floor(pos.x * weldDistanceMult)),
                 std::int32_t(std::floor(pos.y * weldDistanceMult)),
                 std::int32_t(std::floor(pos.z * weldDistanceMult))};
         }
-        inline PositionKey MakeBoundaryPositionKey(const DirectX::XMFLOAT3& pos) {
+        inline PositionKey MakeBoundaryPositionKey(const DirectX::XMFLOAT3& pos) const {
             return {
                 std::int32_t(std::floor(pos.x * boundaryWeldDistanceMult)),
                 std::int32_t(std::floor(pos.y * boundaryWeldDistanceMult)),
                 std::int32_t(std::floor(pos.z * boundaryWeldDistanceMult))};
         }
 
-        std::vector<std::vector<std::uint32_t>> linkedVertices;
+        std::vector<std::vector<std::uint32_t>> weldedVertices;
+        inline bool IsWeldedVertex(const std::uint32_t vi, const std::uint32_t tv) const {
+            return std::find(weldedVertices[vi].cbegin(), weldedVertices[vi].cend(), tv) != weldedVertices[vi].end();
+        }
 
         struct FaceNormal {
             std::uint32_t v0, v1, v2;
@@ -156,7 +161,7 @@ namespace Mus {
         };
         std::vector<FaceTangent> faceTangents;
 
-        inline bool IsSameGeometry(const std::uint32_t& v0, const std::uint32_t& v1) const {
+        inline bool IsSameGeometry(const std::uint32_t v0, const std::uint32_t v1) const {
             const auto it = std::find_if(geometries.cbegin(), geometries.cend(), [&](const GeometriesInfo& geoInfo) {
                 return geoInfo.objInfo.vertexStart <= v0 && geoInfo.objInfo.vertexEnd > v0;
             });
@@ -164,6 +169,26 @@ namespace Mus {
                 return false;
             return it->objInfo.vertexStart <= v1 && it->objInfo.vertexEnd > v1;
         };
+
+        struct EdgeMid {
+            std::uint32_t v0, v1;
+            std::uint32_t mv;
+            bool operator<(const EdgeMid& other) const {
+                return mv < other.mv;
+            }
+        };
+        inline bool IsWeldedEdge(const EdgeMid& e0, const EdgeMid& e1) const {
+            return IsWeldedVertex(e0.v0, e1.v0) && IsWeldedVertex(e0.v1, e1.v1);
+        }
+        struct LocalDate {
+            RE::BSGeometry* geometry;
+            std::vector<DirectX::XMFLOAT3> vertices;
+            std::vector<DirectX::XMFLOAT2> uvs;
+            std::vector<std::uint32_t> indices;
+            ObjectInfo objInfo;
+            std::vector<EdgeMid> localCreatedEdges;
+        };
+
     };
     typedef std::shared_ptr<GeometryData> GeometryDataPtr;
 
@@ -172,11 +197,11 @@ namespace Mus {
         if (v.empty())
             return;
         const std::size_t max = v.size();
-        const std::size_t threads = tp->GetThreads() * std::max(1ull, std::min(v.size() / (tp->GetThreads() * 4096), 4ull));
+        const std::size_t threads = tp->GetThreads() * std::max(1ull, max / (tp->GetThreads() * 4096));
         const std::size_t sub = std::max(1ull, std::min(max, threads));
         const std::size_t unit = (max + sub - 1) / sub;
         std::vector<std::future<void>> processes;
-        for (std::size_t t = 0; t < threads; t++) {
+        for (std::size_t t = 0; t < sub; t++) {
             const std::size_t begin = t * unit;
             const std::size_t end = std::min(begin + unit, max);
             processes.push_back(tp->submitAsync([&, t, begin, end]() {

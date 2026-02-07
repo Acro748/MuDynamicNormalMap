@@ -26,10 +26,15 @@ namespace Mus {
         }
 
         inline std::size_t GetThreads() const { return workers.size(); };
+        inline std::int32_t GetThreadIndex(const std::uint64_t threadID) const {
+            const auto it = std::find(threadIDs.cbegin(), threadIDs.cend(), threadID);
+            return it != threadIDs.cend() ? std::distance(threadIDs.cbegin(), it) : -1;
+        };
     private:
         const std::uint64_t coreMask = 0;
 
         std::vector<std::thread> workers;
+        std::vector<std::uint64_t> threadIDs;
         std::queue<std::function<void()>> tasks;
         std::mutex queueMutex;
         std::condition_variable cv;

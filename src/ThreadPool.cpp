@@ -16,8 +16,12 @@ namespace Mus {
         : coreMask(a_coreMask), stop(false)
     {
         std::uint32_t coreCount = std::max(1u, threadSize);
+        threadIDs.resize(coreCount);
         for (std::uint32_t i = 0; i < coreCount; i++) {
-            workers.emplace_back([this] { workerLoop(); });
+            workers.emplace_back([this, i] {
+                threadIDs[i] = GetCurrentThreadId();
+                workerLoop();
+            });
         }
     }
 

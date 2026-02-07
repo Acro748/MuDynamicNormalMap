@@ -22,9 +22,9 @@ namespace Mus {
 
 	extern std::clock_t currentTime;
 
-	#define MATH_PI       3.14159265358979323846
-	constexpr float toDegree = 180 / MATH_PI;
-	constexpr float toRadian = MATH_PI / 180;
+	constexpr double PI = 3.14159265358979323846;
+	constexpr float toDegree = 180.0 / PI;
+	constexpr float toRadian = PI / 180.0;
 	constexpr float Scale_havokWorld = 0.0142875f;
 	constexpr float Scale_skyrimUnit = 0.046875f;
 	constexpr float Scale_skyrimImperial = 0.5625f;

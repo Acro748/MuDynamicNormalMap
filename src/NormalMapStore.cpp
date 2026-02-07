@@ -171,26 +171,25 @@ namespace Mus {
 			return;
 		}
 
-		Shader::ShaderManager::GetSingleton().ShaderContextLock();
-		context->CopyResource(cacheTexture.Get(), a_resource->normalmapTexture2D.Get());
-		Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
+        {
+			Shader::ShaderLocker sl(context);
+            Shader::ShaderLockGuard slg(sl);
+            context->CopyResource(cacheTexture.Get(), a_resource->normalmapTexture2D.Get());
+        }
 
 		RemoveDiskCache(a_hash);
 		for (UINT mipLevel = 0; mipLevel < desc.MipLevels; mipLevel++) {
 			const UINT height = std::max(desc.Height >> mipLevel, 1u);
 			std::size_t blockHeight = 0;
 
-			D3D11_MAPPED_SUBRESOURCE mapped;
-			Shader::ShaderManager::GetSingleton().ShaderContextLock();
-			hr = context->Map(cacheTexture.Get(), mipLevel, D3D11_MAP_READ, 0, &mapped);
-			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
-			if (FAILED(hr))
+			Shader::MapGuard mg(context, cacheTexture.Get(), mipLevel, D3D11_MAP_READ);
+			if (!mg.IsValid())
 			{
-				logger::error("Failed to map copy texture : {}", hr);
+				logger::error("Failed to map copy texture : {}", mg.GetHR());
 				return;
 			}
 
-			const std::uint32_t rowPitch = mapped.RowPitch;
+			const std::uint32_t rowPitch = mg.GetRowPitch();
 
 			if (desc.Format == DXGI_FORMAT_BC7_UNORM || desc.Format == DXGI_FORMAT_BC3_UNORM || desc.Format == DXGI_FORMAT_BC1_UNORM)
 			{
@@ -207,12 +206,8 @@ namespace Mus {
 
 			std::vector<std::uint8_t> buffer((std::size_t)rowPitch * blockHeight);
 			for (std::size_t y = 0; y < blockHeight; y++) {
-				memcpy(buffer.data() + y * rowPitch, reinterpret_cast<std::uint8_t*>(mapped.pData) + y * rowPitch, rowPitch);
+				memcpy(buffer.data() + y * rowPitch, mg.Get<std::uint8_t>() + y * rowPitch, rowPitch);
 			}
-
-			Shader::ShaderManager::GetSingleton().ShaderContextLock();
-			context->Unmap(cacheTexture.Get(), mipLevel);
-			Shader::ShaderManager::GetSingleton().ShaderContextUnlock();
 
 			int maxSize = LZ4_compressBound(buffer.size());
 			std::vector<char> compressed(maxSize);

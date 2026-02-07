@@ -117,8 +117,9 @@ namespace Mus {
 
 		std::string FixTexturePath(std::string texturePath);
 
-		typedef concurrency::concurrent_unordered_map<RE::FormID, bSlotbit> UpdateSlotQueue;
+		typedef std::unordered_map<RE::FormID, bSlotbit> UpdateSlotQueue;
         UpdateSlotQueue updateSlotQueue;
+        mutable std::mutex updateSlotQueueLock;
 
 		std::unordered_map<RE::FormID, bool> isActiveActors; // ActorID, isActive
         mutable std::shared_mutex isActiveActorsLock;
@@ -141,27 +142,114 @@ namespace Mus {
             return it != isUpdating.end() ? it->second : false;
         }
 
-		struct SlotTexKey {
-			bSlot slot;
-			std::string textureName;
-			bool operator==(const SlotTexKey& other) const {
-				return slot == other.slot && textureName == other.textureName;
+		class LastNormalMapData {
+            bSlot slot = 0;
+            std::string textureName = "";
+        public:
+            LastNormalMapData() = delete;
+            LastNormalMapData(const LastNormalMapData&) = delete;
+			LastNormalMapData& operator=(const LastNormalMapData&) = delete;
+
+            LastNormalMapData(const bSlot a_slot, const std::string& a_textureName) : slot(a_slot), textureName(a_textureName) {};
+            LastNormalMapData(LastNormalMapData&& other) noexcept : slot(other.slot), textureName(other.textureName) {
+                other.textureName = "";
+            };
+            LastNormalMapData& operator=(LastNormalMapData&& other) noexcept {
+                slot = other.slot;
+                textureName = other.textureName;
+                other.textureName = "";
+            };
+
+			bool Is(const bSlot other) const { 
+				return slot == other; 
 			}
-		};
-		struct SlotTexHash {
-			std::size_t operator()(const SlotTexKey k) const {
-				std::size_t h1 = std::hash<std::uint32_t>()(k.slot);
-				std::size_t h2 = std::hash<std::string>()(k.textureName);
-				return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
+			bool Is(const std::string& other) const { 
+				return textureName == other; 
 			}
+			bool Is(const bSlot otherSlot, const std::string& otherName) const { 
+				return Is(otherSlot) && Is(otherName);
+			}
+
+			~LastNormalMapData() noexcept { 
+				if (!textureName.empty())
+					Shader::TextureLoadManager::GetSingleton().ReleaseNiTexture(textureName); 
+				logger::debug("Remove texture : {}", textureName);
+			};
+
+			bSlot GetSlot() const { return slot; };
+			std::string GetTextureName() const { return textureName; };
 		};
-		typedef std::unordered_set<SlotTexKey, SlotTexHash> SlotTexSet;
-        std::unordered_map<RE::FormID, SlotTexSet> lastNormalMap;
+        typedef std::shared_ptr<LastNormalMapData> LastNormalMapDataPtr;
+        typedef std::vector<LastNormalMapDataPtr> LastNormalMapSet;
+        std::unordered_map<RE::FormID, LastNormalMapSet> lastNormalMap;
         mutable std::shared_mutex lastNormalMapLock;
 
-		void ReleaseResourceOnUnloadActors();
+		inline bool IsExistLastNormalMap(RE::FormID actorID) const {
+            std::lock_guard lg(lastNormalMapLock);
+            auto found = lastNormalMap.find(actorID);
+            return found != lastNormalMap.end();
+        };
+		inline bool IsExistLastNormalMap(RE::FormID actorID, bSlot slot) const {
+            std::lock_guard lg(lastNormalMapLock);
+            auto found = lastNormalMap.find(actorID);
+            if (found == lastNormalMap.end()) {
+                return false;
+            }
+            auto it = std::find_if(found->second.cbegin(), found->second.cend(), [&](const LastNormalMapDataPtr& data) {
+                return data->Is(slot);
+            });
+            return it != found->second.cend();
+        };
+		inline bool IsExistLastNormalMap(RE::FormID actorID, bSlot slot, const std::string& textureName) const {
+            std::lock_guard lg(lastNormalMapLock);
+            auto found = lastNormalMap.find(actorID);
+            if (found == lastNormalMap.end()) {
+                return false;
+            }
+            auto it = std::find_if(found->second.cbegin(), found->second.cend(), [&](const LastNormalMapDataPtr& data) {
+                return data->Is(slot, textureName);
+            });
+            return it != found->second.cend();
+        };
+		inline void InsertLastNormalMap(RE::FormID actorID, bSlot slot, const std::string& textureName) {
+            std::lock_guard lg(lastNormalMapLock);
+            auto found = lastNormalMap.find(actorID);
+            if (found == lastNormalMap.end()) {
+                lastNormalMap[actorID].push_back(std::make_shared<LastNormalMapData>(slot, textureName));
+                return;
+            }
+            auto it = std::find_if(found->second.cbegin(), found->second.cend(), [&](const LastNormalMapDataPtr& data) {
+                return data->Is(slot, textureName);
+            });
+            if (it == found->second.cend())
+				lastNormalMap[actorID].push_back(std::make_shared<LastNormalMapData>(slot, textureName));
+            return;
+        };
+        inline void RemoveLastNormalMap(RE::FormID actorID) {
+            std::lock_guard lg(lastNormalMapLock);
+            lastNormalMap.erase(actorID);
+		}
+        inline void RemoveLastNormalMap(RE::FormID actorID, bSlot slot) {
+            std::lock_guard lg(lastNormalMapLock);
+            auto found = lastNormalMap.find(actorID);
+            if (found == lastNormalMap.end()) {
+                return;
+            }
+            std::erase_if(found->second, [&](const LastNormalMapDataPtr data) {
+                return data->Is(slot);
+            });
+		}
+        inline void RemoveLastNormalMap(RE::FormID actorID, bSlot slot, const std::string& textureName) {
+            std::lock_guard lg(lastNormalMapLock);
+            auto found = lastNormalMap.find(actorID);
+            if (found == lastNormalMap.end()) {
+                return;
+            }
+            std::erase_if(found->second, [&](const LastNormalMapDataPtr data) {
+                return data->Is(slot, textureName);
+            });
+		}
 
-		void ReleaseNormalMap(RE::FormID a_actorID, bSlot a_slot);
-        void ReleaseNormalMap(const SlotTexSet& textures) const;
+		void ReleaseResourceOnUnloadActors();
 	};
 }

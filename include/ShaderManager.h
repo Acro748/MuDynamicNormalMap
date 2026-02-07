@@ -42,8 +42,8 @@ namespace Mus {
 			inline void ShaderSecondContextUnlock() { LeaveCriticalSection(&subContextLock); };
 			inline void SetSearchSecondGPU(bool isSearch) { isSearchSecondGPU = isSearch; };
 
-			bool IsSecondGPUResource(ID3D11DeviceContext* context) { return context == secondContext_.Get(); };
-			bool IsSecondGPUResource(ID3D11Device* device) { return device == secondDevice_.Get(); };
+			bool IsSecondGPUResource(ID3D11DeviceContext* context) const { return context == secondContext_.Get(); };
+            bool IsSecondGPUResource(ID3D11Device* device) const { return device == secondDevice_.Get(); };
 
 			bool IsFailedShader(std::string shaderName);
 
@@ -130,6 +130,140 @@ namespace Mus {
             ShaderLocker& sl;
 		};
 
+		class MapGuard {
+        public:
+            MapGuard() = delete;
+            MapGuard(ID3D11DeviceContext* a_context, ID3D11Resource* a_resource, UINT a_mipLevel, D3D11_MAP a_mapType, bool a_needLock = true)
+                : context(a_context), resource(a_resource), mipLevel(a_mipLevel), mapType(a_mapType), needLock(a_needLock) { Map(); }
+            ~MapGuard() { Unmap(); }
+
+            MapGuard(const MapGuard&) = delete;
+            MapGuard& operator=(const MapGuard&) = delete;
+            MapGuard& operator=(MapGuard&& other) = delete;
+
+            MapGuard(MapGuard&& other) noexcept
+                : context(other.context), resource(other.resource), mipLevel(other.mipLevel), mapType(other.mapType), needLock(other.needLock)
+				, mapped(other.mapped), success(other.success), hr(other.hr) {
+                other.success = false;
+                other.context = nullptr;
+            }
+
+			bool IsValid() const { return success; }
+            HRESULT GetHR() const { return hr; }
+			template <typename T>
+            T* Get() const { return success ? reinterpret_cast<T*>(mapped.pData) : nullptr; }
+            UINT GetRowPitch() const { return success ? mapped.RowPitch : 0; }
+            UINT GetDepthPitch() const { return success ? mapped.DepthPitch : 0; }
+
+        private:
+            ID3D11DeviceContext* context;
+            ID3D11Resource* resource;
+            const D3D11_MAP mapType;
+            const UINT mipLevel;
+            const bool needLock = true;
+            D3D11_MAPPED_SUBRESOURCE mapped;
+            bool success = false;
+            HRESULT hr;
+            void Map() {
+                if (!context || !resource)
+                    return;
+                if (needLock) {
+                    ShaderLocker sl(context);
+                    ShaderLockGuard slg(sl);
+                    hr = context->Map(resource, mipLevel, mapType, 0, &mapped);
+                } 
+				else
+                    hr = context->Map(resource, mipLevel, mapType, 0, &mapped);
+
+				if (FAILED(hr)) {
+                    success = false;
+                    return;
+				}
+                success = true;
+            };
+			void Unmap() {
+                if (!success || !resource)
+                    return;
+                if (needLock) {
+                    if (!context)
+                        return;
+                    ShaderLocker sl(context);
+                    ShaderLockGuard slg(sl);
+                    context->Unmap(resource, mipLevel);
+                } 
+				else
+                    context->Unmap(resource, mipLevel);
+                success = false;
+			}
+		};
+
+		class MultiMapGuard {
+        public:
+            MultiMapGuard() = delete;
+            MultiMapGuard(ID3D11DeviceContext* a_context, ID3D11Resource* a_resource, UINT a_mipLevels, D3D11_MAP a_mapType, bool a_needLock = true)
+                : context(a_context), resource(a_resource), mipLevels(a_mipLevels), mapType(a_mapType), needLock(a_needLock) { Map(); };
+            ~MultiMapGuard() { Unmap(); };
+
+            MultiMapGuard(const MultiMapGuard&) = delete;
+            MultiMapGuard(MultiMapGuard&&) = delete;
+            MultiMapGuard& operator=(const MultiMapGuard&) = delete;
+            MultiMapGuard& operator=(MultiMapGuard&& other) = delete;
+
+            bool IsValid() const {
+                return mgs.empty() ? false : std::ranges::all_of(mgs.cbegin(), mgs.cend(), [](const MapGuardPtr& mg) { return mg->IsValid(); });
+            }
+            HRESULT GetHR() const {
+                for (const auto& mg : mgs) {
+                    if (!mg->IsValid())
+                        return mg->GetHR();
+                }
+                return S_OK;
+            }
+			template <typename T>
+            T* Get(UINT a_mipLevel) const { return mgs[a_mipLevel]->IsValid() ? mgs[a_mipLevel]->Get<T>() : nullptr; }
+            UINT GetRowPitch(UINT a_mipLevel) const { return mgs[a_mipLevel]->IsValid() ? mgs[a_mipLevel]->GetRowPitch() : 0; }
+            UINT GetDepthPitch(UINT a_mipLevel) const { return mgs[a_mipLevel]->IsValid() ? mgs[a_mipLevel]->GetDepthPitch() : 0; }
+
+        private:
+            ID3D11DeviceContext* context;
+            ID3D11Resource* resource;
+            const D3D11_MAP mapType;
+            const UINT mipLevels;
+            const bool needLock = true;
+            typedef std::unique_ptr<MapGuard> MapGuardPtr;
+            std::vector<MapGuardPtr> mgs;
+
+			void Map() {
+                if (!context || !resource)
+                    return;
+                if (needLock) {
+                    ShaderLocker sl(context);
+                    ShaderLockGuard slg(sl);
+                    for (UINT mipLevel = 0; mipLevel < mipLevels; mipLevel++) {
+                        mgs.emplace_back(std::make_unique<MapGuard>(context, resource, mipLevel, mapType, false));
+                    }
+				} 
+				else {
+                    for (UINT mipLevel = 0; mipLevel < mipLevels; mipLevel++) {
+                        mgs.emplace_back(std::make_unique<MapGuard>(context, resource, mipLevel, mapType, false));
+                    }
+				}
+            };
+
+			void Unmap() {
+                if (needLock) {
+					if (!context)
+						return;
+                    ShaderLocker sl(context);
+                    ShaderLockGuard slg(sl);
+                    mgs.clear();
+				} 
+				else {
+                    mgs.clear();
+				}
+            };
+		};
+
 		class TextureLoadManager {
 		public:
 			[[nodiscard]] static TextureLoadManager& GetSingleton() {
@@ -162,7 +296,7 @@ namespace Mus {
 				REL::Relocation<func_t> func{ offset };
 				return func(name);
 			}
-			static std::int8_t CreateSourceTexture(std::string name, RE::NiPointer<RE::NiSourceTexture>& output) // -1 : failed to load/create, 0 : loaded, 1 : created
+            static std::int8_t CreateSourceTexture(const std::string& name, RE::NiPointer<RE::NiSourceTexture>& output) // -1 : failed to load/create, 0 : loaded, 1 : created
 			{
 				if (auto found = GetSingleton().niTextures.find(name); found != GetSingleton().niTextures.end())
 				{
@@ -206,14 +340,14 @@ namespace Mus {
 		
 			std::int8_t IsCompressFormat(DXGI_FORMAT format); // -1 non compress, 1 cpu compress, 2 gpu compress
 
-			std::int8_t CreateNiTexture(std::string name, Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTex, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> dstSRV, RE::NiPointer<RE::NiSourceTexture>& output);
-			Microsoft::WRL::ComPtr<ID3D11Texture2D> GetNiTexture(std::string name);
-			void ReleaseNiTexture(std::string name);
+			std::int8_t CreateNiTexture(const std::string& name, Microsoft::WRL::ComPtr<ID3D11Texture2D> dstTex, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> dstSRV, RE::NiPointer<RE::NiSourceTexture>& output);
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> GetNiTexture(const std::string& name);
+            void ReleaseNiTexture(const std::string& name);
 
-			bool PrintTexture(std::string filePath, ID3D11Texture2D* texture);
+			bool PrintTexture(const std::string& filePath, ID3D11Texture2D* texture);
 		private:
 			bool ConvertD3D11(ID3D11Device* device, DirectX::ScratchImage& image, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Resource>& output);
-			bool UpdateNiTexture(std::string filePath);
+            bool UpdateNiTexture(const std::string& filePath);
 
 			concurrency::concurrent_unordered_map<std::string, RE::NiPointer<RE::NiSourceTexture>> niTextures;
 		};
