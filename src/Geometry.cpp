@@ -190,7 +190,7 @@ namespace Mus {
 			PerformanceLog(std::string(__func__) + "::" + mainInfo.name, true, false);
 	}
 
-	void GeometryData::CreateVertexMap()
+	void GeometryData::PreProcessing()
     {
         if (vertices.empty() || indices.empty())
             return;
@@ -201,6 +201,7 @@ namespace Mus {
         if (Config::GetSingleton().GetGeometryDataTime())
             PerformanceLog(std::string(__func__) + "::" + std::to_string(triCount), false, false);
 
+        // create vertex to face map and edge map
         vertexToFaceMap.clear();
         vertexToFaceMap.resize(vertCount);
         std::vector<Edge> edges(indices.size());
@@ -234,8 +235,8 @@ namespace Mus {
             }
         }
 
+        // create boundary map
         parallel_sort(edges, currentProcessingThreads.load());
-
         std::vector<std::uint8_t> isBoundaryVert(vertCount, 0);
         std::size_t i = 0;
         while (i < edges.size())
@@ -254,6 +255,7 @@ namespace Mus {
             i += count;
         }
 
+        // create pos map for weld
         std::vector<PosEntry> pMap(vertCount);
         std::vector<PosEntry> pbMap;
         std::vector<std::vector<PosEntry>> tpbMap(currentProcessingThreads.load()->GetThreads());
@@ -287,6 +289,7 @@ namespace Mus {
         parallel_sort(pMap, currentProcessingThreads.load());
         parallel_sort(pbMap, currentProcessingThreads.load());
 
+        // create weld map
         weldedVertices.clear();
         weldedVertices.resize(vertCount);
         auto ProcessGroups = [&](const std::vector<PosEntry>& entry, bool checkSameGeo) {
@@ -314,6 +317,7 @@ namespace Mus {
         ProcessGroups(pMap, false);
         ProcessGroups(pbMap, true);
 
+        // weld vertices
         {
             std::vector<std::future<void>> processes;
             const std::size_t size = weldedVertices.size();
@@ -352,35 +356,6 @@ namespace Mus {
 		const std::size_t triCount = indices.size() / 3;
         if (Config::GetSingleton().GetGeometryDataTime())
             PerformanceLog(std::string(__func__) + "::" + std::to_string(triCount), false, false);
-
-        {
-            std::vector<std::future<void>> processes;
-            const auto vertices_ = vertices;
-            const std::size_t size = weldedVertices.size();
-            const std::size_t sub = std::max(1ull, std::min(size, currentProcessingThreads.load()->GetThreads() * 4));
-            const std::size_t unit = (size + sub - 1) / sub;
-            for (std::size_t t = 0; t < sub; t++)
-            {
-                const std::size_t begin = t * unit;
-                const std::size_t end = std::min(begin + unit, size);
-                processes.push_back(currentProcessingThreads.load()->submitAsync([&, begin, end]() {
-                    for (std::size_t i = begin; i < end; i++)
-                    {
-                        DirectX::XMVECTOR pos = emptyVector;
-                        for (const auto& vi : weldedVertices[i])
-                        {
-                            pos = DirectX::XMVectorAdd(pos, DirectX::XMLoadFloat3(&vertices_[vi]));
-                        }
-                        pos = DirectX::XMVectorScale(pos, 1.0f / weldedVertices[i].size());
-                        DirectX::XMStoreFloat3(&vertices[i], pos);
-                    }
-                }));
-            }
-            for (auto& process : processes)
-            {
-                process.get();
-            }
-        }
 
         faceNormals.resize(triCount);
         faceTangents.resize(triCount);
@@ -456,6 +431,34 @@ namespace Mus {
             }
         }
 
+        {
+            std::vector<std::future<void>> processes;
+            const auto vertices_ = vertices;
+            const std::size_t size = weldedVertices.size();
+            const std::size_t sub = std::max(1ull, std::min(size, currentProcessingThreads.load()->GetThreads() * 4));
+            const std::size_t unit = (size + sub - 1) / sub;
+            for (std::size_t t = 0; t < sub; t++)
+            {
+                const std::size_t begin = t * unit;
+                const std::size_t end = std::min(begin + unit, size);
+                processes.push_back(currentProcessingThreads.load()->submitAsync([&, begin, end]() {
+                    for (std::size_t i = begin; i < end; i++)
+                    {
+                        DirectX::XMVECTOR pos = emptyVector;
+                        for (const auto& vi : weldedVertices[i])
+                        {
+                            pos = DirectX::XMVectorAdd(pos, DirectX::XMLoadFloat3(&vertices_[vi]));
+                        }
+                        pos = DirectX::XMVectorScale(pos, 1.0f / weldedVertices[i].size());
+                        DirectX::XMStoreFloat3(&vertices[i], pos);
+                    }
+                }));
+            }
+            for (auto& process : processes)
+            {
+                process.get();
+            }
+        }
         logger::debug("{}::{} : map data updated, vertices {} / uvs {} / tris {}", __func__,
                       mainInfo.name, vertices.size(), uvs.size(), triCount);
 
@@ -932,7 +935,6 @@ namespace Mus {
             createVertexToFaceMap();
             if (Config::GetSingleton().GetGeometryDataTime())
                 PerformanceLog(std::string(__func__) + "::" + subID + "::" + std::to_string(i), true, false);
-            //CreateVertexMap(1.0f / i);
             CreateFaceData();
             VertexSmooth(a_strength, a_smoothCount);
         }
@@ -1118,7 +1120,7 @@ namespace Mus {
     {
         if (Config::GetSingleton().GetGeometryDataTime())
             PerformanceLog(std::string(__func__) + "::" + mainInfo.name, false, false);
-        CreateVertexMap();
+        PreProcessing();
         Subdivision(Config::GetSingleton().GetSubdivision(), Config::GetSingleton().GetSubdivisionTriThreshold(),
                             Config::GetSingleton().GetSubdivisionVertexSmoothStrength(), Config::GetSingleton().GetSubdivisionVertexSmooth());
         VertexSmoothByAngle(Config::GetSingleton().GetVertexSmoothByAngleThreshold1(), Config::GetSingleton().GetVertexSmoothByAngleThreshold2(), Config::GetSingleton().GetVertexSmoothByAngle());

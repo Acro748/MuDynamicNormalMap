@@ -796,9 +796,10 @@ namespace Mus {
 	std::string TaskManager::GetTextureName(RE::Actor* a_actor, bSlot a_bipedSlot, std::string a_texturePath)
 	{ // ActorID + BipedSlot + TexturePath
 		if (!a_actor || a_texturePath.empty())
-			return "EMPTY";
-		a_texturePath = stringRemoveStarts(a_texturePath, "Data\\");
-		a_texturePath = stringRemoveStarts(a_texturePath, "Textures\\");
+			return "";
+        a_texturePath = stringRemoveStarts(a_texturePath, "data\\");
+        if (!stringStartsWith(a_texturePath, "textures\\"))
+            a_texturePath = "textures\\" + a_texturePath;
 		return MDNMPrefix + GetHexStr(a_actor->formID) + "::" + std::to_string(a_bipedSlot) + "::" + a_texturePath;
 	}
 	bool TaskManager::GetTextureInfo(std::string a_textureName, TextureInfo& a_textureInfo)

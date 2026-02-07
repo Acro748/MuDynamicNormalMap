@@ -48,7 +48,7 @@ namespace Mus {
         bool GetGeometryInfo(RE::BSGeometry* a_geo, GeometryInfo& info);
         bool CopyGeometryData(RE::BSGeometry* a_geo);
         void GetGeometryData();
-        void CreateVertexMap();
+        void PreProcessing();
         void CreateFaceData();
         void RecalculateNormals(float a_smoothDegree);
         void Subdivision(std::uint32_t a_subCount, std::uint32_t a_triThreshold, float a_strength, std::uint32_t a_smoothCount);
