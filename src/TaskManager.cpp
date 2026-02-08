@@ -121,6 +121,7 @@ namespace Mus {
 					if (IsPlayer(actor->formID))
 					{
                         it->second = true;
+                        it++;
                         continue;
 					}
                     bool isInRange = false;
