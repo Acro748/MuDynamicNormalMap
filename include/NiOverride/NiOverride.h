@@ -755,13 +755,12 @@ public:
 			oi->ResetOverlay(nodeName, refr, source, destination, textureSet, resetDiffuse);
 		}
 	}
-	std::string& GetDefaultTexture() {
+	std::string GetDefaultTexture() {
 		if (OverlayInterface* oi = GetOverlayInterface(); oi)
 		{
 			return oi->GetDefaultTexture();
 		}
-		std::string result = "";
-		return result;
+        return "";
 	}
 	void SetDefaultTexture(const std::string& newTexture) {
 		if (OverlayInterface* oi = GetOverlayInterface(); oi)
@@ -866,7 +865,12 @@ public:
 	};
 
 	class GetOverrideValue : public IOverrideInterface::GetVariant {
-
+    public:
+        void Int(const skee_i32) override {};
+        void Float(const float f) override {};
+        void String(const char* str) override {};
+        void Bool(const bool b) override {};
+        void TextureSet(const RE::BGSTextureSet* textureSet) override {};
 	};
 	class SetOverrideValue : public IOverrideInterface::SetVariant {
 		Type type;
@@ -944,7 +948,7 @@ public:
 		{
 			OverrideVariant ovalue;
 			PackValue(&ovalue, key, index, &value);
-			oi->SetArmorAddonProperty(refr, isFemale, armor, addon, nodeName, ovalue, immediate);
+			oi->SetArmorAddonProperty(refr, isFemale, armor, addon, nodeName, &ovalue, immediate);
 		}
 		else if (IOverrideInterface* oi = GetIOverrideInterface(); oi)
 		{
@@ -958,11 +962,11 @@ public:
 		{
 			OverrideVariant ovalue;
 			PackValue(&ovalue, key, index, &value);
-			oi->GetArmorAddonProperty(refr, firstPerson, armor, addon, nodeName, ovalue);
+			oi->GetArmorAddonProperty(refr, firstPerson, armor, addon, nodeName, &ovalue);
 		}
 		else if (IOverrideInterface* oi = GetIOverrideInterface(); oi)
 		{
-			GetOverrideValue ovalue;
+            GetOverrideValue ovalue;
 			oi->GetArmorProperty(refr, firstPerson, armor, addon, nodeName.c_str(), key, index, ovalue);
 		}
 	}
@@ -1187,7 +1191,7 @@ public:
 		{
 			OverrideVariant ovalue;
 			PackValue(&ovalue, key, index, &value);
-			oi->SetWeaponProperty(refr, isFemale, firstPerson, weapon, nodeName, ovalue, immediate);
+			oi->SetWeaponProperty(refr, isFemale, firstPerson, weapon, nodeName, &ovalue, immediate);
 		}
 	}
 	template <typename T>
@@ -1196,7 +1200,7 @@ public:
 		{
 			OverrideVariant ovalue;
 			PackValue(&ovalue, key, index, &value);
-			oi->GetWeaponProperty(refr, firstPerson, weapon, nodeName, ovalue);
+			oi->GetWeaponProperty(refr, firstPerson, weapon, nodeName, &ovalue);
 		}
 	}
 
@@ -1295,7 +1299,7 @@ public:
 		{
 			OverrideVariant ovalue;
 			PackValue(&ovalue, key, index, &value);
-			oi->GetSkinProperty(refr, firstPerson, slotMask, ovalue);
+			oi->GetSkinProperty(refr, firstPerson, slotMask, &ovalue);
 		}
 	}
 };

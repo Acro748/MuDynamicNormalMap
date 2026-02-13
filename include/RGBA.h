@@ -201,6 +201,20 @@ namespace Mus {
 			return (std::uint8_t)(b * 255);
 		}
 
+		RGBA& Normalize() {
+            DirectX::XMFLOAT4 f(
+                r * 2.0f - 1.0f,
+                g * 2.0f - 1.0f,
+                b * 2.0f - 1.0f,
+                0.0f);
+            const auto v = DirectX::XMVectorMultiplyAdd(DirectX::XMVector3NormalizeEst(DirectX::XMLoadFloat4(&f)), DirectX::XMVectorReplicate(0.5f), DirectX::XMVectorReplicate(0.5f));
+            DirectX::XMStoreFloat4(&f, v);
+            r = f.x;
+            g = f.y;
+            b = f.z;
+            return *this;
+		}
+
 		RGBA& operator=(const RGBA& a_rhs) {
 			r = a_rhs.r;
 			g = a_rhs.g;

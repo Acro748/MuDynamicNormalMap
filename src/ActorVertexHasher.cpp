@@ -10,7 +10,7 @@ namespace Mus {
 	{
 		static std::clock_t lastTickTime = currentTime;
 
-		if (IsSaveLoading.load())
+		if (IsSaveLoading.load() || IsInLoading.load())
 			return;
 		if (IsGamePaused.load() && !IsRaceSexMenu.load())
 			return;
@@ -262,46 +262,45 @@ namespace Mus {
 	}
 
 	bool ActorVertexHasher::Hash::Update(RE::BSGeometry* a_geo)
-	{
-		if (!a_geo)
-			return false;
-		const RE::BSTriShape* triShape = a_geo->AsTriShape();
-		if (!triShape)
-			return false;
-		std::uint32_t vertexCount = triShape->GetTrishapeRuntimeData().vertexCount;
-		const RE::NiPointer<RE::NiSkinPartition> skinPartition = GetSkinPartition(a_geo);
-		if (!skinPartition)
-			return false;
-		vertexCount = vertexCount > 0 ? vertexCount : skinPartition->vertexCount;
+    {
+        if (!a_geo)
+            return false;
+        const RE::BSTriShape* triShape = a_geo->AsTriShape();
+        if (!triShape)
+            return false;
+        std::uint32_t vertexCount = triShape->GetTrishapeRuntimeData().vertexCount;
+        const RE::NiPointer<RE::NiSkinPartition> skinPartition = GetSkinPartition(a_geo);
+        if (!skinPartition)
+            return false;
+        vertexCount = vertexCount > 0 ? vertexCount : skinPartition->vertexCount;
 
-		Reset();
-		if (const RE::BSDynamicTriShape* dynamicTriShape = a_geo->AsDynamicTriShape(); dynamicTriShape)
-		{
-			if (Config::GetSingleton().GetRealtimeDetectHead() == 1)
-			{
-				const auto morphData = GeometryData::GetMorphExtraData(a_geo);
-				if (morphData)
-				{
-					Update(morphData->vertexData, sizeof(RE::NiPoint3) * vertexCount);
-				}
-			}
-			else if (Config::GetSingleton().GetRealtimeDetectHead() == 2)
-			{
-				Update(dynamicTriShape->GetDynamicTrishapeRuntimeData().dynamicData, sizeof(DirectX::XMVECTOR) * vertexCount);
-			}
-		}
-		else
-		{
-			auto desc = a_geo->GetGeometryRuntimeData().vertexDesc;
-			if (!desc.HasFlag(RE::BSGraphics::Vertex::VF_VERTEX) || !desc.HasFlag(RE::BSGraphics::Vertex::VF_UV))
-				return false;
-			Update(skinPartition->partitions[0].buffData->rawVertexData, sizeof(std::uint8_t) * vertexCount * desc.GetSize());
-		}
+        Reset();
+        if (const RE::BSDynamicTriShape* dynamicTriShape = a_geo->AsDynamicTriShape(); dynamicTriShape)
+        {
+            if (Config::GetSingleton().GetRealtimeDetectHead() == 1)
+            {
+                const auto morphData = GeometryData::GetMorphExtraData(a_geo);
+                if (morphData)
+                {
+                    Update(morphData->vertexData, sizeof(RE::NiPoint3) * vertexCount);
+                }
+            }
+            else if (Config::GetSingleton().GetRealtimeDetectHead() == 2)
+            {
+                Update(dynamicTriShape->GetDynamicTrishapeRuntimeData().dynamicData, sizeof(DirectX::XMVECTOR) * vertexCount);
+            }
+            else
+                return false;
+        }
+        auto desc = a_geo->GetGeometryRuntimeData().vertexDesc;
+        if (!desc.HasFlag(RE::BSGraphics::Vertex::VF_VERTEX) || !desc.HasFlag(RE::BSGraphics::Vertex::VF_UV))
+            return false;
+        Update(skinPartition->partitions[0].buffData->rawVertexData, sizeof(std::uint8_t) * vertexCount * desc.GetSize());
         GetNewHash();
         if (isCheckTexture)
             isCheckTexture = CheckTexture(a_geo);
-		return true;
-	}
+        return true;
+    }
 
 	bool ActorVertexHasher::Hash::CheckTexture(RE::BSGeometry* a_geo)
     {

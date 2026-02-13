@@ -3,7 +3,7 @@
 namespace Mus {
     class GeometryData {
     public:
-        GeometryData() {};
+        GeometryData() : tp(currentProcessingThreads.load()) {};
         GeometryData(RE::BSGeometry* a_geo);
         ~GeometryData() {};
 
@@ -48,10 +48,10 @@ namespace Mus {
         bool GetGeometryInfo(RE::BSGeometry* a_geo, GeometryInfo& info);
         bool CopyGeometryData(RE::BSGeometry* a_geo);
         void GetGeometryData();
-        void PreProcessing();
+        void PreProcessing(bool weldAccuracy);
         void CreateFaceData();
         void RecalculateNormals(float a_smoothDegree);
-        void Subdivision(std::uint32_t a_subCount, std::uint32_t a_triThreshold, float a_strength, std::uint32_t a_smoothCount);
+        void Subdivision(std::uint32_t a_subCount, std::uint32_t a_triThreshold, float a_strength, std::uint32_t a_smoothCount, bool weldAccuracy);
         void VertexSmooth(float a_strength, std::uint32_t a_smoothCount);
         void VertexSmoothByAngle(float a_smoothThreshold1, float a_smoothThreshold2, std::uint32_t a_smoothCount);
         void CreateGeometryHash();
@@ -76,6 +76,8 @@ namespace Mus {
         std::uint32_t mainGeometryIndex = 0;
 
     private:
+        std::shared_ptr<ThreadPool_ParallelModule> tp;
+
         inline float SmoothStepRange(float x, float A, float B) const {
             if (x > A)
                 return 0.0f;
@@ -100,20 +102,8 @@ namespace Mus {
 
         struct PositionKey {
             std::int32_t x, y, z;
-            bool operator==(const PositionKey& other) const {
-                return x == other.x && y == other.y && z == other.z;
-            }
-            bool operator<(const PositionKey& other) const {
-                if (x != other.x)
-                    return x < other.x;
-                if (y != other.y)
-                    return y < other.y;
-                return z < other.z;
-            }
-        };
-        struct PositionKeyHash {
-            std::uint64_t operator()(const PositionKey& k) const {
-                const std::int32_t key[3] = {k.x, k.y, k.z};
+            std::uint64_t operator()() const {
+                const std::int32_t key[3] = {x, y, z};
                 return XXH3_64bits(key, sizeof(key));
             }
         };
@@ -121,30 +111,110 @@ namespace Mus {
             std::uint64_t key = 0;
             std::uint32_t index = 0;
             bool operator==(const PosEntry& other) const {
-                return key == other.key;
+                return key == other.key && index == other.index;
             }
             bool operator<(const PosEntry& other) const {
-                return key < other.key;
+                return key != other.key ? key < other.key : index < other.index;
             }
             PosEntry() {};
-            PosEntry(const PositionKey& a_key, std::uint32_t a_index) : key(PositionKeyHash()(a_key)), index(a_index) {}
+            PosEntry(const PositionKey& a_key, std::uint32_t a_index) : key(a_key()), index(a_index) {}
         };
+
+        inline PositionKey MakeLowPositionKey(const DirectX::XMFLOAT3& pos) const {
+            DirectX::XMINT3 p;
+            const DirectX::XMVECTOR v = DirectX::XMLoadFloat3(&pos);
+            const DirectX::XMVECTOR sc = DirectX::XMVectorScale(v, weldDistanceMult);
+            const DirectX::XMVECTOR sb = DirectX::XMVectorSubtract(sc, DirectX::XMVectorReplicate(0.25f));
+            const DirectX::XMVECTOR f = DirectX::XMVectorFloor(sb);
+            DirectX::XMStoreSInt3(&p, f);
+            return {p.x, p.y, p.z};
+        }
+        inline PositionKey MakeHighPositionKey(const DirectX::XMFLOAT3& pos) const {
+            DirectX::XMINT3 p;
+            const DirectX::XMVECTOR v = DirectX::XMLoadFloat3(&pos);
+            const DirectX::XMVECTOR sc = DirectX::XMVectorScale(v, weldDistanceMult);
+            const DirectX::XMVECTOR ad = DirectX::XMVectorAdd(sc, DirectX::XMVectorReplicate(0.25f));
+            const DirectX::XMVECTOR f = DirectX::XMVectorFloor(ad);
+            DirectX::XMStoreSInt3(&p, f);
+            return {p.x, p.y, p.z};
+        }
         inline PositionKey MakePositionKey(const DirectX::XMFLOAT3& pos) const {
-            return {
-                std::int32_t(std::floor(pos.x * weldDistanceMult)),
-                std::int32_t(std::floor(pos.y * weldDistanceMult)),
-                std::int32_t(std::floor(pos.z * weldDistanceMult))};
+            DirectX::XMINT3 p;
+            const DirectX::XMVECTOR v = DirectX::XMLoadFloat3(&pos);
+            const DirectX::XMVECTOR sc = DirectX::XMVectorScale(v, weldDistanceMult);
+            const DirectX::XMVECTOR f = DirectX::XMVectorFloor(sc);
+            DirectX::XMStoreSInt3(&p, f);
+            return {p.x, p.y, p.z};
+        }
+
+        inline PositionKey MakeLowBoundaryPositionKey(const DirectX::XMFLOAT3& pos) const {
+            DirectX::XMINT3 p;
+            const DirectX::XMVECTOR v = DirectX::XMLoadFloat3(&pos);
+            const DirectX::XMVECTOR sc = DirectX::XMVectorScale(v, boundaryWeldDistanceMult);
+            const DirectX::XMVECTOR sb = DirectX::XMVectorSubtract(sc, DirectX::XMVectorReplicate(0.25f));
+            const DirectX::XMVECTOR f = DirectX::XMVectorFloor(sb);
+            DirectX::XMStoreSInt3(&p, f);
+            return {p.x, p.y, p.z};
+        }
+        inline PositionKey MakeHighBoundaryPositionKey(const DirectX::XMFLOAT3& pos) const {
+            DirectX::XMINT3 p;
+            const DirectX::XMVECTOR v = DirectX::XMLoadFloat3(&pos);
+            const DirectX::XMVECTOR sc = DirectX::XMVectorScale(v, boundaryWeldDistanceMult);
+            const DirectX::XMVECTOR ad = DirectX::XMVectorAdd(sc, DirectX::XMVectorReplicate(0.25f));
+            const DirectX::XMVECTOR f = DirectX::XMVectorFloor(ad);
+            DirectX::XMStoreSInt3(&p, f);
+            return {p.x, p.y, p.z};
         }
         inline PositionKey MakeBoundaryPositionKey(const DirectX::XMFLOAT3& pos) const {
-            return {
-                std::int32_t(std::floor(pos.x * boundaryWeldDistanceMult)),
-                std::int32_t(std::floor(pos.y * boundaryWeldDistanceMult)),
-                std::int32_t(std::floor(pos.z * boundaryWeldDistanceMult))};
+            DirectX::XMINT3 p;
+            const DirectX::XMVECTOR v = DirectX::XMLoadFloat3(&pos);
+            const DirectX::XMVECTOR sc = DirectX::XMVectorScale(v, boundaryWeldDistanceMult);
+            const DirectX::XMVECTOR f = DirectX::XMVectorFloor(sc);
+            DirectX::XMStoreSInt3(&p, f);
+            return {p.x, p.y, p.z};
         }
 
         std::vector<std::vector<std::uint32_t>> weldedVertices;
         inline bool IsWeldedVertex(const std::uint32_t vi, const std::uint32_t tv) const {
             return std::find(weldedVertices[vi].cbegin(), weldedVertices[vi].cend(), tv) != weldedVertices[vi].end();
+        }
+        inline void AddWeldVertices(const std::vector<PosEntry>& entry) {
+            if (entry.empty())
+                return;
+            std::size_t begin = 0;
+            for (std::size_t end = 1; end <= entry.size(); end++) {
+                if (end != entry.size() && entry[end].key == entry[begin].key)
+                    continue;
+                for (std::size_t i = begin; i < end; i++) {
+                    const std::uint32_t v0 = entry[i].index;
+                    weldedVertices[v0].reserve(weldedVertices[v0].size() + end - begin);
+                    for (std::size_t j = begin; j < end; j++) {
+                        const std::uint32_t v1 = entry[j].index;
+                        weldedVertices[v0].push_back(v1);
+                    }
+                }
+                begin = end;
+            }
+        }
+        inline void AddWeldBoundaryVertices(const std::vector<PosEntry>& entry) {
+            if (entry.empty())
+                return;
+            std::size_t begin = 0;
+            for (std::size_t end = 1; end <= entry.size(); end++) {
+                if (end != entry.size() && entry[end].key == entry[begin].key)
+                    continue;
+                for (std::size_t i = begin; i < end; i++) {
+                    const std::uint32_t v0 = entry[i].index;
+                    weldedVertices[v0].reserve(weldedVertices[v0].size() + end - begin);
+                    for (std::size_t j = begin; j < end; j++) {
+                        const std::uint32_t v1 = entry[j].index;
+                        if (IsSameGeometry(v0, v1))
+                            continue;
+                        weldedVertices[v0].push_back(v1);
+                    }
+                }
+                begin = end;
+            }
         }
 
         struct FaceNormal {
@@ -180,53 +250,58 @@ namespace Mus {
         inline bool IsWeldedEdge(const EdgeMid& e0, const EdgeMid& e1) const {
             return IsWeldedVertex(e0.v0, e1.v0) && IsWeldedVertex(e0.v1, e1.v1);
         }
+
         struct LocalDate {
-            RE::BSGeometry* geometry;
+            RE::BSGeometry* geometry = nullptr;
             std::vector<DirectX::XMFLOAT3> vertices;
             std::vector<DirectX::XMFLOAT2> uvs;
             std::vector<std::uint32_t> indices;
             ObjectInfo objInfo;
             std::vector<EdgeMid> localCreatedEdges;
         };
-
     };
     typedef std::shared_ptr<GeometryData> GeometryDataPtr;
 
     template <typename V, typename TP>
-    void parallel_sort(V& v, std::shared_ptr<TP> tp) {
-        if (v.empty())
+    void parallel_sort(V& v, TP* tp) {
+        if (v.empty() || !tp)
             return;
         const std::size_t max = v.size();
-        const std::size_t threads = tp->GetThreads() * std::max(1ull, max / (tp->GetThreads() * 4096));
+        if (max < 4096)
+        {
+            std::sort(v.begin(), v.end());
+            return;
+        }
+        const std::size_t threads = tp->GetThreads() * std::min(4ull, std::max(1ull, max / 4096));
         const std::size_t sub = std::max(1ull, std::min(max, threads));
         const std::size_t unit = (max + sub - 1) / sub;
-        std::vector<std::future<void>> processes;
-        for (std::size_t t = 0; t < sub; t++) {
-            const std::size_t begin = t * unit;
-            const std::size_t end = std::min(begin + unit, max);
-            processes.push_back(tp->submitAsync([&, t, begin, end]() {
-                std::sort(v.begin() + begin, v.begin() + end);
-            }));
-        }
-        for (auto& process : processes) {
-            process.get();
+        {
+            std::vector<std::future<void>> processes;
+            for (std::size_t t = 0; t < sub; t++) {
+                const std::size_t begin = t * unit;
+                const std::size_t end = std::min(begin + unit, max);
+                processes.push_back(tp->submitAsync([&, t, begin, end]() {
+                    std::sort(v.begin() + begin, v.begin() + end);
+                }));
+            }
+            for (auto& process : processes) {
+                process.get();
+            }
         }
 
         std::size_t current_unit = unit;
         while (current_unit < max) {
-            processes.clear();
+            std::vector<std::future<void>> processes;
             for (std::size_t i = 0; i < max; i += current_unit * 2) {
                 const std::size_t begin = i;
                 const std::size_t mid = i + current_unit;
                 const std::size_t end = std::min(mid + current_unit, max);
                 if (mid >= max)
                     continue;
-
                 processes.push_back(tp->submitAsync([&v, begin, mid, end]() {
                     std::inplace_merge(v.begin() + begin, v.begin() + mid, v.begin() + end);
                 }));
             }
-
             for (auto& process : processes) {
                 process.get();
             }

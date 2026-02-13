@@ -138,6 +138,9 @@ namespace Mus {
         [[nodiscard]] inline auto GetBoundaryWeldDistance() const noexcept {
             return BoundaryWeldDistance;
         }
+        [[nodiscard]] inline auto GetWeldAccuracy() const noexcept {
+            return WeldAccuracy;
+        }
         [[nodiscard]] inline auto GetNormalSmoothDegree() const noexcept {
             return NormalSmoothDegree;
         }
@@ -306,6 +309,7 @@ namespace Mus {
         //Geometry
         float WeldDistance = 0.02f;
         float BoundaryWeldDistance = 0.02f;
+        bool WeldAccuracy = true;
         float NormalSmoothDegree = 60.0f;
         bool AllowInvertNormalSmooth = false;
         std::uint8_t Subdivision = 0;

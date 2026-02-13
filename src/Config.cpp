@@ -225,6 +225,10 @@ namespace Mus {
                 {
                     BoundaryWeldDistance = std::max(GetFloatValue(variableValue), floatPrecision);
                 }
+                else if (variableName == "WeldAccuracy")
+                {
+                    WeldAccuracy = GetBoolValue(variableValue);
+                }
                 else if (variableName == "NormalSmoothDegree")
                 {
                     NormalSmoothDegree = std::clamp(GetFloatValue(variableValue), 0.0f, 180.0f);

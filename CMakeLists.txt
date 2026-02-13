@@ -6,7 +6,7 @@ message("Using toolchain file ${CMAKE_TOOLCHAIN_FILE}.")
 ########################################################################################################################
 project(
         MuDynamicNormalMap
-        VERSION 2.1.5
+        VERSION 2.1.6
         DESCRIPTION "MuDynamicNormalMap VR by Acro."
         LANGUAGES CXX
 )
@@ -88,6 +88,11 @@ find_package(detours)
 find_package(xxhash CONFIG REQUIRED)
 find_package(lz4 CONFIG REQUIRED)
 find_package(tinygltf)
+
+execute_process(
+    COMMAND python "${CMAKE_SOURCE_DIR}/include/bc7e_ispc__gen.py"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/include/"
+)
 
 add_commonlibsse_plugin(${PROJECT_NAME} SOURCES ${headers} ${sources})
 add_library("${PROJECT_NAME}::${PROJECT_NAME}" ALIAS "${PROJECT_NAME}")

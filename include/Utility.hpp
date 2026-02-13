@@ -341,7 +341,8 @@ namespace Mus {
     inline std::string FixPath(std::string path)
     {
         std::filesystem::path filePath = string2wstring(path);
-        return std::regex_replace(wstring2string(filePath.make_preferred().wstring()), std::regex(R"([\\/]+)"), R"(\)");
+        filePath = filePath.make_preferred().lexically_normal();
+        return filePath.string();
     }
 
     inline RE::NiStream* NiStreamCtor(RE::NiStream* stream)

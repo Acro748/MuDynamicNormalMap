@@ -12,6 +12,7 @@ namespace Mus {
 	extern std::atomic<bool> IsMainMenu;
 	extern std::atomic<bool> IsGamePaused;
 	extern std::atomic<bool> IsSaveLoading;
+	extern std::atomic<bool> IsInLoading;
 
 	extern bool PerformanceCheck;
 	extern bool PerformanceCheckAverage;
