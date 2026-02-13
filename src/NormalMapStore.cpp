@@ -23,47 +23,29 @@ namespace Mus {
 		GetCacheFileFolder();
 	}
 	void NormalMapStore::ClearMemory()
-	{
-		lock.lock_shared();
-		auto map_ = map;
-		lock.unlock_shared();
-
-		std::uint32_t garbageCount = 0;
-		for (auto& m : map_) {
-			if (!m.second->normalmapTexture2D || !m.second->normalmapShaderResourceView)
-            {
-                lock.lock();
-                map.erase(m.first);
-                lock.unlock();
-                garbageCount++;
-				continue;
-			}
-			if (GetRefCount(m.second->normalmapTexture2D.Get()) <= 1 || GetRefCount(m.second->normalmapShaderResourceView.Get()) <= 1)
-            {
-                lock.lock();
-                map.erase(m.first);
-                lock.unlock();
-                garbageCount++;
-				continue;
-			}
+    {
+        std::lock_guard lg(lock);
+        const std::size_t orgMapSize = map.size();
+		for (auto it = map.begin(); it != map.end();)
+		{
+            if (!it->second->normalmapTexture2D || !it->second->normalmapShaderResourceView)
+                it = map.erase(it);
+            else if (GetRefCount(it->second->normalmapTexture2D.Get()) <= 1 || GetRefCount(it->second->normalmapShaderResourceView.Get()) <= 1)
+                it = map.erase(it);
+            else
+				it++;
 		}
 
-		if (garbageCount == 0)
-			return;
-
-        lock.lock_shared();
-        const std::size_t mapSize = map.size();
-        lock.unlock_shared();
-
-		logger::debug("Removed {} RAM cache / Current remain {} RAM cache", garbageCount, mapSize);
+		if (const auto garbageCount = orgMapSize - map.size(); garbageCount > 0)
+            logger::debug("Removed {} RAM cache / Current remain {} RAM cache", garbageCount, map.size());
 	}
 
 	void NormalMapStore::AddResource(std::uint64_t a_hash, TextureResourcePtr a_resource)
-	{
-		lock.lock_shared();
-		map[a_hash] = a_resource;
-		lock.unlock_shared();
-
+    {
+        {
+            std::lock_guard lg(lock);
+            map[a_hash] = a_resource;
+        }
 		if (Config::GetSingleton().GetDiskCache())
 		{
 			CreateDiskCache(a_hash, a_resource);
@@ -73,22 +55,22 @@ namespace Mus {
 	bool NormalMapStore::GetResource(std::uint64_t a_hash, TextureResourcePtr& a_resource, bool& isDiskCache)
 	{
 		TextureResourcePtr resource = nullptr;
-		isDiskCache = false;
-		lock.lock_shared();
-		auto found = map.find(a_hash);
-		if (found != map.end())
-			resource = found->second;
-		lock.unlock_shared();
+        isDiskCache = false;
+        {
+            std::lock_guard lg(lock);
+            auto found = map.find(a_hash);
+            if (found != map.end())
+                resource = found->second;
+        }
 		if (resource)
 			logger::debug("Found exist resource {:x}", a_hash);
 		else 
 		{
 			resource = GetDiskCache(a_hash);
 			if (resource) {
-				isDiskCache = true;
-				lock.lock_shared();
+                isDiskCache = true;
+                std::lock_guard lg(lock);
 				map[a_hash] = resource;
-				lock.unlock_shared();
 				logger::debug("Found disk cache resource {:x}", a_hash);
 			}
 		}
@@ -100,7 +82,7 @@ namespace Mus {
 
 	void NormalMapStore::AddHashPair(std::uint64_t a_hash, std::uint64_t b_hash)
 	{
-		hashPairsLock.lock();
+        std::lock_guard lg(hashPairsLock);
 		auto found = std::find_if(hashPairs.begin(), hashPairs.end(), [&](HashPair& pair) {
 			return pair.find(a_hash) != pair.end() || pair.find(b_hash) != pair.end();
 		});
@@ -118,21 +100,19 @@ namespace Mus {
 			hashPairs.push_back(newPair);
 			logger::debug("Create and add hash pair {:x} - {:x}", a_hash, b_hash);
 		}
-		hashPairsLock.unlock();
 	}
 	bool NormalMapStore::IsPairHashes(std::uint64_t a_hash, std::uint64_t b_hash)
-	{
-		hashPairsLock.lock_shared();
+    {
+        std::lock_guard lg(hashPairsLock);
 		bool isPair = std::find_if(hashPairs.cbegin(), hashPairs.cend(), [&](const HashPair& pair) {
 			return pair.find(a_hash) != pair.cend() && pair.find(b_hash) != pair.cend();
 		}) != hashPairs.cend();
-		hashPairsLock.unlock_shared();
 		logger::debug("Is pair hashes : {:x} - {:x} => {}", a_hash, b_hash, isPair ? "O" : "X");
 		return isPair;
 	}
 	void NormalMapStore::InitHashPair(std::uint64_t a_hash)
-	{
-		hashPairsLock.lock();
+    {
+        std::lock_guard lg(hashPairsLock);
 		auto found = std::find_if(hashPairs.begin(), hashPairs.end(), [&](HashPair& pair) {
 			return pair.find(a_hash) != pair.end();
 		});
@@ -140,7 +120,6 @@ namespace Mus {
 			found->clear();
 			found->insert(a_hash);
 		}
-		hashPairsLock.unlock();
 	}
 
 	void NormalMapStore::CreateDiskCache(std::uint64_t a_hash, TextureResourcePtr a_resource)
@@ -215,7 +194,7 @@ namespace Mus {
 			std::uint64_t compressedSize = LZ4_compress_default((const char*)buffer.data(), compressed.data(), buffer.size(), maxSize);
 
 			std::filesystem::path filePath = GetCacheFileName(a_hash, mipLevel);
-			std::filesystem::create_directory(filePath.parent_path());
+            std::filesystem::create_directories(filePath.parent_path());
 
 			std::ofstream ofs(filePath, std::ios::binary);
 			if (!ofs) {
@@ -238,10 +217,10 @@ namespace Mus {
 			}
 		}
 		info.lastAccessTime = currentTime;
-
-		diskCacheLock.lock();
-		diskCacheInfo[a_hash] = info;
-		diskCacheLock.unlock();
+		{
+            std::lock_guard lg(diskCacheLock);
+            diskCacheInfoMap[a_hash] = info;
+        }
 		logger::info("Created disk cache {:x}", a_hash);
 		if (Config::GetSingleton().GetClearDiskCache())
 			return;
@@ -291,17 +270,16 @@ namespace Mus {
 			return nullptr;
 
 		bool isFound = false;
-		DiskCacheInfo info;
-		diskCacheLock.lock_shared();
+        DiskCacheInfo info;
 		{
-			auto found = diskCacheInfo.find(a_hash);
-			if (found != diskCacheInfo.end())
+			std::lock_guard lg(diskCacheLock);
+			auto found = diskCacheInfoMap.find(a_hash);
+			if (found != diskCacheInfoMap.end())
 			{
 				isFound = true;
 				info = found->second;
 			}
 		}
-		diskCacheLock.unlock_shared();
 
 		if (!isFound)
 		{
@@ -349,10 +327,9 @@ namespace Mus {
 			catch (...) {
 				logger::error("Unable to read disk cache {:x}", a_hash);
 				return nullptr;
-			}
-			diskCacheLock.lock();
-			diskCacheInfo[a_hash] = info;
-			diskCacheLock.unlock();
+            }
+            std::lock_guard lg(diskCacheLock);
+			diskCacheInfoMap[a_hash] = info;
 			logger::info("Found disk cache {:x}", a_hash);
 		}
 
@@ -422,17 +399,13 @@ namespace Mus {
 	void NormalMapStore::RemoveDiskCache(std::uint64_t a_hash)
 	{
 		DiskCacheInfo info;
-		bool isFound = false;
-		diskCacheLock.lock_shared();
-		auto found = diskCacheInfo.find(a_hash);
-		if (found != diskCacheInfo.end())
-		{
-			info = found->second;
-			isFound = true;
-		}
-		diskCacheLock.unlock_shared();
-		if (!isFound)
-			return;
+        {
+            std::lock_guard lg(diskCacheLock);
+            auto found = diskCacheInfoMap.find(a_hash);
+            if (found == diskCacheInfoMap.end())
+                return;
+            info = found->second;
+        }
 
 		std::error_code ec;
 		if (!Config::GetSingleton().GetClearDiskCache())
@@ -447,18 +420,18 @@ namespace Mus {
 			std::filesystem::remove(filePath, ec);
 		}
 
-		diskCacheLock.lock();
-		diskCacheInfo.erase(a_hash);
-		diskCacheLock.unlock();
+        std::lock_guard lg(diskCacheLock);
+		diskCacheInfoMap.erase(a_hash);
 		logger::info("Removed old disk cache {:x}", a_hash);
 	}
 	void NormalMapStore::ClearDiskCache()
 	{
 		if (!Config::GetSingleton().GetClearDiskCache())
-			return;
-		diskCacheLock.lock();
-		diskCacheInfo.clear();
-		diskCacheLock.unlock();
+            return;
+        {
+            std::lock_guard lg(diskCacheLock);
+            diskCacheInfoMap.clear();
+        }
 
 		std::filesystem::path folder = GetCacheFileFolder();
 		if (!std::filesystem::exists(folder))
@@ -523,20 +496,19 @@ namespace Mus {
 	void NormalMapStore::UpdateAccessTime(std::uint64_t a_hash)
 	{
 		if (Config::GetSingleton().GetDiskCache())
-			return;
-		diskCacheLock.lock_shared();
-		auto found = diskCacheInfo.find(a_hash);
-		if (found != diskCacheInfo.end())
-		{
+            return;
+        std::lock_guard lg(diskCacheLock);
+		auto found = diskCacheInfoMap.find(a_hash);
+		if (found != diskCacheInfoMap.end())
 			found->second.lastAccessTime = currentTime;
-		}
-		diskCacheLock.unlock_shared();
 	}
 	void NormalMapStore::RemoveOldDiskCache()
 	{
-		diskCacheLock.lock_shared();
-		auto diskCacheInfo_ = diskCacheInfo;
-		diskCacheLock.unlock_shared();
+        DiskCacheInfoMap diskCacheInfo_;
+        {
+            std::lock_guard lg(diskCacheLock);
+            diskCacheInfo_ = diskCacheInfoMap;
+        }
 
 		if (diskCacheInfo_.empty())
 			return;

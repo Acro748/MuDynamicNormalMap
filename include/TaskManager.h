@@ -6,7 +6,6 @@ namespace Mus {
 		public IEventListener<FacegenNiNodeEvent>,
 		public IEventListener<ActorChangeHeadPartEvent>,
 		public IEventListener<ArmorAttachEvent>,
-		public IEventListener<PlayerCellChangeEvent>,
 		public RE::BSTEventSink<RE::MenuOpenCloseEvent>,
 		public RE::BSTEventSink<SKSE::NiNodeUpdateEvent>, 
 		public RE::BSTEventSink<RE::InputEvent*> {
@@ -69,7 +68,7 @@ namespace Mus {
 		void RegisterDelayTask(std::function<void()> func);
 		void RegisterDelayTask(std::int16_t delayTick, std::function<void()> func);
 
-		typedef std::vector<RE::BSGeometry*> GeometryList;
+		typedef std::unordered_map<std::size_t, RE::BSGeometry*> GeometryList;
         GeometryList GetAllGeometries(RE::Actor* a_actor);
 
 		bool QUpdateNormalMap(RE::Actor* a_actor, bSlotbit bipedSlot = BipedObjectSlot::kAll);
@@ -84,7 +83,6 @@ namespace Mus {
 		void onEvent(const FacegenNiNodeEvent& e) override;
 		void onEvent(const ActorChangeHeadPartEvent& e) override;
 		void onEvent(const ArmorAttachEvent& e) override;
-		void onEvent(const PlayerCellChangeEvent& e) override;
 		EventResult ProcessEvent(const SKSE::NiNodeUpdateEvent* evn, RE::BSTEventSource<SKSE::NiNodeUpdateEvent>*) override;
 		EventResult ProcessEvent(RE::InputEvent* const* evn, RE::BSTEventSource<RE::InputEvent*>*) override;
 		EventResult ProcessEvent(const RE::MenuOpenCloseEvent* evn, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override;

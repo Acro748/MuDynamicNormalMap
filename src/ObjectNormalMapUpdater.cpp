@@ -551,20 +551,21 @@ namespace Mus {
             std::uint8_t* detailData = detailmg.IsValid() ? detailmg.Get<std::uint8_t>() : nullptr; 
             std::uint8_t* overlayData = overlaymg.IsValid() ? overlaymg.Get<std::uint8_t>() : nullptr;
             std::uint8_t* maskData = maskmg.IsValid() ? maskmg.Get<std::uint8_t>() : nullptr;
-
+            
+			auto tp = currentProcessingThreads.load();
             const UINT width = dstDesc.Width;
             const UINT height = dstDesc.Height;
             // init dst texture
             {
                 std::vector<std::future<void>> processes;
-                const std::uint32_t threads = currentProcessingThreads.load()->GetThreads() * 8;
+                const std::uint32_t threads = tp->GetThreads() * 8;
                 const std::uint32_t subY = std::min(height, std::min(width, threads) * std::min(height, threads));
                 const std::uint32_t unitY = (height + subY - 1) / subY;
                 for (std::uint32_t sy = 0; sy < subY; sy++)
                 {
                     std::uint32_t beginY = sy * unitY;
                     std::uint32_t endY = std::min(beginY + unitY, height);
-                    processes.push_back(currentProcessingThreads.load()->submitAsync([&, beginY, endY]() {
+                    processes.push_back(tp->submitAsync([&, beginY, endY]() {
                         for (UINT y = beginY; y < endY; y++)
                         {
                             std::uint8_t* rowData = dstData + y * dstmg.GetRowPitch();
@@ -608,7 +609,7 @@ namespace Mus {
             const float detailStrength = update.second.detailStrength;
 
             std::vector<std::future<void>> processes;
-            std::size_t sub = std::min(static_cast<const std::size_t>(totalTris), currentProcessingThreads.load()->GetThreads() * 16);
+            std::size_t sub = std::min(static_cast<const std::size_t>(totalTris), tp->GetThreads() * 16);
             std::size_t unit = (totalTris + sub - 1) / sub;
 
             if (Config::GetSingleton().GetUpdateNormalMapTime2())
@@ -618,7 +619,7 @@ namespace Mus {
             {
                 std::size_t begin = t * unit;
                 std::size_t end = std::min(begin + unit, static_cast<const std::size_t>(totalTris));
-                processes.push_back(currentProcessingThreads.load()->submitAsync([&, begin, end]() {
+                processes.push_back(tp->submitAsync([&, begin, end]() {
                     for (std::size_t i = begin; i < end; i++)
                     {
                         const std::uint32_t index = objInfo.indicesStart + i * 3;
@@ -1787,20 +1788,21 @@ namespace Mus {
             return false;
         }
 
+        auto tp = currentProcessingThreads.load();
 		const UINT width = desc.Width;
 		const UINT height = desc.Height;
 
 		std::uint8_t* dst_pData = dstmg.Get<std::uint8_t>();
         std::uint8_t* src_pData = srcmg.Get<std::uint8_t>();
 		std::vector<std::future<void>> processes;
-        const std::uint32_t threads = currentProcessingThreads.load()->GetThreads() * 8;
+        const std::uint32_t threads = tp->GetThreads() * 8;
 		const std::uint32_t subY = std::min(height, std::min(width, threads) * std::min(height, threads));
 		const std::uint32_t unitY = (height + subY - 1) / subY;
         for (std::uint32_t sy = 0; sy < subY; sy++)
         {
             std::uint32_t beginY = sy * unitY;
             std::uint32_t endY = beginY + unitY;
-            processes.push_back(currentProcessingThreads.load()->submitAsync([&, beginY, endY]() {
+            processes.push_back(tp->submitAsync([&, beginY, endY]() {
                 for (UINT y = beginY; y < endY; y++)
                 {
                     for (UINT x = 0; x < width; x++)
@@ -1968,6 +1970,7 @@ namespace Mus {
             return false;
         }
 
+        auto tp = currentProcessingThreads.load();
 		const UINT width = desc.Width;
 		const UINT height = desc.Height; 
 
@@ -1990,7 +1993,7 @@ namespace Mus {
 		for (std::uint8_t i = 0; i < 2; i++)
 		{
             std::vector<std::future<std::vector<ColorMap>>> colorMapProcesses;
-            const std::uint32_t threads = currentProcessingThreads.load()->GetThreads() * 16;
+            const std::uint32_t threads = tp->GetThreads() * 16;
 			const std::uint32_t subY = std::min(height, std::min(width, threads) * std::min(height, threads));
 			const std::uint32_t unitY = (height + subY - 1) / subY;
             std::uint8_t* pData = mmg.Get<std::uint8_t>(0);
@@ -1999,7 +2002,7 @@ namespace Mus {
 			for (std::uint32_t sy = 0; sy < subY; sy++) {
 				const std::uint32_t beginY = sy * unitY;
 				const std::uint32_t endY = std::min(beginY + unitY, height);
-                colorMapProcesses.push_back(currentProcessingThreads.load()->submitAsync([&, beginY, endY]() {
+                colorMapProcesses.push_back(tp->submitAsync([&, beginY, endY]() {
                     std::vector<ColorMap> resultsColorMapFrag;
 					for (UINT y = beginY; y < endY; y++) {
                         std::uint8_t* rowData = pData + y * rowPitch;
@@ -2045,12 +2048,12 @@ namespace Mus {
 			}
 
             std::vector<std::future<void>> processes;
-			std::size_t sub = std::max(std::size_t(1), std::min(resultsColorMap.size(), currentProcessingThreads.load()->GetThreads()));
+            std::size_t sub = std::max(std::size_t(1), std::min(resultsColorMap.size(), tp->GetThreads()));
 			std::size_t unit = (resultsColorMap.size() + sub - 1) / sub;
 			for (std::size_t t = 0; t < sub; t++) {
 				std::size_t begin = t * unit;
 				std::size_t end = std::min(begin + unit, resultsColorMap.size());
-                processes.push_back(currentProcessingThreads.load()->submitAsync([&, begin, end]() {
+                processes.push_back(tp->submitAsync([&, begin, end]() {
 					for (std::size_t i = begin; i < end; i++) {
 						*resultsColorMap[i].src = resultsColorMap[i].resultsColor.GetReverse();
 					}
@@ -2082,13 +2085,13 @@ namespace Mus {
             const UINT dstRowPitch = mmg.GetRowPitch(mipLevel);
             const UINT srcRowPitch = mmg.GetRowPitch(srcMipLevel);
 			std::vector<std::future<void>> processes;
-            const std::uint32_t threads = currentProcessingThreads.load()->GetThreads() * 8;
+            const std::uint32_t threads = tp->GetThreads() * 8;
 			const std::uint32_t subY = std::min(mipHeight, std::min(mipWidth, threads) * std::min(mipHeight, threads));
 			const UINT unitY = (height + subY - 1) / subY;
 			for (std::uint32_t sy = 0; sy < subY; sy++) {
 				std::uint32_t beginY = sy * unitY;
 				std::uint32_t endY = std::min(beginY + unitY, mipHeight);
-                processes.push_back(currentProcessingThreads.load()->submitAsync([&, beginY, endY]() {
+                processes.push_back(tp->submitAsync([&, beginY, endY]() {
 					for (UINT y = beginY; y < endY; y++) {
                         std::uint8_t* dstRowData = dst_pData + y * dstRowPitch;
 						for (UINT x = 0; x < mipWidth; x++)
@@ -2606,6 +2609,7 @@ namespace Mus {
             return false;
         }
 
+		auto tp = currentProcessingThreads.load();
 		for (UINT mipLevel = 0; mipLevel < srcDesc.MipLevels; mipLevel++)
         {
             Shader::MapGuard mg(context, resourceData->textureCompressData.srcStagingTexture.Get(), mipLevel, D3D11_MAP_READ);
@@ -2625,7 +2629,7 @@ namespace Mus {
             std::uint8_t* srcData = mg.Get<std::uint8_t>();
             const UINT rowPitch = mg.GetRowPitch();
 			std::vector<std::future<void>> processes;
-            const std::uint32_t threads = std::max(1ull, currentProcessingThreads.load()->GetThreads() * (isImmediately ? 1 : 8));
+            const std::uint32_t threads = std::max(1ull, tp->GetThreads() * (isImmediately ? 1 : 8));
 			const std::uint32_t rowSub = std::max(1u, (bc7Height + threads - 1) / threads);
 			for (std::uint32_t threadNum = 0; threadNum < threads; threadNum++) {
 				const std::uint32_t beginY = threadNum * rowSub;
@@ -2633,7 +2637,7 @@ namespace Mus {
 				const std::uint32_t blockCount = (beginY < endY ? (endY - beginY) : 0) * bc7Width;
 				if (blockCount == 0)
 					break;
-                processes.push_back(currentProcessingThreads.load()->submitAsync([&, beginY, endY, blockCount]() {
+                processes.push_back(tp->submitAsync([&, beginY, endY, blockCount]() {
                     std::uint32_t* pixels = pixelBuffer.data() + (beginY * bc7Width * 16);
                     std::uint64_t* dstBlocks = reinterpret_cast<std::uint64_t*>(bc7Buffers[mipLevel].data()) + (beginY * bc7Width * 2);
 					std::size_t pixelIndex = 0;

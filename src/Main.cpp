@@ -54,9 +54,9 @@ namespace {
      * for the entire plugin.
      * </p>
      */
+
     void AllSave(SKSE::SerializationInterface* serde)
     {
-
     }
 
     void AllLoad(SKSE::SerializationInterface* serde)
@@ -67,7 +67,6 @@ namespace {
         std::uint32_t size;
         std::uint32_t version;
         while (serde->GetNextRecordInfo(type, version, size)) {
-
         }
         logger::info("save data loaded");
     }
@@ -76,7 +75,7 @@ namespace {
     {
         logger::trace("Initializing cosave serialization...");
         auto* serde = SKSE::GetSerializationInterface();
-        serde->SetUniqueID(_byteswap_ulong('MDTT'));
+        serde->SetUniqueID(_byteswap_ulong('MDNM'));
         serde->SetSaveCallback(AllSave);
         serde->SetLoadCallback(AllLoad);
     }
@@ -170,7 +169,6 @@ namespace {
 		Mus::g_frameEventDispatcher.addListener(&Mus::NormalMapStore::GetSingleton());
 
         Mus::g_playerCellChangeEventDispatcher.addListener(&Mus::ObjectNormalMapUpdater::GetSingleton());
-        Mus::g_playerCellChangeEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 
 		Mus::g_armorAttachEventEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
 		Mus::g_facegenNiNodeEventDispatcher.addListener(&Mus::TaskManager::GetSingleton());
@@ -259,7 +257,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
 
     Init(skse, false);
     InitializeMessaging();
-    InitializeSerialization();
+    //InitializeSerialization();
     InitializePapyrus();
     InitializeHooking();
 

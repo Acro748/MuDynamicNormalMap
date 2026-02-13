@@ -13,7 +13,7 @@ namespace Mus {
 
 	void TaskManager::onEvent(const FrameEvent& e)
 	{
-		if (IsSaveLoading.load())
+        if (IsSaveLoading.load() || IsInLoading.load())
 			return;
 
 		RunDelayTask();
@@ -75,13 +75,6 @@ namespace Mus {
 			}
             QUpdateNormalMap(actor, kAll);
 		});
-	}
-	void TaskManager::onEvent(const PlayerCellChangeEvent& e)
-	{
-		if (!e.IsChangedInOut)
-			return;
-
-		RunManageResource(true);
 	}
 
 	void TaskManager::RunUpdateQueue()
@@ -274,7 +267,8 @@ namespace Mus {
 				if (auto alphaProperty = netimmerse_cast<RE::NiAlphaProperty*>(property); alphaProperty)
 					return RE::BSVisit::BSVisitControl::kContinue;
 			}
-			geometries.push_back(geometry);
+            auto hash = ActorVertexHasher::Hash(geometry);
+            geometries.insert(std::make_pair(hash.GetHash(), geometry));
 			return RE::BSVisit::BSVisitControl::kContinue;
         });
 		return geometries;
@@ -328,8 +322,9 @@ namespace Mus {
 		auto gender = GetSex(a_actor);
 		GeometryDataPtr newGeometryData = std::make_shared<GeometryData>();
 		UpdateSet newUpdateSet;
-		for (auto& geo : a_srcGeometies)
+		for (auto& pair : a_srcGeometies)
         {
+            auto geo = pair.second;
 			using State = RE::BSGeometry::States;
 			using Feature = RE::BSShaderMaterial::Feature;
 			if (!geo || geo->name.empty())
@@ -833,8 +828,9 @@ namespace Mus {
             return true;
 
 		auto geometries = GetAllGeometries(a_actor);
-        for (auto& geo : geometries)
+        for (auto& pair : geometries)
         {
+            auto geo = pair.second;
             using State = RE::BSGeometry::States;
             using Feature = RE::BSShaderMaterial::Feature;
             if (!geo || geo->name.empty())
@@ -1001,7 +997,7 @@ namespace Mus {
 				{
                     if (button->IsUp() && isPressedExportHotkey1)
                     {
-                        if (Config::GetSingleton().GetLogLevel() >= 2)
+                        if (Config::GetSingleton().GetLogLevel() >= spdlog::level::level_enum::info)
                             continue;
 
                         logger::info("Print meshes...");
@@ -1034,8 +1030,9 @@ namespace Mus {
                         auto gender = GetSex(target);
                         GeometryData geoData;
                         auto geometries = GetAllGeometries(target);
-                        for (auto& geo : geometries)
+                        for (auto& pair : geometries)
                         {
+                            auto geo = pair.second;
                             using State = RE::BSGeometry::States;
                             using Feature = RE::BSShaderMaterial::Feature;
                             if (!geo || geo->name.empty())
@@ -1091,7 +1088,7 @@ namespace Mus {
 				{
                     if (button->IsUp() && isPressedExportHotkey1)
                     {
-                        if (Config::GetSingleton().GetLogLevel() >= 2)
+                        if (Config::GetSingleton().GetLogLevel() >= spdlog::level::level_enum::info)
                             continue;
 
                         logger::info("Print textures...");
@@ -1178,6 +1175,7 @@ namespace Mus {
 			else if (IsSameString(evn->menuName.c_str(), "Loading Menu"))
             {
                 //logger::info("Loading Menu Open");
+                IsInLoading.store(true);
                 if (SetImmediately(true))
                 {
                     isAfterLoading = true;
@@ -1194,6 +1192,7 @@ namespace Mus {
             }
             else if (IsSameString(evn->menuName.c_str(), "Loading Menu"))
             {
+                IsInLoading.store(false);
                 //logger::info("Loading Menu Close");
             }
         }
