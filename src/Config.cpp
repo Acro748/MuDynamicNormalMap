@@ -370,6 +370,11 @@ namespace Mus {
                 {
                     ClearDiskCache = GetBoolValue(variableValue);
                 }
+                else if (variableName == "DiskCacheHashPrecision")
+                {
+                    std::uint32_t precision = GetUIntValue(variableValue);
+                    DiskCacheHashPrecision = 1 << precision;
+                }
             }
             else if (currentSetting == "[RealtimeDetect]")
             {
@@ -521,7 +526,7 @@ namespace Mus {
             if (isNormalConditionFile)
                 ConditionManager::GetSingleton().RegisterCondition(condition);
         });
-        return false;
+        return true;
     }
 
     SIMDType GetSIMDType(bool scan)

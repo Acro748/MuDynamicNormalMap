@@ -1546,10 +1546,7 @@ namespace Mus {
                 continue;
             if (mergedTextureGeometries.find(result.geometry) != mergedTextureGeometries.end())
                 continue;
-            if (Config::GetSingleton().GetUseMipMap())
-            {
-                GenerateMips(device, context, resourceData, result.texture->normalmapTexture2D.Get());
-            }
+            GenerateMips(device, context, resourceData, result.texture->normalmapTexture2D.Get());
         }
         for (std::uint32_t i = 0; i < results.size(); i++)
         {
@@ -1679,10 +1676,7 @@ namespace Mus {
                 continue;
             if (mergedTextureGeometries.find(result.geometry) != mergedTextureGeometries.end())
                 continue;
-            if (Config::GetSingleton().GetUseMipMap())
-            {
-                GenerateMipsGPU(device, context, resourceData, result.texture->normalmapShaderResourceView.Get(), result.texture->normalmapTexture2D.Get());
-            }
+            GenerateMipsGPU(device, context, resourceData, result.texture->normalmapShaderResourceView.Get(), result.texture->normalmapTexture2D.Get());
         }
         for (std::uint32_t i = 0; i < results.size(); i++)
         {

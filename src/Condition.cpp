@@ -48,10 +48,8 @@ namespace Mus {
 	}
 
 	void ConditionManager::SortConditions()
-	{
-		std::sort(ConditionList.begin(), ConditionList.end(), [](Condition& a, Condition& b) {
-			return a.Priority > b.Priority;
-		});
+    {
+        std::ranges::sort(ConditionList, std::ranges::greater(), &Condition::Priority);
 	}
 
 	const ConditionManager::Condition ConditionManager::ParseConditions(Condition condition)

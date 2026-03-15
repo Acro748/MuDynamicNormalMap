@@ -54,7 +54,7 @@ namespace Mus {
         void Subdivision(std::uint32_t a_subCount, std::uint32_t a_triThreshold, float a_strength, std::uint32_t a_smoothCount, bool weldAccuracy);
         void VertexSmooth(float a_strength, std::uint32_t a_smoothCount);
         void VertexSmoothByAngle(float a_smoothThreshold1, float a_smoothThreshold2, std::uint32_t a_smoothCount);
-        void CreateGeometryHash();
+        void CreateGeometryHash(float a_precision);
         void GeometryProcessing();
         void ApplyNormals();
         bool PrintGeometry(const lString& filePath);

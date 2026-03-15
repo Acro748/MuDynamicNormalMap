@@ -245,6 +245,9 @@ namespace Mus {
         [[nodiscard]] inline auto GetClearDiskCache() const noexcept {
             return ClearDiskCache;
         }
+        [[nodiscard]] inline auto GetDiskCacheHashPrecision() const noexcept {
+            return DiskCacheHashPrecision;
+        }
 
         //RealtimeDetect
         [[nodiscard]] inline auto GetRealtimeDetect() const noexcept {
@@ -348,6 +351,7 @@ namespace Mus {
         std::string DiskCacheFolder = "Data\\SKSE\\Plugins\\MuDynamicNormalMap\\DiskCache";
         std::uint32_t DiskCacheLimitMB = 500;
         bool ClearDiskCache = true;
+        float DiskCacheHashPrecision = 1 << 9;
 
         //RealtimeDetect
         bool RealtimeDetect = true;

@@ -163,7 +163,9 @@ namespace Mus {
 				if (geo.objInfo.info.hasUVs)
 				{
 					uvs[ui].x = DirectX::PackedVector::XMConvertHalfToFloat(*reinterpret_cast<std::uint16_t*>(block));
-					uvs[ui].y = DirectX::PackedVector::XMConvertHalfToFloat(*reinterpret_cast<std::uint16_t*>(block + 2));
+                    uvs[ui].x -= floor(uvs[ui].x);
+                    uvs[ui].y = DirectX::PackedVector::XMConvertHalfToFloat(*reinterpret_cast<std::uint16_t*>(block + 2));
+                    uvs[ui].y -= floor(uvs[ui].y);
 					block += 4;
 				}
 			}
@@ -1105,11 +1107,19 @@ namespace Mus {
         }
 	}
 
-	void GeometryData::CreateGeometryHash()
+	void GeometryData::CreateGeometryHash(float a_precision)
     {
+        const DirectX::XMVECTOR p = DirectX::XMVectorReplicate(a_precision);
+        std::vector<DirectX::XMINT3> hashNormals;
         for (auto& geo : geometries)
         {
-            geo.hash = XXH3_64bits(normals.data() + geo.objInfo.normalStart, geo.objInfo.normalCount() * sizeof(DirectX::XMFLOAT3));
+            hashNormals.resize(geo.objInfo.normalCount());
+            for (std::size_t i = geo.objInfo.normalStart, hi = 0; i < geo.objInfo.normalEnd; i++, hi++)
+            {
+                const DirectX::XMVECTOR v = DirectX::XMVectorFloor(DirectX::XMVectorMultiply(DirectX::XMLoadFloat3(&normals[i]), p));
+                DirectX::XMStoreSInt3(&hashNormals[hi], v);
+            }
+            geo.hash = XXH3_64bits(hashNormals.data(), hashNormals.size() * sizeof(DirectX::XMINT3));
         }
     }
 
@@ -1124,7 +1134,7 @@ namespace Mus {
         VertexSmoothByAngle(Config::GetSingleton().GetVertexSmoothByAngleThreshold1(), Config::GetSingleton().GetVertexSmoothByAngleThreshold2(), Config::GetSingleton().GetVertexSmoothByAngle());
         VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
         RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree());
-        CreateGeometryHash();
+        CreateGeometryHash(Config::GetSingleton().GetDiskCacheHashPrecision());
         if (Config::GetSingleton().GetGeometryDataTime())
             PerformanceLog(std::string(__func__) + "::" + mainInfo.name, true, false);
     }

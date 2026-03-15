@@ -567,7 +567,7 @@ namespace Mus {
         return tokens;
     }
 
-    inline std::vector<std::string> split(const std::string& s, std::string delimiter)
+    inline std::vector<std::string> split(const std::string& s, const std::string& delimiter)
     {
         size_t pos_start = 0, pos_end, delim_len = delimiter.length();
         std::string token;
@@ -587,7 +587,7 @@ namespace Mus {
         return res;
     }
 
-    inline std::vector<std::string> splitMulti(const std::string& s, std::string delimiters)
+    inline std::vector<std::string> splitMulti(const std::string& s, const std::string& delimiters)
     {
         std::string str = trim_copy(s);
 
