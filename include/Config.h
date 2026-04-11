@@ -218,6 +218,9 @@ namespace Mus {
         [[nodiscard]] inline auto GetTaskQTickMS() const noexcept {
             return TaskQTickMS;
         }
+        [[nodiscard]] inline auto GetEcoreUse() const noexcept {
+            return EcoreUse;
+        }
         [[nodiscard]] inline auto GetProcessingInLoading() const noexcept {
             return ProcessingInLoading;
         }
@@ -244,6 +247,9 @@ namespace Mus {
         }
         [[nodiscard]] inline auto GetClearDiskCache() const noexcept {
             return ClearDiskCache;
+        }
+        [[nodiscard]] inline auto GetDiskCacheHashPrecision() const noexcept {
+            return DiskCacheHashPrecision;
         }
 
         //RealtimeDetect
@@ -338,6 +344,7 @@ namespace Mus {
 		bool UseMipMap = true;
 
         std::uint8_t AutoTaskQ = AutoTaskQList::Balanced;
+        bool EcoreUse = false;
         bool ProcessingInLoading = false;
         bool ProcessingInLoadingWithMainGPU = true;
         std::clock_t TaskQTickMS = 100;
@@ -348,6 +355,7 @@ namespace Mus {
         std::string DiskCacheFolder = "Data\\SKSE\\Plugins\\MuDynamicNormalMap\\DiskCache";
         std::uint32_t DiskCacheLimitMB = 500;
         bool ClearDiskCache = true;
+        float DiskCacheHashPrecision = 1 << 9;
 
         //RealtimeDetect
         bool RealtimeDetect = true;

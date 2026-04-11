@@ -31,7 +31,7 @@ namespace Mus {
 			TaskManager::GetSingleton().QUpdateNormalMap(a_actor, bipedSlot);
 		}
 
-		concurrency::concurrent_unordered_map<RE::FormID, float> detailStrengthMap;
+		tbb::concurrent_unordered_map<RE::FormID, float> detailStrengthMap;
 		void SetDetailStrength(RE::StaticFunctionTag*, RE::Actor* a_actor, float strength)
 		{
 			if (!a_actor)
@@ -40,7 +40,7 @@ namespace Mus {
 			detailStrengthMap[a_actor->formID] = strength;
 		}
 
-		concurrency::concurrent_unordered_map<RE::FormID, std::string> normalmaps[normalmapTypes::max];
+		tbb::concurrent_unordered_map<RE::FormID, std::string> normalmaps[normalmapTypes::max];
 		int SetNormalMap(RE::StaticFunctionTag*, RE::Actor* a_actor, std::string filePath, int type)
 		{
 			if (!a_actor || filePath.empty() || type < 0 || type >= normalmapTypes::max)

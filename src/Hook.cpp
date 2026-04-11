@@ -14,24 +14,12 @@ namespace Mus {
 	EventDispatcherImpl<ArmorAttachEvent> g_armorAttachEventEventDispatcher;
 	EventDispatcherImpl<PlayerCellChangeEvent> g_playerCellChangeEventDispatcher;
 
-#ifndef ENABLE_SKYRIM_VR
-	typedef void (*_onFaceGen)(RE::BSFaceGenNiNode*, RE::NiNode*, RE::BSGeometry*, std::uint8_t);
-#else
-	typedef void (*_onFaceGen)(RE::BSFaceGenNiNode*, RE::NiNode*, RE::BSGeometry*);
-#endif
-	REL::Relocation<_onFaceGen> onFaceGen_Orig(BSFaceGenNiNodeFunction);
-
-#ifndef ENABLE_SKYRIM_VR
-	void __fastcall onFaceGen(RE::BSFaceGenNiNode* facegen, RE::NiNode* root, RE::BSGeometry* geometry, std::uint8_t unk4)
-#else
-	void __fastcall onFaceGen(RE::BSFaceGenNiNode* facegen, RE::NiNode* root, RE::BSGeometry* geometry)
-#endif
+	typedef void (*_onFaceGen)(RE::BSFaceGenNiNode*, RE::NiNode*, std::uint8_t);
+	//REL::Relocation<_onFaceGen> onFaceGen_Orig(BSFaceGenNiNodeFunction);
+    _onFaceGen onFaceGen_Orig;
+	void __fastcall onFaceGen(RE::BSFaceGenNiNode* facegen, RE::NiNode* root, std::uint8_t unk4)
 	{
-#ifndef ENABLE_SKYRIM_VR
-		onFaceGen_Orig(facegen, root, geometry, unk4);
-#else
-		onFaceGen_Orig(facegen, root, geometry);
-#endif
+        onFaceGen_Orig(facegen, root, unk4);
 		FacegenNiNodeEvent e;
 		e.root = root;
 		e.facegenNiNode = facegen;
@@ -76,7 +64,11 @@ namespace Mus {
 
 	void hookFacegen()
 	{
-		DetourAttach(&(PVOID&)onFaceGen_Orig, onFaceGen);
+		//DetourAttach(&(PVOID&)onFaceGen_Orig, onFaceGen);
+        REL::Relocation<std::uintptr_t> vtbl{RE::VTABLE_BSFaceGenNiNode[0]};
+        REL::VariantOffset index(0x3E, 0x3E, 0x3F);
+        onFaceGen_Orig = reinterpret_cast<_onFaceGen>(vtbl.write_vfunc(index.offset(), onFaceGen));
+
 	}
 	void hookActorChangeHeadPart()
 	{
@@ -143,13 +135,17 @@ namespace Mus {
 		DetourRestoreAfterWith();
 		DetourTransactionBegin();
 		DetourUpdateThread(GetCurrentThread());
-		hookFacegen();
 		hookActorChangeHeadPart();
 		hookArmorAttach();
 		DetourTransactionCommit();
 
 		auto& trampoline = SKSE::GetTrampoline();
-		trampoline.create(16);
+		trampoline.create(14);
 		hookEngineTrampoline(trampoline);
-	}
+    }
+
+    void postHook()
+    {
+        hookFacegen();
+    }
 }

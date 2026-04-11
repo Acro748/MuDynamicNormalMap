@@ -163,7 +163,9 @@ namespace Mus {
 				if (geo.objInfo.info.hasUVs)
 				{
 					uvs[ui].x = DirectX::PackedVector::XMConvertHalfToFloat(*reinterpret_cast<std::uint16_t*>(block));
-					uvs[ui].y = DirectX::PackedVector::XMConvertHalfToFloat(*reinterpret_cast<std::uint16_t*>(block + 2));
+                    uvs[ui].x -= floor(uvs[ui].x);
+                    uvs[ui].y = DirectX::PackedVector::XMConvertHalfToFloat(*reinterpret_cast<std::uint16_t*>(block + 2));
+                    uvs[ui].y -= floor(uvs[ui].y);
 					block += 4;
 				}
 			}
@@ -206,37 +208,35 @@ namespace Mus {
         vertexToFaceMap.resize(vertCount);
         std::vector<Edge> edges(indices.size());
         {
-            std::vector<std::future<void>> processes;
-            const std::size_t sub = std::max(1ull, std::min(triCount, tp->GetThreads() * 4));
-            const std::size_t unit = (triCount + sub - 1) / sub;
-            for (std::size_t t = 0; t < sub; t++)
-            {
-                const std::size_t begin = t * unit;
-                const std::size_t end = std::min(begin + unit, triCount);
-                processes.push_back(tp->submitAsync([&, t, begin, end]() {
-                    for (std::size_t i = begin; i < end; i++)
-                    {
-                        const std::size_t offset = i * 3;
-                        const std::uint32_t i0 = indices[offset + 0];
-                        const std::uint32_t i1 = indices[offset + 1];
-                        const std::uint32_t i2 = indices[offset + 2];
-                        edges[offset + 0] = {i0, i1};
-                        edges[offset + 1] = {i1, i2};
-                        edges[offset + 2] = {i0, i2};
-                        vertexToFaceMap[i0].push_back(i);
-                        vertexToFaceMap[i1].push_back(i);
-                        vertexToFaceMap[i2].push_back(i);
-                    }
-                }));
-            }
-            for (auto& process : processes)
-            {
-                process.get();
-            }
+            tp->Execute([&] {
+                tbb::parallel_for(
+                    tbb::blocked_range<std::size_t>(0, triCount),
+                    [&](const tbb::blocked_range<std::size_t>& r) {
+                        for (std::size_t i = r.begin(); i != r.end(); ++i)
+                        {
+                            const std::size_t offset = i * 3;
+                            const std::uint32_t i0 = indices[offset + 0];
+                            const std::uint32_t i1 = indices[offset + 1];
+                            const std::uint32_t i2 = indices[offset + 2];
+                            if (i0 >= vertCount || i1 >= vertCount || i2 >= vertCount)
+                                break;
+                            edges[offset + 0] = {i0, i1};
+                            edges[offset + 1] = {i1, i2};
+                            edges[offset + 2] = {i0, i2};
+                            vertexToFaceMap[i0].push_back(i);
+                            vertexToFaceMap[i1].push_back(i);
+                            vertexToFaceMap[i2].push_back(i);
+                        }
+                    },
+                    tbb::auto_partitioner()
+                );
+            });
         }
 
         // create boundary map
-        parallel_sort(edges, tp.get());
+        tp->Execute([&] {
+            tbb::parallel_sort(edges);
+        });
         std::vector<std::uint8_t> isBoundaryVert(vertCount, 0);
         std::size_t i = 0;
         while (i < edges.size())
@@ -258,108 +258,107 @@ namespace Mus {
         // create pos map for weld
         std::vector<PosEntry> pMap;
         std::vector<PosEntry> pbMap;
-        std::vector<std::vector<PosEntry>> tpbMap(tp->GetThreads());
+        struct alignas(64) ThreadLocalBuffer
         {
-            std::vector<std::future<void>> processes;
-            const std::size_t sub = std::max(1ull, std::min(vertCount, tp->GetThreads() * 4));
-            const std::size_t unit = (vertCount + sub - 1) / sub;
+            std::vector<PosEntry> data;
+        };
+        std::vector<ThreadLocalBuffer> tpbMap(tp->GetThreadSize());
+        {
             if (weldAccuracy)
             {
                 pMap.resize(vertCount * 2);
-                for (std::size_t t = 0; t < sub; t++)
-                {
-                    const std::size_t begin = t * unit;
-                    const std::size_t end = std::min(begin + unit, vertCount);
-                    processes.push_back(tp->submitAsync([&, begin, end]() {
-                        const auto ti = tp->GetThreadIndex(GetCurrentThreadId());
-                        for (std::size_t i = begin; i < end; i++)
-                        {
-                            pMap[i * 2 + 0] = PosEntry(MakeLowPositionKey(vertices[i]), i);
-                            pMap[i * 2 + 1] = PosEntry(MakeHighPositionKey(vertices[i]), i);
-                            if (isBoundaryVert[i])
+                tp->Execute([&] {
+                    tbb::parallel_for(
+                        tbb::blocked_range<std::size_t>(0, vertCount),
+                        [&](const tbb::blocked_range<std::size_t>& r) {
+                            const std::int32_t ti = tbb::this_task_arena::current_thread_index();
+                            for (std::size_t i = r.begin(); i != r.end(); ++i)
                             {
-                                tpbMap[ti].emplace_back(MakeLowBoundaryPositionKey(vertices[i]), i);
-                                tpbMap[ti].emplace_back(MakeHighBoundaryPositionKey(vertices[i]), i);
+                                pMap[i * 2 + 0] = PosEntry(MakeLowPositionKey(vertices[i]), i);
+                                pMap[i * 2 + 1] = PosEntry(MakeHighPositionKey(vertices[i]), i);
+                                if (isBoundaryVert[i])
+                                {
+                                    tpbMap[ti].data.emplace_back(MakeLowBoundaryPositionKey(vertices[i]), i);
+                                    tpbMap[ti].data.emplace_back(MakeHighBoundaryPositionKey(vertices[i]), i);
+                                }
                             }
-                        }
-                    }));
-                }
+                        },
+                        tbb::auto_partitioner()
+                    );
+                });
             }
             else
             {
                 pMap.resize(vertCount);
-                for (std::size_t t = 0; t < sub; t++)
-                {
-                    const std::size_t begin = t * unit;
-                    const std::size_t end = std::min(begin + unit, vertCount);
-                    processes.push_back(tp->submitAsync([&, begin, end]() {
-                        const auto ti = tp->GetThreadIndex(GetCurrentThreadId());
-                        for (std::size_t i = begin; i < end; i++)
-                        {
-                            pMap[i] = PosEntry(MakePositionKey(vertices[i]), i);
-                            if (isBoundaryVert[i])
-                                tpbMap[ti].emplace_back(MakeBoundaryPositionKey(vertices[i]), i);
-                        }
-                    }));
-                }
-            }
-            for (auto& process : processes)
-            {
-                process.get();
+                tp->Execute([&] {
+                    tbb::parallel_for(
+                        tbb::blocked_range<std::size_t>(0, vertCount),
+                        [&](const tbb::blocked_range<std::size_t>& r) {
+                            const std::int32_t ti = tbb::this_task_arena::current_thread_index();
+                            for (std::size_t i = r.begin(); i != r.end(); ++i)
+                            {
+                                pMap[i] = PosEntry(MakePositionKey(vertices[i]), i);
+                                if (isBoundaryVert[i])
+                                    tpbMap[ti].data.emplace_back(MakeBoundaryPositionKey(vertices[i]), i);
+                            }
+                        },
+                        tbb::auto_partitioner()
+                    );
+                });
             }
         }
         for (const auto& m : tpbMap)
         {
-            pbMap.append_range(m);
+            pbMap.append_range(m.data);
         }
-        parallel_sort(pMap, tp.get());
-        parallel_sort(pbMap, tp.get());
+        tp->Execute([&] {
+            tbb::parallel_sort(pMap);
+            tbb::parallel_sort(pbMap);
+        });
 
         // create weld map
         weldedVertices.clear();
         weldedVertices.resize(vertCount);
         if (weldAccuracy)
         {
-            auto process = tp->submitAsync([&]() {
-                pMap.erase(std::unique(pMap.begin(), pMap.end()), pMap.end());
+            tp->Execute([&] {
+                tbb::parallel_invoke(
+                    [&] {
+                        pMap.erase(std::unique(pMap.begin(), pMap.end()), pMap.end());
+                    },
+                    [&] {
+                        pbMap.erase(std::unique(pbMap.begin(), pbMap.end()), pbMap.end());
+                    }
+                );
             });
-            pbMap.erase(std::unique(pbMap.begin(), pbMap.end()), pbMap.end());
-            process.get();
         }
         AddWeldVertices(pMap);
         AddWeldBoundaryVertices(pbMap);
 
         // weld vertices
         {
-            std::vector<std::future<void>> processes;
             const auto vertices_ = vertices;
-            const std::size_t size = weldedVertices.size();
-            const std::size_t sub = std::max(1ull, std::min(size, tp->GetThreads() * 4));
-            const std::size_t unit = (size + sub - 1) / sub;
-            for (std::size_t t = 0; t < sub; t++)
-            {
-                const std::size_t begin = t * unit;
-                const std::size_t end = std::min(begin + unit, size);
-                processes.push_back(tp->submitAsync([&, begin, end]() {
-                    for (std::size_t i = begin; i < end; i++)
-                    {
-                        std::sort(weldedVertices[i].begin(), weldedVertices[i].end());
-                        weldedVertices[i].erase(std::unique(weldedVertices[i].begin(), weldedVertices[i].end()), weldedVertices[i].end());
-
-                        DirectX::XMVECTOR pos = emptyVector;
-                        for (const auto& vi : weldedVertices[i])
+            tp->Execute([&] {
+                tbb::parallel_for(
+                    tbb::blocked_range<std::size_t>(0, vertCount),
+                    [&](const tbb::blocked_range<std::size_t>& r) {
+                        for (std::size_t i = r.begin(); i != r.end(); ++i)
                         {
-                            pos = DirectX::XMVectorAdd(pos, DirectX::XMLoadFloat3(&vertices_[vi]));
+                            std::sort(weldedVertices[i].begin(), weldedVertices[i].end());
+                            weldedVertices[i].erase(std::unique(weldedVertices[i].begin(), weldedVertices[i].end()), weldedVertices[i].end());
+
+                            DirectX::XMVECTOR pos = emptyVector;
+                            for (const auto& vi : weldedVertices[i])
+                            {
+                                pos = DirectX::XMVectorAdd(pos, DirectX::XMLoadFloat3(&vertices_[vi]));
+                            }
+                            pos = DirectX::XMVectorScale(pos, 1.0f / weldedVertices[i].size());
+                            DirectX::XMStoreFloat3(&vertices[i], pos);
                         }
-                        pos = DirectX::XMVectorScale(pos, 1.0f / weldedVertices[i].size());
-                        DirectX::XMStoreFloat3(&vertices[i], pos);
-                    }
-                }));
-            }
-            for (auto& process : processes)
-            {
-                process.get();
-            }
+                    },
+                    tbb::auto_partitioner()
+                );
+            });
         }
 
         logger::debug("{}::{} : map updated, vertices {} / uvs {} / tris {}", __func__,
@@ -374,81 +373,78 @@ namespace Mus {
 	void GeometryData::CreateFaceData()
     {
 		const std::size_t triCount = indices.size() / 3;
+        const std::size_t vertCount = vertices.size();
         if (Config::GetSingleton().GetGeometryDataTime())
             PerformanceLog(std::string(__func__) + "::" + std::to_string(triCount), false, false);
 
         faceNormals.resize(triCount);
         faceTangents.resize(triCount);
         {
-            std::vector<std::future<void>> processes;
-            const std::size_t sub = std::max(1ull, std::min(triCount, tp->GetThreads() * 4));
-            const std::size_t unit = (triCount + sub - 1) / sub;
-            for (std::size_t t = 0; t < sub; t++)
-            {
-                const std::size_t begin = t * unit;
-                const std::size_t end = std::min(begin + unit, triCount);
-                processes.push_back(tp->submitAsync([&, begin, end]() {
-                    for (std::size_t i = begin; i < end; i++)
-                    {
-                        const std::size_t offset = i * 3;
-                        const std::uint32_t i0 = indices[offset + 0];
-                        const std::uint32_t i1 = indices[offset + 1];
-                        const std::uint32_t i2 = indices[offset + 2];
+            tp->Execute([&] {
+                tbb::parallel_for(
+                    tbb::blocked_range<std::size_t>(0, triCount),
+                    [&](const tbb::blocked_range<std::size_t>& r) {
+                        for (std::size_t i = r.begin(); i != r.end(); ++i)
+                        {
+                            const std::size_t offset = i * 3;
+                            const std::uint32_t i0 = indices[offset + 0];
+                            const std::uint32_t i1 = indices[offset + 1];
+                            const std::uint32_t i2 = indices[offset + 2];
+                            if (i0 >= vertCount || i1 >= vertCount || i2 >= vertCount)
+                                break;
 
-                        const DirectX::XMFLOAT3& p0 = vertices[i0];
-                        const DirectX::XMFLOAT3& p1 = vertices[i1];
-                        const DirectX::XMFLOAT3& p2 = vertices[i2];
+                            const DirectX::XMFLOAT3& p0 = vertices[i0];
+                            const DirectX::XMFLOAT3& p1 = vertices[i1];
+                            const DirectX::XMFLOAT3& p2 = vertices[i2];
 
-                        const DirectX::XMVECTOR v0 = DirectX::XMLoadFloat3(&p0);
-                        const DirectX::XMVECTOR v1 = DirectX::XMLoadFloat3(&p1);
-                        const DirectX::XMVECTOR v2 = DirectX::XMLoadFloat3(&p2);
+                            const DirectX::XMVECTOR v0 = DirectX::XMLoadFloat3(&p0);
+                            const DirectX::XMVECTOR v1 = DirectX::XMLoadFloat3(&p1);
+                            const DirectX::XMVECTOR v2 = DirectX::XMLoadFloat3(&p2);
 
-                        const DirectX::XMFLOAT2& uv0 = uvs[i0];
-                        const DirectX::XMFLOAT2& uv1 = uvs[i1];
-                        const DirectX::XMFLOAT2& uv2 = uvs[i2];
+                            const DirectX::XMFLOAT2& uv0 = uvs[i0];
+                            const DirectX::XMFLOAT2& uv1 = uvs[i1];
+                            const DirectX::XMFLOAT2& uv2 = uvs[i2];
 
-                        // Normal
-                        const DirectX::XMVECTOR normalVec = DirectX::XMVector4NormalizeEst(
-                            DirectX::XMVector3Cross(
-                                DirectX::XMVectorSubtract(v1, v0),
-                                DirectX::XMVectorSubtract(v2, v0)));
-                        DirectX::XMFLOAT3 normal;
-                        DirectX::XMStoreFloat3(&normal, normalVec);
-                        faceNormals[i] = {i0, i1, i2, normal};
+                            // Normal
+                            const DirectX::XMVECTOR normalVec = DirectX::XMVector4NormalizeEst(
+                                DirectX::XMVector3Cross(
+                                    DirectX::XMVectorSubtract(v1, v0),
+                                    DirectX::XMVectorSubtract(v2, v0)));
+                            DirectX::XMFLOAT3 normal;
+                            DirectX::XMStoreFloat3(&normal, normalVec);
+                            faceNormals[i] = {i0, i1, i2, normal};
 
-                        // Tangent / Bitangent
-                        const DirectX::XMVECTOR dp1 = DirectX::XMVectorSubtract(v1, v0);
-                        const DirectX::XMVECTOR dp2 = DirectX::XMVectorSubtract(v2, v0);
+                            // Tangent / Bitangent
+                            const DirectX::XMVECTOR dp1 = DirectX::XMVectorSubtract(v1, v0);
+                            const DirectX::XMVECTOR dp2 = DirectX::XMVectorSubtract(v2, v0);
 
-                        const DirectX::XMFLOAT2 duv1 = {uv1.x - uv0.x, uv1.y - uv0.y};
-                        const DirectX::XMFLOAT2 duv2 = {uv2.x - uv0.x, uv2.y - uv0.y};
+                            const DirectX::XMFLOAT2 duv1 = {uv1.x - uv0.x, uv1.y - uv0.y};
+                            const DirectX::XMFLOAT2 duv2 = {uv2.x - uv0.x, uv2.y - uv0.y};
 
-                        float r = duv1.x * duv2.y - duv2.x * duv1.y;
-                        r = (fabs(r) < floatPrecision) ? 1.0f : 1.0f / r;
+                            float r = duv1.x * duv2.y - duv2.x * duv1.y;
+                            r = (fabs(r) < floatPrecision) ? 1.0f : 1.0f / r;
 
-                        const DirectX::XMVECTOR tangentVec = DirectX::XMVectorScale(
-                            DirectX::XMVectorSubtract(
-                                DirectX::XMVectorScale(dp1, duv2.y),
-                                DirectX::XMVectorScale(dp2, duv1.y)),
-                            r);
+                            const DirectX::XMVECTOR tangentVec = DirectX::XMVectorScale(
+                                DirectX::XMVectorSubtract(
+                                    DirectX::XMVectorScale(dp1, duv2.y),
+                                    DirectX::XMVectorScale(dp2, duv1.y)),
+                                r);
 
-                        const DirectX::XMVECTOR bitangentVec = DirectX::XMVectorScale(
-                            DirectX::XMVectorSubtract(
-                                DirectX::XMVectorScale(dp2, duv1.x),
-                                DirectX::XMVectorScale(dp1, duv2.x)),
-                            r);
+                            const DirectX::XMVECTOR bitangentVec = DirectX::XMVectorScale(
+                                DirectX::XMVectorSubtract(
+                                    DirectX::XMVectorScale(dp2, duv1.x),
+                                    DirectX::XMVectorScale(dp1, duv2.x)),
+                                r);
 
-                        DirectX::XMFLOAT3 tangent, bitangent;
-                        DirectX::XMStoreFloat3(&tangent, tangentVec);
-                        DirectX::XMStoreFloat3(&bitangent, bitangentVec);
-                        faceTangents[i] = {i0, i1, i2, tangent, bitangent};
-                    }
-                }));
-            }
-            for (auto& process : processes)
-            {
-                process.get();
-            }
+                            DirectX::XMFLOAT3 tangent, bitangent;
+                            DirectX::XMStoreFloat3(&tangent, tangentVec);
+                            DirectX::XMStoreFloat3(&bitangent, bitangentVec);
+                            faceTangents[i] = {i0, i1, i2, tangent, bitangent};
+                        }
+                    },
+                    tbb::auto_partitioner()
+                );
+            });
         }
 
         logger::debug("{}::{} : map data updated, vertices {} / uvs {} / tris {}", __func__,
@@ -490,78 +486,75 @@ namespace Mus {
 		const float smoothCos = std::cosf(DirectX::XMConvertToRadians(a_smoothDegree));
         const bool allowInvertNormalSmooth = Config::GetSingleton().GetAllowInvertNormalSmooth();
 
-		std::vector<std::future<void>> processes;
-        const std::size_t sub = std::max(1ull, std::min(vertices.size(), tp->GetThreads() * 4));
-		const std::size_t unit = (vertices.size() + sub - 1) / sub;
-        for (std::size_t t = 0; t < sub; t++) {
-			const std::size_t begin = t * unit;
-			const std::size_t end = std::min(begin + unit, vertices.size());
-            processes.push_back(tp->submitAsync([&, begin, end]() {
-				for (std::size_t i = begin; i < end; i++)
-                {
-                    DirectX::XMVECTOR nSelf = emptyVector;
-                    if (vertexToFaceMap[i].empty())
-                        continue;
-                    for (const auto& fi : vertexToFaceMap[i])
+        tp->Execute([&] {
+            tbb::parallel_for(
+                tbb::blocked_range<std::size_t>(0, vertices.size()),
+                [&](const tbb::blocked_range<std::size_t>& r) {
+                    for (std::size_t i = r.begin(); i != r.end(); ++i)
                     {
-                        const auto& fn = faceNormals[fi];
-                        nSelf = DirectX::XMVectorAdd(nSelf, DirectX::XMLoadFloat3(&fn.normal));
-                    }
-                    if (DirectX::XMVectorGetX(DirectX::XMVector3LengthSq(nSelf)) < floatPrecision)
-                        continue;
-                    nSelf = DirectX::XMVector3Normalize(nSelf);
-
-                    DirectX::XMVECTOR nSum = emptyVector;
-                    DirectX::XMVECTOR tSum = emptyVector;
-                    DirectX::XMVECTOR bSum = emptyVector;
-
-					for (const auto& link : weldedVertices[i])
-                    {
-                        for (const auto& fi : vertexToFaceMap[link])
+                        DirectX::XMVECTOR nSelf = emptyVector;
+                        if (vertexToFaceMap[i].empty())
+                            continue;
+                        for (const auto& fi : vertexToFaceMap[i])
                         {
                             const auto& fn = faceNormals[fi];
-                            DirectX::XMVECTOR fnVec = DirectX::XMLoadFloat3(&fn.normal);
-                            float dot = DirectX::XMVectorGetX(DirectX::XMVector3Dot(fnVec, nSelf));
-                            if (allowInvertNormalSmooth)
-                            {
-                                if (dot < 0)
-                                {
-                                    dot = -dot;
-                                    fnVec = DirectX::XMVectorNegate(fnVec);
-                                }
-                            }
-                            if (dot < smoothCos)
-                                continue;
-                            const auto& ft = faceTangents[fi];
-                            nSum = DirectX::XMVectorAdd(nSum, fnVec);
-                            tSum = DirectX::XMVectorAdd(tSum, DirectX::XMLoadFloat3(&ft.tangent));
-                            bSum = DirectX::XMVectorAdd(bSum, DirectX::XMLoadFloat3(&ft.bitangent));
+                            nSelf = DirectX::XMVectorAdd(nSelf, DirectX::XMLoadFloat3(&fn.normal));
                         }
+                        if (DirectX::XMVectorGetX(DirectX::XMVector3LengthSq(nSelf)) < floatPrecision)
+                            continue;
+                        nSelf = DirectX::XMVector3Normalize(nSelf);
+
+                        DirectX::XMVECTOR nSum = emptyVector;
+                        DirectX::XMVECTOR tSum = emptyVector;
+                        DirectX::XMVECTOR bSum = emptyVector;
+
+                        for (const auto& link : weldedVertices[i])
+                        {
+                            for (const auto& fi : vertexToFaceMap[link])
+                            {
+                                const auto& fn = faceNormals[fi];
+                                DirectX::XMVECTOR fnVec = DirectX::XMLoadFloat3(&fn.normal);
+                                float dot = DirectX::XMVectorGetX(DirectX::XMVector3Dot(fnVec, nSelf));
+                                if (allowInvertNormalSmooth)
+                                {
+                                    if (dot < 0)
+                                    {
+                                        dot = -dot;
+                                        fnVec = DirectX::XMVectorNegate(fnVec);
+                                    }
+                                }
+                                if (dot < smoothCos)
+                                    continue;
+                                const auto& ft = faceTangents[fi];
+                                nSum = DirectX::XMVectorAdd(nSum, fnVec);
+                                tSum = DirectX::XMVectorAdd(tSum, DirectX::XMLoadFloat3(&ft.tangent));
+                                bSum = DirectX::XMVectorAdd(bSum, DirectX::XMLoadFloat3(&ft.bitangent));
+                            }
+                        }
+
+                        if (DirectX::XMVector3Equal(nSum, emptyVector))
+                            continue;
+
+                        DirectX::XMVECTOR t = DirectX::XMVectorGetX(DirectX::XMVector3LengthEst(tSum)) > floatPrecision ? DirectX::XMVector3NormalizeEst(tSum) : emptyVector;
+                        DirectX::XMVECTOR b = DirectX::XMVectorGetX(DirectX::XMVector3LengthEst(bSum)) > floatPrecision ? DirectX::XMVector3NormalizeEst(bSum) : emptyVector;
+                        const DirectX::XMVECTOR n = DirectX::XMVector3NormalizeEst(nSum);
+
+                        if (!DirectX::XMVector3Equal(t, emptyVector))
+                        {
+                            t = DirectX::XMVector3NormalizeEst(DirectX::XMVectorSubtract(t, DirectX::XMVectorScale(n, DirectX::XMVectorGetX(DirectX::XMVector3Dot(n, t)))));
+                            b = DirectX::XMVector3NormalizeEst(DirectX::XMVector3Cross(n, t));
+                        }
+
+                        if (!DirectX::XMVector3Equal(t, emptyVector))
+                            DirectX::XMStoreFloat3(&tangents[i], t);
+                        if (!DirectX::XMVector3Equal(b, emptyVector))
+                            DirectX::XMStoreFloat3(&bitangents[i], b);
+                        DirectX::XMStoreFloat3(&normals[i], n);
                     }
-
-					if (DirectX::XMVector3Equal(nSum, emptyVector))
-						continue;
-
-					DirectX::XMVECTOR t = DirectX::XMVectorGetX(DirectX::XMVector3LengthEst(tSum)) > floatPrecision ? DirectX::XMVector3NormalizeEst(tSum) : emptyVector;
-                    DirectX::XMVECTOR b = DirectX::XMVectorGetX(DirectX::XMVector3LengthEst(bSum)) > floatPrecision ? DirectX::XMVector3NormalizeEst(bSum) : emptyVector;
-					const DirectX::XMVECTOR n = DirectX::XMVector3NormalizeEst(nSum);
-
-					if (!DirectX::XMVector3Equal(t, emptyVector)) {
-						t = DirectX::XMVector3NormalizeEst(DirectX::XMVectorSubtract(t, DirectX::XMVectorScale(n, DirectX::XMVectorGetX(DirectX::XMVector3Dot(n, t)))));
-						b = DirectX::XMVector3NormalizeEst(DirectX::XMVector3Cross(n, t));
-					}
-
-					if (!DirectX::XMVector3Equal(t, emptyVector))
-						DirectX::XMStoreFloat3(&tangents[i], t);
-					if (!DirectX::XMVector3Equal(b, emptyVector))
-						DirectX::XMStoreFloat3(&bitangents[i], b);
-					DirectX::XMStoreFloat3(&normals[i], n);
-				}
-			}));
-		}
-		for (auto& process : processes) {
-			process.get();
-		}
+                },
+                tbb::auto_partitioner()
+            );
+        });
 
 		if (Config::GetSingleton().GetGeometryDataTime())
 			PerformanceLog(std::string(__func__) + "::" + std::to_string(normals.size()), true, false);
@@ -582,7 +575,6 @@ namespace Mus {
             orgTriCount[gi] = geometries[gi].objInfo.indicesCount() / 3;
         }
 
-        const std::size_t threadsCount = tp->GetThreads();
         auto doSubdivision = [&]() {
             std::vector<LocalDate> subdividedDatas(geometries.size());
             std::vector<std::uint32_t> beforeVertexStart(geometries.size());
@@ -604,33 +596,26 @@ namespace Mus {
 
             // fix indices
             {
-                std::vector<std::future<void>> processes;
                 for (std::size_t gi = 0; gi < geometries.size(); gi++)
                 {
-                    const auto& data = subdividedDatas[gi];
+                    const auto& geometry = geometries[gi];
+                    auto& data = subdividedDatas[gi];
                     const std::size_t triCount = data.indices.size() / 3;
-                    const std::size_t sub = std::max(1ull, std::min(triCount, threadsCount * 4));
-                    const std::size_t unit = (triCount + sub - 1) / sub;
-                    for (std::size_t t = 0; t < sub; t++)
-                    {
-                        const std::size_t begin = t * unit;
-                        const std::size_t end = std::min(begin + unit, triCount);
-                        processes.push_back(tp->submitAsync([&, gi, begin, end]() {
-                            const auto& geometry = geometries[gi];
-                            auto& data = subdividedDatas[gi];
-                            for (std::size_t i = begin; i < end; i++)
-                            {
-                                const std::size_t offset = i * 3;
-                                data.indices[offset + 0] -= geometry.objInfo.vertexStart;
-                                data.indices[offset + 1] -= geometry.objInfo.vertexStart;
-                                data.indices[offset + 2] -= geometry.objInfo.vertexStart;
-                            }
-                        }));
-                    }
-                }
-                for (auto& process : processes)
-                {
-                    process.get();
+                    tp->Execute([&] {
+                        tbb::parallel_for(
+                            tbb::blocked_range<std::size_t>(0, triCount),
+                            [&](const tbb::blocked_range<std::size_t>& r) {
+                                for (std::size_t i = r.begin(); i != r.end(); ++i)
+                                {
+                                    const std::size_t offset = i * 3;
+                                    data.indices[offset + 0] -= geometry.objInfo.vertexStart;
+                                    data.indices[offset + 1] -= geometry.objInfo.vertexStart;
+                                    data.indices[offset + 2] -= geometry.objInfo.vertexStart;
+                                }
+                            },
+                            tbb::auto_partitioner()
+                        );
+                    });
                 }
             }
 
@@ -641,80 +626,82 @@ namespace Mus {
 
             // create tris
             {
-                std::vector<std::future<void>> processes;
-                for (std::size_t gi = 0; gi < subdividedDatas.size(); gi++)
-                {
-                    if (orgTriCount[gi] / 3 > a_triThreshold)
-                        continue;
-                    processes.push_back(tp->submitAsync([&, gi]() {
-                        auto& data = subdividedDatas[gi];
-                        data.vertices.reserve(data.vertices.size() + data.indices.size() / 3);
-                        data.uvs.reserve(data.uvs.size() + data.indices.size() / 3);
-                        data.localCreatedEdges.reserve(data.indices.size());
-                        std::unordered_map<std::size_t, std::uint32_t> midpointMap;
-                        auto getMidpointIndex = [&](const std::uint32_t i0, const std::uint32_t i1) -> std::uint32_t {
-                            const auto key = Edge(i0, i1)();
-                            if (auto it = midpointMap.find(key); it != midpointMap.end())
-                                return it->second;
+                tp->Execute([&] {
+                    tbb::parallel_for(
+                        tbb::blocked_range<std::size_t>(0, subdividedDatas.size()),
+                        [&](const tbb::blocked_range<std::size_t>& r) {
+                            for (std::size_t gi = r.begin(); gi != r.end(); ++gi)
+                            {
+                                if (orgTriCount[gi] / 3 > a_triThreshold)
+                                    continue;
 
-                            const std::uint32_t index = data.vertices.size();
-                            const auto& v0 = data.vertices[i0];
-                            const auto& v1 = data.vertices[i1];
-                            const DirectX::XMFLOAT3 midVertex = {
-                                (v0.x + v1.x) * 0.5f,
-                                (v0.y + v1.y) * 0.5f,
-                                (v0.z + v1.z) * 0.5f};
-                            data.vertices.push_back(midVertex);
+                                auto& data = subdividedDatas[gi];
+                                data.vertices.reserve(data.vertices.size() + data.indices.size() / 3);
+                                data.uvs.reserve(data.uvs.size() + data.indices.size() / 3);
+                                data.localCreatedEdges.reserve(data.indices.size());
+                                std::unordered_map<std::size_t, std::uint32_t> midpointMap;
+                                auto getMidpointIndex = [&](const std::uint32_t i0, const std::uint32_t i1) -> std::uint32_t {
+                                    const auto key = Edge(i0, i1)();
+                                    if (auto it = midpointMap.find(key); it != midpointMap.end())
+                                        return it->second;
 
-                            const auto& u0 = data.uvs[i0];
-                            const auto& u1 = data.uvs[i1];
-                            const DirectX::XMFLOAT2 midUV = {
-                                (u0.x + u1.x) * 0.5f,
-                                (u0.y + u1.y) * 0.5f};
-                            data.uvs.push_back(midUV);
+                                    const std::uint32_t index = data.vertices.size();
+                                    const auto& v0 = data.vertices[i0];
+                                    const auto& v1 = data.vertices[i1];
+                                    const DirectX::XMFLOAT3 midVertex = {
+                                        (v0.x + v1.x) * 0.5f,
+                                        (v0.y + v1.y) * 0.5f,
+                                        (v0.z + v1.z) * 0.5f};
+                                    data.vertices.push_back(midVertex);
 
-                            midpointMap[key] = index;
-                            data.localCreatedEdges.push_back({i0, i1, index});
-                            return index;
-                        };
+                                    const auto& u0 = data.uvs[i0];
+                                    const auto& u1 = data.uvs[i1];
+                                    const DirectX::XMFLOAT2 midUV = {
+                                        (u0.x + u1.x) * 0.5f,
+                                        (u0.y + u1.y) * 0.5f};
+                                    data.uvs.push_back(midUV);
 
-                        const std::size_t oldIndicesCount = data.indices.size();
-                        auto oldIndices = data.indices;
-                        data.indices.resize(oldIndicesCount * 4);
-                        for (std::size_t i = 0; i < oldIndicesCount / 3; i++)
-                        {
-                            const std::size_t offset = i * 3;
-                            const std::uint32_t v0 = oldIndices[offset + 0];
-                            const std::uint32_t v1 = oldIndices[offset + 1];
-                            const std::uint32_t v2 = oldIndices[offset + 2];
+                                    midpointMap[key] = index;
+                                    data.localCreatedEdges.push_back({i0, i1, index});
+                                    return index;
+                                };
 
-                            const std::uint32_t m01 = getMidpointIndex(v0, v1);
-                            const std::uint32_t m12 = getMidpointIndex(v1, v2);
-                            const std::uint32_t m20 = getMidpointIndex(v0, v2);
+                                const std::size_t oldIndicesCount = data.indices.size();
+                                auto oldIndices = data.indices;
+                                data.indices.resize(oldIndicesCount * 4);
+                                for (std::size_t i = 0; i < oldIndicesCount / 3; i++)
+                                {
+                                    const std::size_t offset = i * 3;
+                                    const std::uint32_t v0 = oldIndices[offset + 0];
+                                    const std::uint32_t v1 = oldIndices[offset + 1];
+                                    const std::uint32_t v2 = oldIndices[offset + 2];
 
-                            const std::size_t triOffset = offset * 4;
-                            data.indices[triOffset + 0] = v0;
-                            data.indices[triOffset + 1] = m01;
-                            data.indices[triOffset + 2] = m20;
+                                    const std::uint32_t m01 = getMidpointIndex(v0, v1);
+                                    const std::uint32_t m12 = getMidpointIndex(v1, v2);
+                                    const std::uint32_t m20 = getMidpointIndex(v0, v2);
 
-                            data.indices[triOffset + 3] = v1;
-                            data.indices[triOffset + 4] = m12;
-                            data.indices[triOffset + 5] = m01;
+                                    const std::size_t triOffset = offset * 4;
+                                    data.indices[triOffset + 0] = v0;
+                                    data.indices[triOffset + 1] = m01;
+                                    data.indices[triOffset + 2] = m20;
 
-                            data.indices[triOffset + 6] = v2;
-                            data.indices[triOffset + 7] = m20;
-                            data.indices[triOffset + 8] = m12;
+                                    data.indices[triOffset + 3] = v1;
+                                    data.indices[triOffset + 4] = m12;
+                                    data.indices[triOffset + 5] = m01;
 
-                            data.indices[triOffset + 9] = m01;
-                            data.indices[triOffset + 10] = m12;
-                            data.indices[triOffset + 11] = m20;
-                        }
-                    }));
-                }
-                for (auto& process : processes)
-                {
-                    process.get();
-                }
+                                    data.indices[triOffset + 6] = v2;
+                                    data.indices[triOffset + 7] = m20;
+                                    data.indices[triOffset + 8] = m12;
+
+                                    data.indices[triOffset + 9] = m01;
+                                    data.indices[triOffset + 10] = m12;
+                                    data.indices[triOffset + 11] = m20;
+                                }
+                            }
+                        },
+                        tbb::auto_partitioner()
+                    );
+                });
             }
 
             // add vertex datas
@@ -736,29 +723,23 @@ namespace Mus {
                 std::vector<std::future<void>> processes;
                 for (std::size_t gi = 0; gi < subdividedDatas.size(); gi++)
                 {
-                    const auto& data = subdividedDatas[gi];
+                    auto& data = subdividedDatas[gi];
                     const std::size_t triCount = data.indices.size() / 3;
-                    const std::size_t sub = std::max(1ull, std::min(triCount, threadsCount * 4));
-                    const std::size_t unit = (triCount + sub - 1) / sub;
-                    for (std::size_t t = 0; t < sub; t++)
-                    {
-                        const std::size_t begin = t * unit;
-                        const std::size_t end = std::min(begin + unit, triCount);
-                        processes.push_back(tp->submitAsync([&, gi, begin, end]() {
-                            auto& data = subdividedDatas[gi];
-                            for (std::size_t i = begin; i < end; i++)
-                            {
-                                const std::size_t offset = i * 3;
-                                data.indices[offset + 0] += data.objInfo.vertexStart;
-                                data.indices[offset + 1] += data.objInfo.vertexStart;
-                                data.indices[offset + 2] += data.objInfo.vertexStart;
-                            }
-                        }));
-                    }
-                }
-                for (auto& process : processes)
-                {
-                    process.get();
+                    tp->Execute([&] {
+                        tbb::parallel_for(
+                            tbb::blocked_range<std::size_t>(0, triCount),
+                            [&](const tbb::blocked_range<std::size_t>& r) {
+                                for (std::size_t i = r.begin(); i != r.end(); ++i)
+                                {
+                                    const std::size_t offset = i * 3;
+                                    data.indices[offset + 0] += data.objInfo.vertexStart;
+                                    data.indices[offset + 1] += data.objInfo.vertexStart;
+                                    data.indices[offset + 2] += data.objInfo.vertexStart;
+                                }
+                            },
+                            tbb::auto_partitioner()
+                        );
+                    });
                 }
             }
 
@@ -814,113 +795,99 @@ namespace Mus {
                     newEdges.push_back({edge.v0 + vertexStart, edge.v1 + vertexStart, edge.mv + vertexStart});
                 }
             }
-            parallel_sort(newEdges, tp.get());
+            tp->Execute([&] {
+                tbb::parallel_sort(newEdges);
+            });
 
             const std::size_t newEdgesCount = newEdges.size();
             std::vector<PosEntry> pMap;
             {
-                std::vector<std::future<void>> processes;
-                const std::size_t sub = std::max(1ull, std::min(newEdgesCount, tp->GetThreads() * 4));
-                const std::size_t unit = (newEdgesCount + sub - 1) / sub;
                 if (weldAccuracy)
                 {
                     pMap.resize(newEdges.size() * 2);
-                    for (std::size_t t = 0; t < sub; t++)
-                    {
-                        const std::size_t begin = t * unit;
-                        const std::size_t end = std::min(begin + unit, newEdgesCount);
-                        processes.push_back(tp->submitAsync([&, begin, end]() {
-                            auto ti = tp->GetThreadIndex(GetCurrentThreadId());
-                            for (std::size_t i = begin; i < end; i++)
-                            {
-                                const auto vi = newEdges[i].mv;
-                                pMap[i * 2 + 0] = PosEntry(MakeLowPositionKey(vertices[vi]), vi);
-                                pMap[i * 2 + 1] = PosEntry(MakeHighPositionKey(vertices[vi]), vi);
-                            }
-                        }));
-                    }
+                    tp->Execute([&] {
+                        tbb::parallel_for(
+                            tbb::blocked_range<std::size_t>(0, newEdgesCount),
+                            [&](const tbb::blocked_range<std::size_t>& r) {
+                                for (std::size_t i = r.begin(); i != r.end(); ++i)
+                                {
+                                    const auto vi = newEdges[i].mv;
+                                    pMap[i * 2 + 0] = PosEntry(MakeLowPositionKey(vertices[vi]), vi);
+                                    pMap[i * 2 + 1] = PosEntry(MakeHighPositionKey(vertices[vi]), vi);
+                                }
+                            },
+                            tbb::auto_partitioner()
+                        );
+                    });
                 }
                 else
                 {
                     pMap.resize(newEdges.size());
-                    for (std::size_t t = 0; t < sub; t++)
-                    {
-                        const std::size_t begin = t * unit;
-                        const std::size_t end = std::min(begin + unit, newEdgesCount);
-                        processes.push_back(tp->submitAsync([&, begin, end]() {
-                            auto ti = tp->GetThreadIndex(GetCurrentThreadId());
-                            for (std::size_t i = begin; i < end; i++)
-                            {
-                                const auto vi = newEdges[i].mv;
-                                pMap[i] = PosEntry(MakePositionKey(vertices[vi]), vi);
-                            }
-                        }));
-                    }
-                }
-                for (auto& process : processes)
-                {
-                    process.get();
+                    tp->Execute([&] {
+                        tbb::parallel_for(
+                            tbb::blocked_range<std::size_t>(0, newEdgesCount),
+                            [&](const tbb::blocked_range<std::size_t>& r) {
+                                for (std::size_t i = r.begin(); i != r.end(); ++i)
+                                {
+                                    const auto vi = newEdges[i].mv;
+                                    pMap[i * 2 + 0] = PosEntry(MakeLowPositionKey(vertices[vi]), vi);
+                                    pMap[i * 2 + 1] = PosEntry(MakeHighPositionKey(vertices[vi]), vi);
+                                }
+                            },
+                            tbb::auto_partitioner()
+                        );
+                    });
                 }
             }
-            parallel_sort(pMap, tp.get());
+            tp->Execute([&] {
+                tbb::parallel_sort(pMap);
+            });
             if (weldAccuracy)
                 pMap.erase(std::unique(pMap.begin(), pMap.end()), pMap.end());
             AddWeldVertices(pMap);
             {
-                std::vector<std::future<void>> processes;
-                const std::size_t sub = std::max(1ull, std::min(newEdgesCount, tp->GetThreads() * 4));
-                const std::size_t unit = (newEdgesCount + sub - 1) / sub;
-                for (std::size_t t = 0; t < sub; t++)
-                {
-                    const std::size_t begin = t * unit;
-                    const std::size_t end = std::min(begin + unit, newEdgesCount);
-                    processes.push_back(tp->submitAsync([&, begin, end]() {
-                        auto ti = tp->GetThreadIndex(GetCurrentThreadId());
-                        for (std::size_t i = begin; i < end; i++)
-                        {
-                            const auto vi = newEdges[i].mv;
-                            std::sort(weldedVertices[vi].begin(), weldedVertices[vi].end());
-                            weldedVertices[vi].erase(std::unique(weldedVertices[vi].begin(), weldedVertices[vi].end()), weldedVertices[vi].end());
-                        }
-                    }));
-                }
-                for (auto& process : processes)
-                {
-                    process.get();
-                }
+                tp->Execute([&] {
+                    tbb::parallel_for(
+                        tbb::blocked_range<std::size_t>(0, newEdgesCount),
+                        [&](const tbb::blocked_range<std::size_t>& r) {
+                            for (std::size_t i = r.begin(); i != r.end(); ++i)
+                            {
+                                const auto vi = newEdges[i].mv;
+                                std::sort(weldedVertices[vi].begin(), weldedVertices[vi].end());
+                                weldedVertices[vi].erase(std::unique(weldedVertices[vi].begin(), weldedVertices[vi].end()), weldedVertices[vi].end());
+                            }
+                        },
+                        tbb::auto_partitioner()
+                    );
+                });
             }
         };
 
         auto createVertexToFaceMap = [&](){
             vertexToFaceMap.clear();
-            vertexToFaceMap.resize(vertices.size());
+            const std::size_t vertCount = vertices.size();
+            vertexToFaceMap.resize(vertCount);
             const std::size_t triCount = indices.size() / 3;
-            std::vector<std::future<void>> processes;
-            {
-                const std::size_t sub = std::max(1ull, std::min(triCount, tp->GetThreads() * 4));
-                const std::size_t unit = (triCount + sub - 1) / sub;
-                for (std::size_t t = 0; t < sub; t++)
-                {
-                    const std::size_t begin = t * unit;
-                    const std::size_t end = std::min(begin + unit, triCount);
-                    processes.push_back(tp->submitAsync([&, t, begin, end]() {
-                        for (std::size_t i = begin; i < end; i++)
+            tp->Execute([&] {
+                tbb::parallel_for(
+                    tbb::blocked_range<std::size_t>(0, triCount),
+                    [&](const tbb::blocked_range<std::size_t>& r) {
+                        for (std::size_t i = r.begin(); i != r.end(); ++i)
                         {
                             const std::size_t offset = i * 3;
                             const std::uint32_t i0 = indices[offset + 0];
                             const std::uint32_t i1 = indices[offset + 1];
                             const std::uint32_t i2 = indices[offset + 2];
+                            if (i0 >= vertCount || i1 >= vertCount || i2 >= vertCount)
+                                continue;
                             vertexToFaceMap[i0].push_back(i);
                             vertexToFaceMap[i1].push_back(i);
                             vertexToFaceMap[i2].push_back(i);
                         }
-                    }));
-                }
-            }
-            for (auto& process : processes)
-            {
-                process.get();
-            }
+                    },
+                    tbb::auto_partitioner()
+                );
+            });
         };
 
         for (std::uint32_t i = 1; i <= a_subCount; i++)
@@ -954,51 +921,46 @@ namespace Mus {
         auto doSmooth = [&](float weight) {
             auto tempVertices = vertices;
             processes.clear();
-            const std::size_t sub = std::max(1ull, std::min(vertices.size(), tp->GetThreads() * 8));
-            const std::size_t unit = (vertices.size() + sub - 1) / sub;
-            for (std::size_t t = 0; t < sub; t++)
-            {
-                const std::size_t begin = t * unit;
-                const std::size_t end = std::min(begin + unit, vertices.size());
-                processes.push_back(tp->submitAsync([&, begin, end, weight]() {
-                    for (std::size_t i = begin; i < end; i++)
-                    {
-                        std::unordered_set<std::uint32_t> connectedVertices;
-                        for (const auto& link : weldedVertices[i])
+            tp->Execute([&] {
+                tbb::parallel_for(
+                    tbb::blocked_range<std::size_t>(0, vertices.size()),
+                    [&](const tbb::blocked_range<std::size_t>& r) {
+                        for (std::size_t i = r.begin(); i != r.end(); ++i)
                         {
-                            for (const auto& fi : vertexToFaceMap[link])
+                            std::unordered_set<std::uint32_t> connectedVertices;
+                            for (const auto& link : weldedVertices[i])
                             {
-                                const auto& fn = faceNormals[fi];
-                                if (fn.v0 != link)
-                                    connectedVertices.insert(fn.v0);
-                                if (fn.v1 != link)
-                                    connectedVertices.insert(fn.v1);
-                                if (fn.v2 != link)
-                                    connectedVertices.insert(fn.v2);
+                                for (const auto& fi : vertexToFaceMap[link])
+                                {
+                                    const auto& fn = faceNormals[fi];
+                                    if (fn.v0 != link)
+                                        connectedVertices.insert(fn.v0);
+                                    if (fn.v1 != link)
+                                        connectedVertices.insert(fn.v1);
+                                    if (fn.v2 != link)
+                                        connectedVertices.insert(fn.v2);
+                                }
                             }
+                            if (connectedVertices.empty())
+                                continue;
+
+                            DirectX::XMVECTOR sumPos = emptyVector;
+                            for (const auto& cvi : connectedVertices)
+                            {
+                                sumPos = DirectX::XMVectorAdd(sumPos, DirectX::XMLoadFloat3(&tempVertices[cvi]));
+                            }
+
+                            const DirectX::XMVECTOR avgPos = DirectX::XMVectorScale(sumPos, 1.0f / connectedVertices.size());
+                            const DirectX::XMVECTOR original = DirectX::XMLoadFloat3(&tempVertices[i]);
+                            const DirectX::XMVECTOR delta = DirectX::XMVectorSubtract(avgPos, original);
+                            const DirectX::XMVECTOR smoothed = DirectX::XMVectorAdd(original, DirectX::XMVectorScale(delta, weight));
+
+                            DirectX::XMStoreFloat3(&vertices[i], smoothed);
                         }
-                        if (connectedVertices.empty())
-                            continue;
-
-                        DirectX::XMVECTOR sumPos = emptyVector;
-                        for (const auto& cvi : connectedVertices)
-                        {
-                            sumPos = DirectX::XMVectorAdd(sumPos, DirectX::XMLoadFloat3(&tempVertices[cvi]));
-                        }
-
-                        const DirectX::XMVECTOR avgPos = DirectX::XMVectorScale(sumPos, 1.0f / connectedVertices.size());
-                        const DirectX::XMVECTOR original = DirectX::XMLoadFloat3(&tempVertices[i]);
-                        const DirectX::XMVECTOR delta = DirectX::XMVectorSubtract(avgPos, original);
-                        const DirectX::XMVECTOR smoothed = DirectX::XMVectorAdd(original, DirectX::XMVectorScale(delta, weight));
-
-                        DirectX::XMStoreFloat3(&vertices[i], smoothed);
-                    }
-                }));
-            }
-            for (auto& process : processes)
-            {
-                process.get();
-            }
+                    },
+                    tbb::auto_partitioner()
+                );
+            });
         };
 
         for (std::uint32_t i = 1; i <= a_smoothCount; i++)
@@ -1029,70 +991,64 @@ namespace Mus {
 
         auto doSmooth = [&]() {
             const auto tempVertices = vertices;
-            std::vector<std::future<void>> processes;
-            const std::size_t sub = std::max(1ull, std::min(vertices.size(), tp->GetThreads() * 8));
-            const std::size_t unit = (vertices.size() + sub - 1) / sub;
-            for (std::size_t t = 0; t < sub; t++)
-            {
-                const std::size_t begin = t * unit;
-                const std::size_t end = std::min(begin + unit, vertices.size());
-                processes.push_back(tp->submitAsync([&, begin, end]() {
-                    for (std::size_t i = begin; i < end; i++)
-                    {
-                        DirectX::XMVECTOR nSelf = emptyVector;
-                        for (const auto& link : weldedVertices[i])
+            tp->Execute([&] {
+                tbb::parallel_for(
+                    tbb::blocked_range<std::size_t>(0, vertices.size()),
+                    [&](const tbb::blocked_range<std::size_t>& r) {
+                        for (std::size_t i = r.begin(); i != r.end(); ++i)
                         {
-                            for (const auto& fi : vertexToFaceMap[link])
+                            DirectX::XMVECTOR nSelf = emptyVector;
+                            for (const auto& link : weldedVertices[i])
                             {
-                                nSelf = DirectX::XMVectorAdd(nSelf, DirectX::XMLoadFloat3(&faceNormals[fi].normal));
+                                for (const auto& fi : vertexToFaceMap[link])
+                                {
+                                    nSelf = DirectX::XMVectorAdd(nSelf, DirectX::XMLoadFloat3(&faceNormals[fi].normal));
+                                }
                             }
-                        }
-                        if (DirectX::XMVectorGetX(DirectX::XMVector3LengthSq(nSelf)) < floatPrecision)
-                            continue;
-                        nSelf = DirectX::XMVector3NormalizeEst(nSelf);
+                            if (DirectX::XMVectorGetX(DirectX::XMVector3LengthSq(nSelf)) < floatPrecision)
+                                continue;
+                            nSelf = DirectX::XMVector3NormalizeEst(nSelf);
 
-                        std::unordered_set<std::uint32_t> connectedVertices;
-                        float dotTotal = 0.0f;
-                        std::uint32_t dotCount = 0;
-                        for (const auto& link : weldedVertices[i])
-                        {
-                            for (const auto& fi : vertexToFaceMap[link])
+                            std::unordered_set<std::uint32_t> connectedVertices;
+                            float dotTotal = 0.0f;
+                            std::uint32_t dotCount = 0;
+                            for (const auto& link : weldedVertices[i])
                             {
-                                const auto& fn = faceNormals[fi];
-                                const float dot = DirectX::XMVectorGetX(DirectX::XMVector3Dot(nSelf, DirectX::XMLoadFloat3(&fn.normal)));
-                                if (dot > maxCos)
-                                    continue;
-                                if (fn.v0 != link)
-                                    connectedVertices.insert(fn.v0);
-                                if (fn.v1 != link)
-                                    connectedVertices.insert(fn.v1);
-                                if (fn.v2 != link)
-                                    connectedVertices.insert(fn.v2);
-                                dotTotal += dot;
-                                dotCount++;
+                                for (const auto& fi : vertexToFaceMap[link])
+                                {
+                                    const auto& fn = faceNormals[fi];
+                                    const float dot = DirectX::XMVectorGetX(DirectX::XMVector3Dot(nSelf, DirectX::XMLoadFloat3(&fn.normal)));
+                                    if (dot > maxCos)
+                                        continue;
+                                    if (fn.v0 != link)
+                                        connectedVertices.insert(fn.v0);
+                                    if (fn.v1 != link)
+                                        connectedVertices.insert(fn.v1);
+                                    if (fn.v2 != link)
+                                        connectedVertices.insert(fn.v2);
+                                    dotTotal += dot;
+                                    dotCount++;
+                                }
                             }
-                        }
-                        if (connectedVertices.empty())
-                            continue;
+                            if (connectedVertices.empty())
+                                continue;
 
-                        DirectX::XMVECTOR avgPos = emptyVector;
-                        const float avgDot = dotTotal / dotCount;
-                        const float strength = SmoothStepRange(avgDot, maxCos, minCos);
-                        for (const auto& cvi : connectedVertices)
-                        {
-                            avgPos = DirectX::XMVectorAdd(avgPos, DirectX::XMLoadFloat3(&tempVertices[cvi]));
+                            DirectX::XMVECTOR avgPos = emptyVector;
+                            const float avgDot = dotTotal / dotCount;
+                            const float strength = SmoothStepRange(avgDot, maxCos, minCos);
+                            for (const auto& cvi : connectedVertices)
+                            {
+                                avgPos = DirectX::XMVectorAdd(avgPos, DirectX::XMLoadFloat3(&tempVertices[cvi]));
+                            }
+                            avgPos = DirectX::XMVectorScale(avgPos, 1.0f / connectedVertices.size());
+                            const DirectX::XMVECTOR original = DirectX::XMLoadFloat3(&tempVertices[i]);
+                            const DirectX::XMVECTOR smoothed = DirectX::XMVectorLerp(original, avgPos, strength);
+                            DirectX::XMStoreFloat3(&vertices[i], smoothed);
                         }
-                        avgPos = DirectX::XMVectorScale(avgPos, 1.0f / connectedVertices.size());
-                        const DirectX::XMVECTOR original = DirectX::XMLoadFloat3(&tempVertices[i]);
-                        const DirectX::XMVECTOR smoothed = DirectX::XMVectorLerp(original, avgPos, strength);
-                        DirectX::XMStoreFloat3(&vertices[i], smoothed);
-                    }
-                }));
-            }
-            for (auto& process : processes)
-            {
-                process.get();
-            }
+                    },
+                    tbb::auto_partitioner()
+                );
+            });
         };
 		for (std::uint32_t i = 1; i <= a_smoothCount; i++)
 		{
@@ -1105,11 +1061,19 @@ namespace Mus {
         }
 	}
 
-	void GeometryData::CreateGeometryHash()
+	void GeometryData::CreateGeometryHash(float a_precision)
     {
+        const DirectX::XMVECTOR p = DirectX::XMVectorReplicate(a_precision);
+        std::vector<DirectX::XMINT3> hashNormals;
         for (auto& geo : geometries)
         {
-            geo.hash = XXH3_64bits(normals.data() + geo.objInfo.normalStart, geo.objInfo.normalCount() * sizeof(DirectX::XMFLOAT3));
+            hashNormals.resize(geo.objInfo.normalCount());
+            for (std::size_t i = geo.objInfo.normalStart, hi = 0; i < geo.objInfo.normalEnd; i++, hi++)
+            {
+                const DirectX::XMVECTOR v = DirectX::XMVectorFloor(DirectX::XMVectorMultiply(DirectX::XMLoadFloat3(&normals[i]), p));
+                DirectX::XMStoreSInt3(&hashNormals[hi], v);
+            }
+            geo.hash = XXH3_64bits(hashNormals.data(), hashNormals.size() * sizeof(DirectX::XMINT3));
         }
     }
 
@@ -1124,7 +1088,7 @@ namespace Mus {
         VertexSmoothByAngle(Config::GetSingleton().GetVertexSmoothByAngleThreshold1(), Config::GetSingleton().GetVertexSmoothByAngleThreshold2(), Config::GetSingleton().GetVertexSmoothByAngle());
         VertexSmooth(Config::GetSingleton().GetVertexSmoothStrength(), Config::GetSingleton().GetVertexSmooth());
         RecalculateNormals(Config::GetSingleton().GetNormalSmoothDegree());
-        CreateGeometryHash();
+        CreateGeometryHash(Config::GetSingleton().GetDiskCacheHashPrecision());
         if (Config::GetSingleton().GetGeometryDataTime())
             PerformanceLog(std::string(__func__) + "::" + mainInfo.name, true, false);
     }

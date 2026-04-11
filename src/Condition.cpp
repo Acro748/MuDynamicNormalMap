@@ -43,15 +43,15 @@ namespace Mus {
 
 	bool ConditionManager::RegisterCondition(Condition condition)
 	{
+        std::lock_guard lg(ConditionListLock);
 		ConditionList.push_back(ParseConditions(condition));
 		return true;
 	}
 
 	void ConditionManager::SortConditions()
-	{
-		std::sort(ConditionList.begin(), ConditionList.end(), [](Condition& a, Condition& b) {
-			return a.Priority > b.Priority;
-		});
+    {
+        std::lock_guard lg(ConditionListLock);
+        std::ranges::sort(ConditionList, std::ranges::greater(), &Condition::Priority);
 	}
 
 	const ConditionManager::Condition ConditionManager::ParseConditions(Condition condition)

@@ -61,6 +61,10 @@ namespace Mus {
 			std::vector<std::string> ProxyMaskTextureFolder;
 			bool ProxyFirstScan = false;
 			std::int32_t Priority = 0;
+
+			bool operator<(const Condition& other) const {
+                return Priority < other.Priority;
+			}
 		};
 		bool RegisterCondition(Condition condition);
 		void SortConditions();
@@ -69,7 +73,8 @@ namespace Mus {
 
 		std::size_t ConditionCount() const { return ConditionList.size(); }
 	private:
-		concurrency::concurrent_vector<Condition> ConditionList;
+        std::mutex ConditionListLock; // lock write only
+		std::vector<Condition> ConditionList;
 		std::unordered_map<std::string, ConditionType> ConditionMap;
 
 		const Condition ParseConditions(Condition condition);
@@ -111,7 +116,6 @@ namespace Mus {
 			virtual void Initial(ConditionManager::ConditionItem& item) = 0;
 			virtual bool Condition(RE::Actor* actor) = 0;
 		protected:
-			bool isLeft = true;
 		};
 
 		class HasKeyword : public ConditionBase {

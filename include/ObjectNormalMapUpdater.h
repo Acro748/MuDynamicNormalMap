@@ -199,8 +199,8 @@ namespace Mus {
 
             UINT tangentZCorrection;
             float detailStrength;
+            UINT vertexCount;
             UINT padding1;
-            UINT padding2;
         };
         static_assert(sizeof(UpdateNormalMapBufferData) % 16 == 0, "Constant buffer must be 16-byte aligned.");
         Microsoft::WRL::ComPtr<ID3D11Buffer> updateNormalMapBuffer[2] = {nullptr, nullptr};

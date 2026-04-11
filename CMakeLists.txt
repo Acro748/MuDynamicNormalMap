@@ -6,7 +6,7 @@ message("Using toolchain file ${CMAKE_TOOLCHAIN_FILE}.")
 ########################################################################################################################
 project(
         MuDynamicNormalMap
-        VERSION 2.1.6
+        VERSION 2.1.7
         DESCRIPTION "MuDynamicNormalMap VR by Acro."
         LANGUAGES CXX
 )
@@ -87,6 +87,7 @@ find_package(DirectXTex CONFIG REQUIRED)
 find_package(detours)
 find_package(xxhash CONFIG REQUIRED)
 find_package(lz4 CONFIG REQUIRED)
+find_package(TBB CONFIG REQUIRED)
 find_package(tinygltf)
 
 execute_process(
@@ -133,6 +134,7 @@ target_link_libraries(
         JsonCpp::JsonCpp
         lz4::lz4
         xxHash::xxhash
+        TBB::tbb
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/vcpkg_installed/x64-windows-static-md/lib/detours.lib>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/vcpkg_installed/x64-windows-static-md/lib/DirectXTex.lib>
 )

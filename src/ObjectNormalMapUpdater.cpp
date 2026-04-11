@@ -10,7 +10,7 @@ namespace Mus {
 		if (lastTickTime + 100 > currentTime) //0.1sec
 			return;
 		lastTickTime = currentTime;
-		memoryManageThreads->submitAsync([&]() {
+        backGroundWorkerThreads->submitAsync([&]() {
             std::lock_guard lg(resourceDataMapLock);
             for (auto it = resourceDataMap.begin(); it != resourceDataMap.end();)
 			{
@@ -36,7 +36,7 @@ namespace Mus {
 	{
 		if (!e.IsChangedInOut)
 			return;
-		memoryManageThreads->submitAsync([&]() {
+        backGroundWorkerThreads->submitAsync([&]() {
             std::lock_guard lg(geometryResourceDataMapLock);
             for (auto it = geometryResourceDataMap.begin(); it != geometryResourceDataMap.end();)
 			{
@@ -557,30 +557,24 @@ namespace Mus {
             const UINT height = dstDesc.Height;
             // init dst texture
             {
-                std::vector<std::future<void>> processes;
-                const std::uint32_t threads = tp->GetThreads() * 8;
-                const std::uint32_t subY = std::min(height, std::min(width, threads) * std::min(height, threads));
-                const std::uint32_t unitY = (height + subY - 1) / subY;
-                for (std::uint32_t sy = 0; sy < subY; sy++)
-                {
-                    std::uint32_t beginY = sy * unitY;
-                    std::uint32_t endY = std::min(beginY + unitY, height);
-                    processes.push_back(tp->submitAsync([&, beginY, endY]() {
-                        for (UINT y = beginY; y < endY; y++)
-                        {
-                            std::uint8_t* rowData = dstData + y * dstmg.GetRowPitch();
-                            for (UINT x = 0; x < width; x++)
+                tp->Execute([&] {
+                    tbb::parallel_for(
+                        tbb::blocked_range<UINT>(0, height),
+                        [&](const tbb::blocked_range<UINT>& r) {
+                            const std::int32_t ti = tbb::this_task_arena::current_thread_index();
+                            for (UINT y = r.begin(); y != r.end(); ++y)
                             {
-                                std::uint32_t* pixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
-                                *pixel = emptyColor.GetReverse();
+                                std::uint8_t* rowData = dstData + y * dstmg.GetRowPitch();
+                                for (UINT x = 0; x < width; x++)
+                                {
+                                    std::uint32_t* pixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
+                                    *pixel = emptyColor.GetReverse();
+                                }
                             }
-                        }
-                    }));
-                }
-                for (auto& process : processes)
-                {
-                    process.get();
-                }
+                        },
+                        tbb::auto_partitioner()
+					);
+                });
             }
 
             const bool hasSrcData = (srcData != nullptr);
@@ -592,6 +586,7 @@ namespace Mus {
                 PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, true, false);
 
             const std::uint32_t totalTris = objInfo.indicesCount() / 3;
+            const std::uint32_t vertexCount = objInfo.vertexCount();
 
             const float WidthF = static_cast<const float>(width);
             const float HeightF = static_cast<const float>(height);
@@ -608,188 +603,184 @@ namespace Mus {
 
             const float detailStrength = update.second.detailStrength;
 
-            std::vector<std::future<void>> processes;
-            std::size_t sub = std::min(static_cast<const std::size_t>(totalTris), tp->GetThreads() * 16);
-            std::size_t unit = (totalTris + sub - 1) / sub;
-
             if (Config::GetSingleton().GetUpdateNormalMapTime2())
                 PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, false, false);
 
-            for (std::size_t t = 0; t < sub; t++)
-            {
-                std::size_t begin = t * unit;
-                std::size_t end = std::min(begin + unit, static_cast<const std::size_t>(totalTris));
-                processes.push_back(tp->submitAsync([&, begin, end]() {
-                    for (std::size_t i = begin; i < end; i++)
-                    {
-                        const std::uint32_t index = objInfo.indicesStart + i * 3;
-
-                        const std::uint32_t index0 = a_data->indices[index + 0];
-                        const std::uint32_t index1 = a_data->indices[index + 1];
-                        const std::uint32_t index2 = a_data->indices[index + 2];
-
-                        const DirectX::XMFLOAT2& u0 = a_data->uvs[index0];
-                        const DirectX::XMFLOAT2& u1 = a_data->uvs[index1];
-                        const DirectX::XMFLOAT2& u2 = a_data->uvs[index2];
-
-                        const DirectX::XMVECTOR n0v = DirectX::XMLoadFloat3(&a_data->normals[index0]);
-                        const DirectX::XMVECTOR n1v = DirectX::XMLoadFloat3(&a_data->normals[index1]);
-                        const DirectX::XMVECTOR n2v = DirectX::XMLoadFloat3(&a_data->normals[index2]);
-
-                        const DirectX::XMVECTOR t0v = DirectX::XMLoadFloat3(&a_data->tangents[index0]);
-                        const DirectX::XMVECTOR t1v = DirectX::XMLoadFloat3(&a_data->tangents[index1]);
-                        const DirectX::XMVECTOR t2v = DirectX::XMLoadFloat3(&a_data->tangents[index2]);
-
-                        const DirectX::XMVECTOR b0v = DirectX::XMLoadFloat3(&a_data->bitangents[index0]);
-                        const DirectX::XMVECTOR b1v = DirectX::XMLoadFloat3(&a_data->bitangents[index1]);
-                        const DirectX::XMVECTOR b2v = DirectX::XMLoadFloat3(&a_data->bitangents[index2]);
-
-                        // uvToPixel
-                        const DirectX::XMINT2 p0 = {static_cast<int>(u0.x * width), static_cast<int>(u0.y * height)};
-                        const DirectX::XMINT2 p1 = {static_cast<int>(u1.x * width), static_cast<int>(u1.y * height)};
-                        const DirectX::XMINT2 p2 = {static_cast<int>(u2.x * width), static_cast<int>(u2.y * height)};
-
-                        const std::int32_t minX = std::max(0, std::min({p0.x, p1.x, p2.x}));
-                        const std::int32_t minY = std::max(0, std::min({p0.y, p1.y, p2.y}));
-                        const std::int32_t maxX = std::min((std::int32_t)width - 1, std::max({p0.x, p1.x, p2.x}) + 1);
-                        const std::int32_t maxY = std::min((std::int32_t)height - 1, std::max({p0.y, p1.y, p2.y}) + 1);
-
-                        for (std::int32_t y = minY; y < maxY; y++)
+			tp->Execute([&] {
+                tbb::parallel_for(
+                    tbb::blocked_range<UINT>(0, totalTris),
+                    [&](const tbb::blocked_range<UINT>& r) {
+                        for (UINT i = r.begin(); i != r.end(); ++i)
                         {
-                            const float mY = static_cast<const float>(y) * invHeight;
+                            const std::uint32_t index = objInfo.indicesStart + i * 3;
 
-                            uint8_t* srcRowData = nullptr;
-                            if (hasSrcData)
+                            const std::uint32_t i0 = a_data->indices[index + 0];
+                            const std::uint32_t i1 = a_data->indices[index + 1];
+                            const std::uint32_t i2 = a_data->indices[index + 2];
+
+                            if (i0 >= vertexCount || i1 >= vertexCount || i2 >= vertexCount)
+                                continue;
+
+                            const DirectX::XMFLOAT2& u0 = a_data->uvs[i0];
+                            const DirectX::XMFLOAT2& u1 = a_data->uvs[i1];
+                            const DirectX::XMFLOAT2& u2 = a_data->uvs[i2];
+
+                            const DirectX::XMVECTOR n0v = DirectX::XMLoadFloat3(&a_data->normals[i0]);
+                            const DirectX::XMVECTOR n1v = DirectX::XMLoadFloat3(&a_data->normals[i1]);
+                            const DirectX::XMVECTOR n2v = DirectX::XMLoadFloat3(&a_data->normals[i2]);
+
+                            const DirectX::XMVECTOR t0v = DirectX::XMLoadFloat3(&a_data->tangents[i0]);
+                            const DirectX::XMVECTOR t1v = DirectX::XMLoadFloat3(&a_data->tangents[i1]);
+                            const DirectX::XMVECTOR t2v = DirectX::XMLoadFloat3(&a_data->tangents[i2]);
+
+                            const DirectX::XMVECTOR b0v = DirectX::XMLoadFloat3(&a_data->bitangents[i0]);
+                            const DirectX::XMVECTOR b1v = DirectX::XMLoadFloat3(&a_data->bitangents[i1]);
+                            const DirectX::XMVECTOR b2v = DirectX::XMLoadFloat3(&a_data->bitangents[i2]);
+
+                            // uvToPixel
+                            const DirectX::XMINT2 p0 = {static_cast<int>(u0.x * width), static_cast<int>(u0.y * height)};
+                            const DirectX::XMINT2 p1 = {static_cast<int>(u1.x * width), static_cast<int>(u1.y * height)};
+                            const DirectX::XMINT2 p2 = {static_cast<int>(u2.x * width), static_cast<int>(u2.y * height)};
+
+                            const std::int32_t minX = std::max(0, std::min({p0.x, p1.x, p2.x}));
+                            const std::int32_t minY = std::max(0, std::min({p0.y, p1.y, p2.y}));
+                            const std::int32_t maxX = std::min((std::int32_t)width - 1, std::max({p0.x, p1.x, p2.x}) + 1);
+                            const std::int32_t maxY = std::min((std::int32_t)height - 1, std::max({p0.y, p1.y, p2.y}) + 1);
+
+                            for (std::int32_t y = minY; y < maxY; y++)
                             {
-                                const float srcY = mY * srcHeightF;
-                                srcRowData = srcData + static_cast<const UINT>(srcY) * srcmg.GetRowPitch();
-                            }
+                                const float mY = static_cast<const float>(y) * invHeight;
 
-                            uint8_t* detailRowData = nullptr;
-                            if (hasDetailData)
-                            {
-                                const float detailY = mY * detailHeightF;
-                                detailRowData = detailData + static_cast<const UINT>(detailY) * detailmg.GetRowPitch();
-                            }
+                                std::uint8_t* srcRowData = nullptr;
+                                if (hasSrcData)
+                                {
+                                    const float srcY = mY * srcHeightF;
+                                    srcRowData = srcData + static_cast<const UINT>(srcY) * srcmg.GetRowPitch();
+                                }
 
-                            uint8_t* overlayRowData = nullptr;
-                            if (hasOverlayData)
-                            {
-                                const float overlayY = mY * overlayHeightF;
-                                overlayRowData = overlayData + static_cast<const UINT>(overlayY) * overlaymg.GetRowPitch();
-                            }
+                                std::uint8_t* detailRowData = nullptr;
+                                if (hasDetailData)
+                                {
+                                    const float detailY = mY * detailHeightF;
+                                    detailRowData = detailData + static_cast<const UINT>(detailY) * detailmg.GetRowPitch();
+                                }
 
-                            uint8_t* maskRowData = nullptr;
-                            if (hasMaskData)
-                            {
-                                const float maskY = mY * maskHeightF;
-                                maskRowData = maskData + static_cast<const UINT>(maskY) * maskmg.GetRowPitch();
-                            }
-
-                            std::uint8_t* rowData = dstData + y * dstmg.GetRowPitch();
-                            for (std::int32_t x = minX; x < maxX; x++)
-                            {
-                                DirectX::XMFLOAT3 bary;
-                                if (!ComputeBarycentric(static_cast<const float>(x) + 0.5f, static_cast<const float>(y) + 0.5f, p0, p1, p2, bary))
-                                    continue;
-
-                                const float mX = x * invWidth;
-
-                                RGBA dstColor;
-                                RGBA overlayColor(1.0f, 1.0f, 1.0f, 0.0f);
+                                std::uint8_t* overlayRowData = nullptr;
                                 if (hasOverlayData)
                                 {
-                                    const float overlayX = mX * overlayWidthF;
-                                    const std::uint32_t* overlayPixel = reinterpret_cast<std::uint32_t*>(overlayRowData + static_cast<const UINT>(overlayX) * 4);
-                                    overlayColor.SetReverse(*overlayPixel);
+                                    const float overlayY = mY * overlayHeightF;
+                                    overlayRowData = overlayData + static_cast<const UINT>(overlayY) * overlaymg.GetRowPitch();
                                 }
-                                if (overlayColor.a < 1.0f)
+
+                                std::uint8_t* maskRowData = nullptr;
+                                if (hasMaskData)
                                 {
-                                    RGBA maskColor(1.0f, 1.0f, 1.0f, 0.0f);
-                                    if (hasMaskData && hasSrcData)
-                                    {
-                                        const float maskX = mX * maskWidthF;
-                                        const std::uint32_t* maskPixel = reinterpret_cast<std::uint32_t*>(maskRowData + static_cast<const UINT>(maskX) * 4);
-                                        maskColor.SetReverse(*maskPixel);
-                                    }
-                                    if (maskColor.a < 1.0f)
-                                    {
-                                        RGBA detailColor(0.5f, 0.5f, 1.0f, 0.5f);
-                                        if (hasDetailData)
-                                        {
-                                            const float detailX = mX * detailWidthF;
-                                            const std::uint32_t* detailPixel = reinterpret_cast<std::uint32_t*>(detailRowData + static_cast<const UINT>(detailX) * 4);
-                                            detailColor.SetReverse(*detailPixel);
-                                            detailColor = RGBA::lerp(RGBA(0.5f, 0.5f, 1.0f, detailColor.a), detailColor, detailStrength);
-                                        }
-
-                                        const float denomal = (bary.x + bary.y + floatPrecision);
-                                        const DirectX::XMVECTOR n01 = SlerpVector(n0v, n1v, bary.y / denomal);
-                                        const DirectX::XMVECTOR n = SlerpVector(n01, n2v, bary.z);
-
-                                        DirectX::XMVECTOR normalResult = emptyVector;
-                                        if (detailColor.a > 0.0f)
-                                        {
-                                            const DirectX::XMVECTOR t01 = SlerpVector(t0v, t1v, bary.y / denomal);
-                                            const DirectX::XMVECTOR t = SlerpVector(t01, t2v, bary.z);
-
-                                            const DirectX::XMVECTOR b01 = SlerpVector(b0v, b1v, bary.y / denomal);
-                                            const DirectX::XMVECTOR b = SlerpVector(b01, b2v, bary.z);
-
-                                            const DirectX::XMVECTOR ft = DirectX::XMVector3NormalizeEst(
-                                                DirectX::XMVectorSubtract(t, DirectX::XMVectorScale(n, DirectX::XMVectorGetX(DirectX::XMVector3Dot(n, t)))));
-                                            const DirectX::XMVECTOR fb = DirectX::XMVector3NormalizeEst(DirectX::XMVector3Cross(n, ft));
-
-                                            const DirectX::XMMATRIX tbn = DirectX::XMMATRIX(ft, fb, n, DirectX::XMVectorSet(0, 0, 0, 1));
-
-                                            const DirectX::XMFLOAT4 detailColorF(
-                                                detailColor.r * 2.0f - 1.0f,
-                                                detailColor.g * 2.0f - 1.0f,
-                                                detailColor.b * 2.0f - 1.0f,
-                                                0.0f);
-                                            const DirectX::XMVECTOR detailNormalVec = DirectX::XMVectorSet(
-                                                detailColorF.x,
-                                                detailColorF.y,
-                                                tangentZCorrection ? std::sqrt(std::max(0.0f, 1.0f - detailColorF.x * detailColorF.x - detailColorF.y * detailColorF.y)) : detailColorF.z,
-                                                0.0f);
-
-                                            const DirectX::XMVECTOR detailNormal = DirectX::XMVector3NormalizeEst(
-                                                DirectX::XMVector3TransformNormal(detailNormalVec, tbn));
-                                            normalResult = DirectX::XMVector3NormalizeEst(
-                                                DirectX::XMVectorLerp(n, detailNormal, detailColor.a));
-                                        }
-                                        else
-                                        {
-                                            normalResult = n;
-                                        }
-                                        const DirectX::XMVECTOR normalVec = DirectX::XMVectorMultiplyAdd(normalResult, halfVec, halfVec);
-                                        dstColor = RGBA(DirectX::XMVectorGetX(normalVec), DirectX::XMVectorGetZ(normalVec), DirectX::XMVectorGetY(normalVec));
-                                    }
-                                    if (maskColor.a > 0.0f && hasSrcData)
-                                    {
-                                        const float srcX = mX * srcWidthF;
-                                        const std::uint32_t* srcPixel = reinterpret_cast<std::uint32_t*>(srcRowData + static_cast<const UINT>(srcX) * 4);
-                                        RGBA srcColor;
-                                        srcColor.SetReverse(*srcPixel);
-                                        dstColor = RGBA::lerp(dstColor, srcColor, maskColor.a);
-                                    }
+                                    const float maskY = mY * maskHeightF;
+                                    maskRowData = maskData + static_cast<const UINT>(maskY) * maskmg.GetRowPitch();
                                 }
-                                if (overlayColor.a > 0.0f)
+
+                                std::uint8_t* rowData = dstData + y * dstmg.GetRowPitch();
+                                for (std::int32_t x = minX; x < maxX; x++)
                                 {
-                                    dstColor = RGBA::lerp(dstColor, overlayColor, overlayColor.a);
-                                }
+                                    DirectX::XMFLOAT3 bary;
+                                    if (!ComputeBarycentric(static_cast<const float>(x) + 0.5f, static_cast<const float>(y) + 0.5f, p0, p1, p2, bary))
+                                        continue;
 
-                                std::uint32_t* dstPixel = reinterpret_cast<std::uint32_t*>(rowData + x * 4);
-                                *dstPixel = dstColor.GetReverse() | 0xFF000000;
+                                    const float mX = x * invWidth;
+
+                                    RGBA dstColor;
+                                    RGBA overlayColor(1.0f, 1.0f, 1.0f, 0.0f);
+                                    if (hasOverlayData)
+                                    {
+                                        const float overlayX = mX * overlayWidthF;
+                                        const std::uint32_t* overlayPixel = reinterpret_cast<std::uint32_t*>(overlayRowData + static_cast<const UINT>(overlayX) * 4);
+                                        overlayColor.SetReverse(*overlayPixel);
+                                    }
+                                    if (overlayColor.a < 1.0f)
+                                    {
+                                        RGBA maskColor(1.0f, 1.0f, 1.0f, 0.0f);
+                                        if (hasMaskData && hasSrcData)
+                                        {
+                                            const float maskX = mX * maskWidthF;
+                                            const std::uint32_t* maskPixel = reinterpret_cast<std::uint32_t*>(maskRowData + static_cast<const UINT>(maskX) * 4);
+                                            maskColor.SetReverse(*maskPixel);
+                                        }
+                                        if (maskColor.a < 1.0f)
+                                        {
+                                            RGBA detailColor(0.5f, 0.5f, 1.0f, 0.5f);
+                                            if (hasDetailData)
+                                            {
+                                                const float detailX = mX * detailWidthF;
+                                                const std::uint32_t* detailPixel = reinterpret_cast<std::uint32_t*>(detailRowData + static_cast<const UINT>(detailX) * 4);
+                                                detailColor.SetReverse(*detailPixel);
+                                                detailColor = RGBA::lerp(RGBA(0.5f, 0.5f, 1.0f, detailColor.a), detailColor, detailStrength);
+                                            }
+
+                                            const float denomal = (bary.x + bary.y + floatPrecision);
+                                            const DirectX::XMVECTOR n01 = SlerpVector(n0v, n1v, bary.y / denomal);
+                                            const DirectX::XMVECTOR n = SlerpVector(n01, n2v, bary.z);
+
+                                            DirectX::XMVECTOR normalResult = emptyVector;
+                                            if (detailColor.a > 0.0f)
+                                            {
+                                                const DirectX::XMVECTOR t01 = SlerpVector(t0v, t1v, bary.y / denomal);
+                                                const DirectX::XMVECTOR t = SlerpVector(t01, t2v, bary.z);
+
+                                                const DirectX::XMVECTOR b01 = SlerpVector(b0v, b1v, bary.y / denomal);
+                                                const DirectX::XMVECTOR b = SlerpVector(b01, b2v, bary.z);
+
+                                                const DirectX::XMVECTOR ft = DirectX::XMVector3NormalizeEst(
+                                                    DirectX::XMVectorSubtract(t, DirectX::XMVectorScale(n, DirectX::XMVectorGetX(DirectX::XMVector3Dot(n, t)))));
+                                                const DirectX::XMVECTOR fb = DirectX::XMVector3NormalizeEst(DirectX::XMVector3Cross(n, ft));
+
+                                                const DirectX::XMMATRIX tbn = DirectX::XMMATRIX(ft, fb, n, DirectX::XMVectorSet(0, 0, 0, 1));
+
+                                                const DirectX::XMFLOAT4 detailColorF(
+                                                    detailColor.r * 2.0f - 1.0f,
+                                                    detailColor.g * 2.0f - 1.0f,
+                                                    detailColor.b * 2.0f - 1.0f,
+                                                    0.0f);
+                                                const DirectX::XMVECTOR detailNormalVec = DirectX::XMVectorSet(
+                                                    detailColorF.x,
+                                                    detailColorF.y,
+                                                    tangentZCorrection ? std::sqrt(std::max(0.0f, 1.0f - detailColorF.x * detailColorF.x - detailColorF.y * detailColorF.y)) : detailColorF.z,
+                                                    0.0f);
+
+                                                const DirectX::XMVECTOR detailNormal = DirectX::XMVector3NormalizeEst(
+                                                    DirectX::XMVector3TransformNormal(detailNormalVec, tbn));
+                                                normalResult = DirectX::XMVector3NormalizeEst(
+                                                    DirectX::XMVectorLerp(n, detailNormal, detailColor.a));
+                                            }
+                                            else
+                                            {
+                                                normalResult = n;
+                                            }
+                                            const DirectX::XMVECTOR normalVec = DirectX::XMVectorMultiplyAdd(normalResult, halfVec, halfVec);
+                                            dstColor = RGBA(DirectX::XMVectorGetX(normalVec), DirectX::XMVectorGetZ(normalVec), DirectX::XMVectorGetY(normalVec));
+                                        }
+                                        if (maskColor.a > 0.0f && hasSrcData)
+                                        {
+                                            const float srcX = mX * srcWidthF;
+                                            const std::uint32_t* srcPixel = reinterpret_cast<std::uint32_t*>(srcRowData + static_cast<const UINT>(srcX) * 4);
+                                            RGBA srcColor;
+                                            srcColor.SetReverse(*srcPixel);
+                                            dstColor = RGBA::lerp(dstColor, srcColor, maskColor.a);
+                                        }
+                                    }
+                                    if (overlayColor.a > 0.0f)
+                                    {
+                                        dstColor = RGBA::lerp(dstColor, overlayColor, overlayColor.a);
+                                    }
+
+                                    std::uint32_t* dstPixel = reinterpret_cast<std::uint32_t*>(rowData + x * 4);
+                                    *dstPixel = dstColor.GetReverse() | 0xFF000000;
+                                }
                             }
                         }
-                    }
-                }));
-            }
-            for (auto& process : processes)
-            {
-                process.get();
-            }
+                    },
+                    tbb::auto_partitioner()
+				);
+            });
             if (Config::GetSingleton().GetUpdateNormalMapTime2())
                 PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, true, false);
 
@@ -992,6 +983,7 @@ namespace Mus {
             cbData.hasMaskTexture = newResourceData->maskShaderResourceView ? 1 : 0;
             cbData.tangentZCorrection = tangentZCorrection ? 1 : 0;
             cbData.detailStrength = update.second.detailStrength;
+            cbData.vertexCount = objInfo.vertexCount();
             
             const std::uint32_t totalTris = objInfo.indicesCount() / 3;
             if (sl.IsSecondGPU() || isNoSplitGPU)
@@ -1546,10 +1538,7 @@ namespace Mus {
                 continue;
             if (mergedTextureGeometries.find(result.geometry) != mergedTextureGeometries.end())
                 continue;
-            if (Config::GetSingleton().GetUseMipMap())
-            {
-                GenerateMips(device, context, resourceData, result.texture->normalmapTexture2D.Get());
-            }
+            GenerateMips(device, context, resourceData, result.texture->normalmapTexture2D.Get());
         }
         for (std::uint32_t i = 0; i < results.size(); i++)
         {
@@ -1679,10 +1668,7 @@ namespace Mus {
                 continue;
             if (mergedTextureGeometries.find(result.geometry) != mergedTextureGeometries.end())
                 continue;
-            if (Config::GetSingleton().GetUseMipMap())
-            {
-                GenerateMipsGPU(device, context, resourceData, result.texture->normalmapShaderResourceView.Get(), result.texture->normalmapTexture2D.Get());
-            }
+            GenerateMipsGPU(device, context, resourceData, result.texture->normalmapShaderResourceView.Get(), result.texture->normalmapTexture2D.Get());
         }
         for (std::uint32_t i = 0; i < results.size(); i++)
         {
@@ -1794,40 +1780,32 @@ namespace Mus {
 
 		std::uint8_t* dst_pData = dstmg.Get<std::uint8_t>();
         std::uint8_t* src_pData = srcmg.Get<std::uint8_t>();
-		std::vector<std::future<void>> processes;
-        const std::uint32_t threads = tp->GetThreads() * 8;
-		const std::uint32_t subY = std::min(height, std::min(width, threads) * std::min(height, threads));
-		const std::uint32_t unitY = (height + subY - 1) / subY;
-        for (std::uint32_t sy = 0; sy < subY; sy++)
-        {
-            std::uint32_t beginY = sy * unitY;
-            std::uint32_t endY = beginY + unitY;
-            processes.push_back(tp->submitAsync([&, beginY, endY]() {
-                for (UINT y = beginY; y < endY; y++)
-                {
-                    for (UINT x = 0; x < width; x++)
+        tp->Execute([&] {
+            tbb::parallel_for(
+                tbb::blocked_range<UINT>(0, height),
+                [&](const tbb::blocked_range<UINT>& r) {
+                    for (UINT y = r.begin(); y != r.end(); ++y)
                     {
-                        std::uint8_t* dstRowData = dst_pData + y * dstmg.GetRowPitch();
-                        std::uint8_t* srcRowData = src_pData + y * srcmg.GetRowPitch();
-                        std::uint32_t* dstPixel = reinterpret_cast<uint32_t*>(dstRowData + x * 4);
-                        std::uint32_t* srcPixel = reinterpret_cast<uint32_t*>(srcRowData + x * 4);
-                        RGBA dstPixelColor, srcPixelColor;
-                        dstPixelColor.SetReverse(*dstPixel);
-                        srcPixelColor.SetReverse(*srcPixel);
-                        if (dstPixelColor.a < 1.0f && srcPixelColor.a < 1.0f)
-                            continue;
+                        for (UINT x = 0; x < width; x++)
+                        {
+                            std::uint8_t* dstRowData = dst_pData + y * dstmg.GetRowPitch();
+                            std::uint8_t* srcRowData = src_pData + y * srcmg.GetRowPitch();
+                            std::uint32_t* dstPixel = reinterpret_cast<uint32_t*>(dstRowData + x * 4);
+                            std::uint32_t* srcPixel = reinterpret_cast<uint32_t*>(srcRowData + x * 4);
+                            RGBA dstPixelColor, srcPixelColor;
+                            dstPixelColor.SetReverse(*dstPixel);
+                            srcPixelColor.SetReverse(*srcPixel);
+                            if (dstPixelColor.a < 1.0f && srcPixelColor.a < 1.0f)
+                                continue;
 
-                        RGBA dstColor = RGBA::lerp(srcPixelColor, dstPixelColor, dstPixelColor.a);
-                        dstColor.a = 1.0f;
-                        *dstPixel = dstColor.GetReverse();
+                            RGBA dstColor = RGBA::lerp(srcPixelColor, dstPixelColor, dstPixelColor.a);
+                            dstColor.a = 1.0f;
+                            *dstPixel = dstColor.GetReverse();
+                        }
                     }
-                }
-            }));
-        }
-		for (auto& process : processes)
-		{
-			process.get();
-		}
+                },
+                tbb::auto_partitioner());
+        });
 
 		if (Config::GetSingleton().GetMergeTime())
 			PerformanceLog(std::string(__func__) + "::" + srcResourceData->textureName, true, false);
@@ -1991,78 +1969,78 @@ namespace Mus {
             RGBA resultsColor;
         };
 		for (std::uint8_t i = 0; i < 2; i++)
-		{
-            std::vector<std::future<std::vector<ColorMap>>> colorMapProcesses;
-            const std::uint32_t threads = tp->GetThreads() * 16;
-			const std::uint32_t subY = std::min(height, std::min(width, threads) * std::min(height, threads));
-			const std::uint32_t unitY = (height + subY - 1) / subY;
+        {
+            struct alignas(64) ThreadLocalBuffer
+            {
+                std::vector<ColorMap> data;
+            };
+            std::vector<ThreadLocalBuffer> colorMapProcesses(tp->GetThreadSize());
             std::uint8_t* pData = mmg.Get<std::uint8_t>(0);
-			std::vector<ColorMap> resultsColorMap;
             const UINT rowPitch = mmg.GetRowPitch(0);
-			for (std::uint32_t sy = 0; sy < subY; sy++) {
-				const std::uint32_t beginY = sy * unitY;
-				const std::uint32_t endY = std::min(beginY + unitY, height);
-                colorMapProcesses.push_back(tp->submitAsync([&, beginY, endY]() {
-                    std::vector<ColorMap> resultsColorMapFrag;
-					for (UINT y = beginY; y < endY; y++) {
-                        std::uint8_t* rowData = pData + y * rowPitch;
-						for (UINT x = 0; x < width; x++)
-						{
-							std::uint32_t* pixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
-							RGBA color;
-							color.SetReverse(*pixel);
-							if (color.A() == 0xFF)
-								continue;
+            tp->Execute([&] {
+                tbb::parallel_for(
+                    tbb::blocked_range<UINT>(0, height),
+                    [&](const tbb::blocked_range<UINT>& r) {
+                        const std::int32_t ti = tbb::this_task_arena::current_thread_index();
+                        for (UINT y = r.begin(); y != r.end(); ++y)
+                        {
+                            std::uint8_t* rowData = pData + y * rowPitch;
+                            for (UINT x = 0; x < width; x++)
+                            {
+                                std::uint32_t* pixel = reinterpret_cast<uint32_t*>(rowData + x * 4);
+                                RGBA color;
+                                color.SetReverse(*pixel);
+                                if (color.A() == 0xFF)
+                                    continue;
 
-							RGBA averageColor(0.0f, 0.0f, 0.0f, 0.0f);
-							std::uint8_t validCount = 0;
-							for (std::uint8_t i = 0; i < 8; i++)
-							{
-								DirectX::XMINT2 nearCoord = { (INT)x + offsets[i].x, (INT)y + offsets[i].y };
-								if (nearCoord.x < 0 || nearCoord.y < 0 ||
-									nearCoord.x >= width || nearCoord.y >= height)
-									continue;
+                                RGBA averageColor(0.0f, 0.0f, 0.0f, 0.0f);
+                                std::uint8_t validCount = 0;
+                                for (std::uint8_t i = 0; i < 8; i++)
+                                {
+                                    DirectX::XMINT2 nearCoord = {(INT)x + offsets[i].x, (INT)y + offsets[i].y};
+                                    if (nearCoord.x < 0 || nearCoord.y < 0 ||
+                                        nearCoord.x >= width || nearCoord.y >= height)
+                                        continue;
 
-								std::uint8_t* nearRowData = pData + nearCoord.y * rowPitch;
-								std::uint32_t* nearPixel = reinterpret_cast<uint32_t*>(nearRowData + nearCoord.x * 4);
-								RGBA nearColor;
-								nearColor.SetReverse(*nearPixel);
-								if (nearColor.A() == 0xFF)
-								{
-									averageColor += nearColor;
-									validCount++;
-								}
-							}
-							if (validCount == 0)
-								continue;
-							RGBA resultsColor = averageColor / validCount;
-                            resultsColorMapFrag.push_back(ColorMap{pixel, resultsColor});
-						}
-					}
-                    return resultsColorMapFrag;
-				}));
-			}
+                                    std::uint8_t* nearRowData = pData + nearCoord.y * rowPitch;
+                                    std::uint32_t* nearPixel = reinterpret_cast<uint32_t*>(nearRowData + nearCoord.x * 4);
+                                    RGBA nearColor;
+                                    nearColor.SetReverse(*nearPixel);
+                                    if (nearColor.A() == 0xFF)
+                                    {
+                                        averageColor += nearColor;
+                                        validCount++;
+                                    }
+                                }
+                                if (validCount == 0)
+                                    continue;
+                                RGBA resultsColor = averageColor / validCount;
+                                colorMapProcesses[ti].data.push_back(ColorMap{pixel, resultsColor});
+                            }
+                        }
+                    },
+                    tbb::auto_partitioner()
+				);
+            });
+			std::vector<ColorMap> resultsColorMap;
             for (auto& process : colorMapProcesses)
 			{
-                resultsColorMap.append_range(process.get());
+                resultsColorMap.append_range(process.data);
 			}
 
-            std::vector<std::future<void>> processes;
-            std::size_t sub = std::max(std::size_t(1), std::min(resultsColorMap.size(), tp->GetThreads()));
-			std::size_t unit = (resultsColorMap.size() + sub - 1) / sub;
-			for (std::size_t t = 0; t < sub; t++) {
-				std::size_t begin = t * unit;
-				std::size_t end = std::min(begin + unit, resultsColorMap.size());
-                processes.push_back(tp->submitAsync([&, begin, end]() {
-					for (std::size_t i = begin; i < end; i++) {
-						*resultsColorMap[i].src = resultsColorMap[i].resultsColor.GetReverse();
-					}
-				}));
-			}
-			for (auto& process : processes)
-			{
-				process.get();
-			}
+			tp->Execute([&] {
+                tbb::parallel_for(
+                    tbb::blocked_range<std::size_t>(0, resultsColorMap.size()),
+                    [&](const tbb::blocked_range<std::size_t>& r) {
+                        const std::int32_t ti = tbb::this_task_arena::current_thread_index();
+                        for (std::size_t i = r.begin(); i != r.end(); ++i)
+                        {
+                            *resultsColorMap[i].src = resultsColorMap[i].resultsColor.GetReverse();
+                        }
+                    },
+                    tbb::auto_partitioner()
+				);
+            });
 		}
 
 		const DirectX::XMUINT2 sampleOffsets[4] = {
@@ -2084,80 +2062,76 @@ namespace Mus {
             std::uint8_t* src_pData = mmg.Get<std::uint8_t>(srcMipLevel);
             const UINT dstRowPitch = mmg.GetRowPitch(mipLevel);
             const UINT srcRowPitch = mmg.GetRowPitch(srcMipLevel);
-			std::vector<std::future<void>> processes;
-            const std::uint32_t threads = tp->GetThreads() * 8;
-			const std::uint32_t subY = std::min(mipHeight, std::min(mipWidth, threads) * std::min(mipHeight, threads));
-			const UINT unitY = (height + subY - 1) / subY;
-			for (std::uint32_t sy = 0; sy < subY; sy++) {
-				std::uint32_t beginY = sy * unitY;
-				std::uint32_t endY = std::min(beginY + unitY, mipHeight);
-                processes.push_back(tp->submitAsync([&, beginY, endY]() {
-					for (UINT y = beginY; y < endY; y++) {
-                        std::uint8_t* dstRowData = dst_pData + y * dstRowPitch;
-						for (UINT x = 0; x < mipWidth; x++)
-						{
-							std::uint32_t* pixel = reinterpret_cast<uint32_t*>(dstRowData + x * 4);
-							RGBA averageColor(0.0f, 0.0f, 0.0f, 0.0f);
-							std::uint8_t validCount = 0;
+
+			tp->Execute([&] {
+                tbb::parallel_for(
+                    tbb::blocked_range<UINT>(0, mipHeight),
+                    [&](const tbb::blocked_range<UINT>& r) {
+                        for (UINT y = r.begin(); y != r.end(); ++y)
+                        {
+                            std::uint8_t* dstRowData = dst_pData + y * dstRowPitch;
+                            for (UINT x = 0; x < mipWidth; x++)
+                            {
+                                std::uint32_t* pixel = reinterpret_cast<uint32_t*>(dstRowData + x * 4);
+                                RGBA averageColor(0.0f, 0.0f, 0.0f, 0.0f);
+                                std::uint8_t validCount = 0;
 #pragma unroll(4)
-							for (std::uint8_t i = 0; i < 4; i++)
-							{
-								DirectX::XMUINT2 srcCoord = { x * 2 + sampleOffsets[i].x, y * 2 + sampleOffsets[i].y };
-								if (srcCoord.x >= srcMipWidth || srcCoord.y >= srcMipHeight)
-									continue;
-                                std::uint8_t* srcRowData = src_pData + srcRowPitch;
-								std::uint32_t* srcPixel = reinterpret_cast<uint32_t*>(srcRowData + srcCoord.x * 4);
-								RGBA srcColor;
-								srcColor.SetReverse(*srcPixel);
-								if (srcColor.A() == 0xFF)
-								{
-									averageColor += srcColor;
-									validCount++;
-								}
-							}
-							if (validCount == 0)
-							{
+                                for (std::uint8_t i = 0; i < 4; i++)
+                                {
+                                    DirectX::XMUINT2 srcCoord = {x * 2 + sampleOffsets[i].x, y * 2 + sampleOffsets[i].y};
+                                    if (srcCoord.x >= srcMipWidth || srcCoord.y >= srcMipHeight)
+                                        continue;
+                                    std::uint8_t* srcRowData = src_pData + srcRowPitch;
+                                    std::uint32_t* srcPixel = reinterpret_cast<uint32_t*>(srcRowData + srcCoord.x * 4);
+                                    RGBA srcColor;
+                                    srcColor.SetReverse(*srcPixel);
+                                    if (srcColor.A() == 0xFF)
+                                    {
+                                        averageColor += srcColor;
+                                        validCount++;
+                                    }
+                                }
+                                if (validCount == 0)
+                                {
 #pragma unroll(8)
-								for (std::uint8_t i = 0; i < 8; i++)
-								{
-									DirectX::XMINT2 nearCoord = { (INT)x + offsets[i].x, (INT)y + offsets[i].y };
-									if (nearCoord.x < 0 || nearCoord.y < 0 ||
-										nearCoord.x >= mipWidth || nearCoord.y >= mipHeight)
-										continue;
+                                    for (std::uint8_t i = 0; i < 8; i++)
+                                    {
+                                        DirectX::XMINT2 nearCoord = {(INT)x + offsets[i].x, (INT)y + offsets[i].y};
+                                        if (nearCoord.x < 0 || nearCoord.y < 0 ||
+                                            nearCoord.x >= mipWidth || nearCoord.y >= mipHeight)
+                                            continue;
 #pragma unroll(4)
-									for (std::uint8_t j = 0; j < 4; j++)
-									{
-										DirectX::XMUINT2 srcCoord = { nearCoord.x * 2 + sampleOffsets[j].x, nearCoord.y * 2 + sampleOffsets[j].y };
-										if (srcCoord.x >= srcMipWidth || srcCoord.y >= srcMipHeight)
-											continue;
-                                        std::uint8_t* srcRowData = src_pData + srcCoord.y * srcRowPitch;
-										std::uint32_t* srcPixel = reinterpret_cast<uint32_t*>(srcRowData + srcCoord.x * 4);
-										RGBA srcColor;
-										srcColor.SetReverse(*srcPixel);
-										if (srcColor.A() == 0xFF)
-										{
-											averageColor += srcColor;
-											validCount++;
-										}
-									}
-								}
-							}
-							if (validCount == 0)
-							{
-								*pixel = emptyColor.GetReverse();
-								continue;
-							}
-							RGBA resultsColor = averageColor / validCount;
-							resultsColor.a = 1.0f;
-							*pixel = resultsColor.GetReverse();
-						}
-					}
-				}));
-			}
-			for (auto& process : processes)
-			{
-				process.get();
-			}
+                                        for (std::uint8_t j = 0; j < 4; j++)
+                                        {
+                                            DirectX::XMUINT2 srcCoord = {nearCoord.x * 2 + sampleOffsets[j].x, nearCoord.y * 2 + sampleOffsets[j].y};
+                                            if (srcCoord.x >= srcMipWidth || srcCoord.y >= srcMipHeight)
+                                                continue;
+                                            std::uint8_t* srcRowData = src_pData + srcCoord.y * srcRowPitch;
+                                            std::uint32_t* srcPixel = reinterpret_cast<uint32_t*>(srcRowData + srcCoord.x * 4);
+                                            RGBA srcColor;
+                                            srcColor.SetReverse(*srcPixel);
+                                            if (srcColor.A() == 0xFF)
+                                            {
+                                                averageColor += srcColor;
+                                                validCount++;
+                                            }
+                                        }
+                                    }
+                                }
+                                if (validCount == 0)
+                                {
+                                    *pixel = emptyColor.GetReverse();
+                                    continue;
+                                }
+                                RGBA resultsColor = averageColor / validCount;
+                                resultsColor.a = 1.0f;
+                                *pixel = resultsColor.GetReverse();
+                            }
+                        }
+                    },
+                    tbb::auto_partitioner()
+				);
+            });
 		}
 		logger::debug("{}::{} : Generate Mips done", _func_, resourceData->textureName);
 
@@ -2628,43 +2602,43 @@ namespace Mus {
             std::vector<std::uint32_t> pixelBuffer(bc7Width * bc7Height * 16);
             std::uint8_t* srcData = mg.Get<std::uint8_t>();
             const UINT rowPitch = mg.GetRowPitch();
-			std::vector<std::future<void>> processes;
-            const std::uint32_t threads = std::max(1ull, tp->GetThreads() * (isImmediately ? 1 : 8));
-			const std::uint32_t rowSub = std::max(1u, (bc7Height + threads - 1) / threads);
-			for (std::uint32_t threadNum = 0; threadNum < threads; threadNum++) {
-				const std::uint32_t beginY = threadNum * rowSub;
-				const std::uint32_t endY = std::min(beginY + rowSub, bc7Height);
-				const std::uint32_t blockCount = (beginY < endY ? (endY - beginY) : 0) * bc7Width;
-				if (blockCount == 0)
-					break;
-                processes.push_back(tp->submitAsync([&, beginY, endY, blockCount]() {
-                    std::uint32_t* pixels = pixelBuffer.data() + (beginY * bc7Width * 16);
-                    std::uint64_t* dstBlocks = reinterpret_cast<std::uint64_t*>(bc7Buffers[mipLevel].data()) + (beginY * bc7Width * 2);
-					std::size_t pixelIndex = 0;
-					for (UINT by = beginY; by < endY; by++) {
-                        const UINT by_ = by * 4;
-						for (UINT bx = 0; bx < bc7Width; bx++) {
-                            const UINT bx_ = bx * 4;
-#pragma unroll(4)
-                            for (UINT y = 0; y < 4; y++) {
-                                const UINT py = by_ + y;
-                                const UINT clampedPy = std::min(py, mipHeight - 1);
-                                const std::uint8_t* rowData = srcData + (clampedPy * rowPitch);
-#pragma unroll(4)
-								for (UINT x = 0; x < 4; x++) {
-                                    const UINT px = bx_ + x;
-                                    const UINT clampedPx = std::min(px, mipWidth - 1);
-                                    pixels[pixelIndex++] = *reinterpret_cast<const std::uint32_t*>(rowData + clampedPx * 4);
-								}
-							}
-						}
-					}
-                    compFunc(blockCount, dstBlocks, pixels, &params);
-				}));
-			}
-			for (auto& process : processes) {
-				process.get();
-			}
+
+            tp->Execute([&] {
+                tbb::parallel_for(
+                    tbb::blocked_range<UINT>(0, bc7Width),
+                    [&](const tbb::blocked_range<UINT>& r) {
+                        const std::uint32_t blockCount = (r.end() - r.begin()) * bc7Width;
+                        std::vector<std::uint32_t> pixelsLocal;
+                        pixelsLocal.resize(blockCount * 16);
+                        std::uint32_t* pixels = pixelsLocal.data();
+                        std::size_t pixelIndex = 0;
+                        std::uint64_t* dstBlocks = reinterpret_cast<std::uint64_t*>(bc7Buffers[mipLevel].data()) + (r.begin() * bc7Width * 2);
+                        for (UINT by = r.begin(); by < r.end(); by++)
+                        {
+                            const UINT by_ = by * 4;
+                            for (UINT bx = 0; bx < bc7Width; bx++)
+                            {
+                                const UINT bx_ = bx * 4;
+                                for (UINT y = 0; y < 4; y++)
+                                {
+                                    const UINT py = by_ + y;
+                                    const UINT clampedPy = std::min(py, mipHeight - 1);
+                                    const std::uint8_t* rowData = srcData + (clampedPy * rowPitch);
+
+                                    for (UINT x = 0; x < 4; x++)
+                                    {
+                                        const UINT px = bx_ + x;
+                                        const UINT clampedPx = std::min(px, mipWidth - 1);
+                                        pixels[pixelIndex++] = *reinterpret_cast<const std::uint32_t*>(rowData + clampedPx * 4);
+                                    }
+                                }
+                            }
+                        }
+                        compFunc(blockCount, dstBlocks, pixels, &params);
+                    },
+                    tbb::auto_partitioner()
+                );
+            });
 			initData[mipLevel].pSysMem = bc7Buffers[mipLevel].data();
 			initData[mipLevel].SysMemPitch = rowPitches[mipLevel];
 			initData[mipLevel].SysMemSlicePitch = 0;

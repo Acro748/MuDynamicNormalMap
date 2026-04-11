@@ -360,30 +360,22 @@ namespace Mus {
         return func(stream);
     }
 
-    enum ExistType 
-    { 
-        meshes, 
+    enum ExistType {
+        meshes,
         textures,
-        none 
+        none
     };
-    inline bool IsExistDirectoy(const lString& path)
-    {
-        if (path.starts_with(GetRuntimeDataDirectory()))
-            return std::filesystem::exists(path.string()) && std::filesystem::is_directory(path.string());
-        else
-            return std::filesystem::exists(GetRuntimeDataDirectory() + path.string()) && std::filesystem::is_directory(GetRuntimeDataDirectory() + path.string());
+    inline bool IsExistFileInFileSystem(const lString& path) {
+        if (path.empty())
+            return false;
+        std::filesystem::path fullPath = path.starts_with("Data") ? GetRuntimeDataDirectory() + path.string() : path.string();
+        return std::filesystem::exists(fullPath);
     }
-    inline bool IsExistFileInFileSystem(const lString& path)
-    {
-        return _access_s((GetRuntimeDataDirectory() + path).c_str(), 0) == 0;
-    }
-    inline bool IsExistFileInStream_Impl(const lString& path)
-    {
+    inline bool IsExistFileInStream_Impl(lString path) {
         RE::BSResourceNiBinaryStream binaryStream(path.c_str());
         return binaryStream.good();
     }
-    inline bool IsExistFileInStream(lString path, ExistType type = ExistType::none)
-    {
+    inline bool IsExistFileInStream(lString path, ExistType type = ExistType::none) {
         path.remove_starts_with("Data\\");
         if (path.starts_with("meshes") || path.starts_with("textures"))
             return IsExistFileInStream_Impl(path);
@@ -393,34 +385,32 @@ namespace Mus {
             return IsExistFileInStream_Impl("textures\\" + path);
         return IsExistFileInStream_Impl(path);
     }
-    inline bool IsExistFile(lString path, ExistType type = ExistType::none, bool inFileSystem = false)
-    {
+    inline bool IsExistFile(lString path, ExistType type = ExistType::none, bool inFileSystem = false) {
         if (path.empty())
             return false;
         path.remove_starts_with("Data\\");
-        static concurrency::concurrent_unordered_map<lString, bool> isExists;
+        static tbb::concurrent_unordered_map<lString, bool> isExists;
         if (auto it = isExists.find(path); it != isExists.end())
             return it->second;
         bool result = false;
-        if (!inFileSystem)
-        {
+        if (!inFileSystem) {
             if (path.starts_with("meshes") || path.starts_with("textures") || type != ExistType::none)
                 result = IsExistFileInStream(path, type);
-            else
-                result = _access_s((GetRuntimeDataDirectory() + path).c_str(), 0) == 0;
-        }
-        else
-        {
-            if (path.starts_with("meshes") || path.starts_with("textures"))
-            {
-                result = IsExistFileInFileSystem(path);
-            }
             else if (type == ExistType::meshes)
+                result = IsExistFileInStream("meshes\\" + path);
+            else if (type == ExistType::textures)
+                result = IsExistFileInStream("textures\\" + path);
+            else
+                result = IsExistFileInStream(path, type);
+        } else {
+            if (path.starts_with("meshes") || path.starts_with("textures")) {
+                result = IsExistFileInFileSystem(path);
+            } else if (type == ExistType::meshes)
                 result = IsExistFileInFileSystem("meshes\\" + path);
             else if (type == ExistType::textures)
                 result = IsExistFileInFileSystem("textures\\" + path);
             else
-                result = _access_s((GetRuntimeDataDirectory() + path).c_str(), 0) == 0;
+                result = IsExistFileInFileSystem(path);
         }
         isExists[path] = result;
         return result;
@@ -567,7 +557,7 @@ namespace Mus {
         return tokens;
     }
 
-    inline std::vector<std::string> split(const std::string& s, std::string delimiter)
+    inline std::vector<std::string> split(const std::string& s, const std::string& delimiter)
     {
         size_t pos_start = 0, pos_end, delim_len = delimiter.length();
         std::string token;
@@ -587,7 +577,7 @@ namespace Mus {
         return res;
     }
 
-    inline std::vector<std::string> splitMulti(const std::string& s, std::string delimiters)
+    inline std::vector<std::string> splitMulti(const std::string& s, const std::string& delimiters)
     {
         std::string str = trim_copy(s);
 

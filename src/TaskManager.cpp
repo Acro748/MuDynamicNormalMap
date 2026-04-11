@@ -164,23 +164,25 @@ namespace Mus {
             updateSlotQueue_ = std::move(updateSlotQueue);
         }
 
-        concurrency::parallel_for_each(updateSlotQueue_.begin(), updateSlotQueue_.end(), [&](auto& map) {
-			RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
-			if (IsInvalidActor(actor))
-				return;
-            if (GetIsActiveActor(actor->formID))
-			{
-                if (!GetIsUpdating(actor->formID))
+        tbb::parallel_for_each(
+			updateSlotQueue_, [&] (auto& map){
+                RE::Actor* actor = GetFormByID<RE::Actor*>(map.first);
+                if (IsInvalidActor(actor))
+                    return;
+                if (GetIsActiveActor(actor->formID))
                 {
-                    QUpdateNormalMapImpl(actor, GetAllGeometries(actor), map.second);
+                    if (!GetIsUpdating(actor->formID))
+                    {
+                        QUpdateNormalMapImpl(actor, GetAllGeometries(actor), map.second);
+                    }
+                    else
+                    {
+                        std::lock_guard lg(updateSlotQueueLock);
+                        updateSlotQueue[actor->formID] |= map.second;
+                    }
                 }
-                else
-                {
-                    std::lock_guard lg(updateSlotQueueLock);
-                    updateSlotQueue[actor->formID] |= map.second;
-                }
-            }
-        });
+			}
+		);
 
         if (isAfterLoading)
         {
@@ -209,10 +211,16 @@ namespace Mus {
             std::lock_guard lg(delayTaskLock);
             delayTask_ = std::move(delayTask);
 		}
-		concurrency::parallel_for_each(delayTask_.begin(), delayTask_.end(), [&](auto& task)
-		{
-			task();
-		});
+        tbb::parallel_for(
+            tbb::blocked_range<std::size_t>(0, delayTask_.size()),
+            [&](const tbb::blocked_range<std::size_t>& r) {
+                for (std::size_t i = r.begin(); i != r.end(); ++i)
+                {
+                    delayTask_[i]();
+                }
+            },
+            tbb::auto_partitioner()
+		);
 
 		if (Config::GetSingleton().GetQueueTime())
 			PerformanceLog(std::string(__func__), true, false, delayTask_.size());
@@ -1202,7 +1210,7 @@ namespace Mus {
 
 	void TaskManager::ReleaseResourceOnUnloadActors()
 	{
-        memoryManageThreads->submitAsync([&]() {
+        backGroundWorkerThreads->submitAsync([&]() {
             std::lock_guard lg(lastNormalMapLock);
             auto count = lastNormalMap.size();
             for (auto it = lastNormalMap.begin(); it != lastNormalMap.end();)
