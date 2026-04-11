@@ -73,7 +73,8 @@ namespace Mus {
 
 		std::size_t ConditionCount() const { return ConditionList.size(); }
 	private:
-		concurrency::concurrent_vector<Condition> ConditionList;
+        std::mutex ConditionListLock; // lock write only
+		std::vector<Condition> ConditionList;
 		std::unordered_map<std::string, ConditionType> ConditionMap;
 
 		const Condition ParseConditions(Condition condition);

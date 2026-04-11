@@ -108,4 +108,5 @@ namespace Mus {
 	extern EventDispatcherImpl<PlayerCellChangeEvent> g_playerCellChangeEventDispatcher;
 
 	void hook();
+    void postHook();
 }

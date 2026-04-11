@@ -332,6 +332,10 @@ namespace Mus {
                 {
                     TaskQTickMS = GetUIntValue(variableValue);
                 }
+                else if (variableName == "EcoreUse")
+                {
+                    EcoreUse = GetBoolValue(variableValue);
+                }
                 else if (variableName == "ProcessingInLoading")
                 {
                     ProcessingInLoading = GetBoolValue(variableValue);
@@ -417,115 +421,124 @@ namespace Mus {
         std::string conditionPath = GetRuntimeSKSEDirectory();
         conditionPath += SKSE::PluginDeclaration::GetSingleton()->GetName().data();
         auto files = GetAllFiles(conditionPath);
-        concurrency::parallel_for_each(files.begin(), files.end(), [&](auto& file) {
-            std::u8string filename_utf8 = file.filename().u8string();
-            std::string filename(filename_utf8.begin(), filename_utf8.end());
-            if (filename == "." || filename == "..")
-                return;
-            if (!stringEndsWith(filename, ".ini"))
-                return;
-            std::ifstream ifile(file);
-            if (!ifile.is_open())
-                return;
-
-            logger::info("File found: {}", filename);
-
-            ConditionManager::Condition condition;
-            condition.fileName = filename;
-			condition.HeadEnable = GetHeadEnable();
-			condition.DetailStrength = GetDetailStrength();
-
-            bool isNormalConditionFile = false;
-            bool isConditionState = false;
-
-            std::string line;
-            while (std::getline(ifile, line))
-            {
-                skipComments(line);
-                trim(line);
-                if (line.length() > 0)
+        const auto size = files.size();
+        tbb::parallel_for(
+            tbb::blocked_range<std::size_t>(0, size),
+            [&](const tbb::blocked_range<std::size_t>& r) {
+                for (std::size_t i = r.begin(); i != r.end(); ++i)
                 {
-                    std::string variableName;
-                    std::string variableValue = GetConfigSetting(line, variableName);
-                    isConditionState = variableName == "Condition";
+                    auto& file = files[i];
+                    std::u8string filename_utf8 = file.filename().u8string();
+                    std::string filename(filename_utf8.begin(), filename_utf8.end());
+                    if (filename == "." || filename == "..")
+                        return;
+                    if (!stringEndsWith(filename, ".ini"))
+                        return;
+                    std::ifstream ifile(file);
+                    if (!ifile.is_open())
+                        return;
 
-                    if (variableName == "Enable")
+                    logger::info("File found: {}", filename);
+
+                    ConditionManager::Condition condition;
+                    condition.fileName = filename;
+                    condition.HeadEnable = GetHeadEnable();
+                    condition.DetailStrength = GetDetailStrength();
+
+                    bool isNormalConditionFile = false;
+                    bool isConditionState = false;
+
+                    std::string line;
+                    while (std::getline(ifile, line))
                     {
-                        condition.Enable = GetBoolValue(variableValue);
-                        isNormalConditionFile = true;
-                    }
-                    else if (variableName == "HeadEnable")
-                    {
-                        condition.HeadEnable = GetBoolValue(variableValue);
-                        isNormalConditionFile = true;
-                    }
-                    else if (variableName == "DynamicTriShapeAsHead")
-                    {
-                        condition.DynamicTriShapeAsHead = GetBoolValue(variableValue);
-                        isNormalConditionFile = true;
-                    }
-                    else if (variableName == "DetailStrength")
-                    {
-                        condition.DetailStrength = GetFloatValue(variableValue);
-                        isNormalConditionFile = true;
-                    }
-                    else if (variableName == "ProxyDetailTextureFolder" || variableName == "ProxyTangentTextureFolder")
-                    {
-                        if (!variableValue.empty())
+                        skipComments(line);
+                        trim(line);
+                        if (line.length() > 0)
                         {
-                            for (auto& value : split(variableValue, ','))
+                            std::string variableName;
+                            std::string variableValue = GetConfigSetting(line, variableName);
+                            isConditionState = variableName == "Condition";
+
+                            if (variableName == "Enable")
                             {
-                                condition.ProxyDetailTextureFolder.push_back(value);
+                                condition.Enable = GetBoolValue(variableValue);
+                                isNormalConditionFile = true;
+                            }
+                            else if (variableName == "HeadEnable")
+                            {
+                                condition.HeadEnable = GetBoolValue(variableValue);
+                                isNormalConditionFile = true;
+                            }
+                            else if (variableName == "DynamicTriShapeAsHead")
+                            {
+                                condition.DynamicTriShapeAsHead = GetBoolValue(variableValue);
+                                isNormalConditionFile = true;
+                            }
+                            else if (variableName == "DetailStrength")
+                            {
+                                condition.DetailStrength = GetFloatValue(variableValue);
+                                isNormalConditionFile = true;
+                            }
+                            else if (variableName == "ProxyDetailTextureFolder" || variableName == "ProxyTangentTextureFolder")
+                            {
+                                if (!variableValue.empty())
+                                {
+                                    for (auto& value : split(variableValue, ','))
+                                    {
+                                        condition.ProxyDetailTextureFolder.push_back(value);
+                                    }
+                                }
+                                isNormalConditionFile = true;
+                            }
+                            else if (variableName == "ProxyOverlayTextureFolder")
+                            {
+                                if (!variableValue.empty())
+                                {
+                                    for (auto& value : split(variableValue, ','))
+                                    {
+                                        condition.ProxyOverlayTextureFolder.push_back(value);
+                                    }
+                                }
+                                isNormalConditionFile = true;
+                            }
+                            else if (variableName == "ProxyMaskTextureFolder")
+                            {
+                                if (!variableValue.empty())
+                                {
+                                    for (auto& value : split(variableValue, ','))
+                                    {
+                                        condition.ProxyMaskTextureFolder.push_back(value);
+                                    }
+                                }
+                                isNormalConditionFile = true;
+                            }
+                            else if (variableName == "ProxyFirstScan")
+                            {
+                                condition.ProxyFirstScan = GetBoolValue(variableValue);
+                            }
+                            else if (variableName == "Priority")
+                            {
+                                condition.Priority = GetIntValue(variableValue);
+                                isNormalConditionFile = true;
+                            }
+                            else if (variableName == "Condition")
+                            {
+                                condition.originalCondition = variableValue;
+                                isNormalConditionFile = true;
+                            }
+                            else
+                            {
+                                if (isConditionState)
+                                    condition.originalCondition += " " + variableValue;
                             }
                         }
-                        isNormalConditionFile = true;
                     }
-                    else if (variableName == "ProxyOverlayTextureFolder")
-                    {
-                        if (!variableValue.empty())
-                        {
-                            for (auto& value : split(variableValue, ','))
-                            {
-                                condition.ProxyOverlayTextureFolder.push_back(value);
-                            }
-                        }
-                        isNormalConditionFile = true;
-                    }
-                    else if (variableName == "ProxyMaskTextureFolder")
-                    {
-                        if (!variableValue.empty())
-                        {
-                            for (auto& value : split(variableValue, ','))
-                            {
-                                condition.ProxyMaskTextureFolder.push_back(value);
-                            }
-                        }
-                        isNormalConditionFile = true;
-                    }
-                    else if (variableName == "ProxyFirstScan")
-                    {
-                        condition.ProxyFirstScan = GetBoolValue(variableValue);
-                    }
-                    else if (variableName == "Priority")
-                    {
-                        condition.Priority = GetIntValue(variableValue);
-                        isNormalConditionFile = true;
-                    }
-                    else if (variableName == "Condition")
-                    {
-                        condition.originalCondition = variableValue;
-                        isNormalConditionFile = true;
-                    }
-                    else
-                    {
-                        if (isConditionState)
-                            condition.originalCondition += " " + variableValue;
-                    }
+                    if (isNormalConditionFile)
+                        ConditionManager::GetSingleton().RegisterCondition(condition);
                 }
-            }
-            if (isNormalConditionFile)
-                ConditionManager::GetSingleton().RegisterCondition(condition);
-        });
+            },
+            tbb::auto_partitioner()
+        );
         return true;
     }
 
@@ -690,15 +703,15 @@ namespace Mus {
                     auto info = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(ptr);
                     if (info->Relationship == RelationProcessorCore)
                     {
-                        if (info->Processor.EfficiencyClass > 0)
+                        if (info->Processor.EfficiencyClass == 0)
                         {
-                            coreMask += info->Processor.GroupMask[0].Mask;
-                            eCoreCount++;
+                            coreMask |= info->Processor.GroupMask[0].Mask;
                         }
                     }
                     ptr += info->Size;
                 }
             }
+            eCoreCount = std::popcount(coreMask);
             if (coreMask == 0 || eCoreCount == 0)
             {
                 coreMask = 0;
@@ -719,15 +732,12 @@ namespace Mus {
         logger::info("set actorThreads {} on {}", actorThreadCount, usePCores ? "all cores" : "all E-cores");
         currentActorThreads = actorThreads;
 
-        processingThreads = std::make_unique<ThreadPool_ParallelModule>(processingThreadCount, coreMask);
-        processingThreadsFull = std::make_unique<ThreadPool_ParallelModule>(coreCount, 0);
+        processingThreads = std::make_shared<TBB_ThreadPool>(processingThreadCount, coreMask);
+        processingThreadsFull = std::make_shared<TBB_ThreadPool>(coreCount, 0);
         logger::info("set processingThreads {} on {}", processingThreadCount, usePCores ? "all cores" : "all E-cores");
         currentProcessingThreads = processingThreads;
 
-        memoryManageThreads = std::make_unique<ThreadPool_ParallelModule>(memoryManageThreadCount, coreMask);
-        logger::info("set memoryManageThreads {} on {}", memoryManageThreadCount, usePCores ? "all cores" : "all E-cores");
-
-        backGroundHasherThreads = std::make_unique<ThreadPool_ParallelModule>(1u, coreMask);
+        backGroundWorkerThreads = std::make_unique<ThreadPool_ParallelModule>(1u, coreMask);
 
         weldDistance = std::max(floatPrecision, Config::GetSingleton().GetWeldDistance());
         weldDistanceMult = 1.0f / weldDistance;

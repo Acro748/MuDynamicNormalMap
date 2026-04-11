@@ -1,16 +1,16 @@
 #include "ThreadPool.h"
 
-namespace Mus {
+namespace Mus
+{
+    std::atomic<std::shared_ptr<TBB_ThreadPool>> currentProcessingThreads;
+    std::shared_ptr<TBB_ThreadPool> processingThreads;
+    std::shared_ptr<TBB_ThreadPool> processingThreadsFull;
+
     std::atomic<std::shared_ptr<ThreadPool_ParallelModule>> currentActorThreads;
     std::shared_ptr<ThreadPool_ParallelModule> actorThreads;
     std::shared_ptr<ThreadPool_ParallelModule> actorThreadsFull;
 
-    std::atomic<std::shared_ptr<ThreadPool_ParallelModule>> currentProcessingThreads;
-    std::shared_ptr<ThreadPool_ParallelModule> processingThreads;
-    std::shared_ptr<ThreadPool_ParallelModule> processingThreadsFull;
-
-    std::unique_ptr<ThreadPool_ParallelModule> memoryManageThreads;
-    std::unique_ptr<ThreadPool_ParallelModule> backGroundHasherThreads;
+    std::unique_ptr<ThreadPool_ParallelModule> backGroundWorkerThreads;
 
     ThreadPool_ParallelModule::ThreadPool_ParallelModule(std::uint32_t threadSize, std::uint64_t a_coreMask)
         : coreMask(a_coreMask), stop(false)

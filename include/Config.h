@@ -218,6 +218,9 @@ namespace Mus {
         [[nodiscard]] inline auto GetTaskQTickMS() const noexcept {
             return TaskQTickMS;
         }
+        [[nodiscard]] inline auto GetEcoreUse() const noexcept {
+            return EcoreUse;
+        }
         [[nodiscard]] inline auto GetProcessingInLoading() const noexcept {
             return ProcessingInLoading;
         }
@@ -341,6 +344,7 @@ namespace Mus {
 		bool UseMipMap = true;
 
         std::uint8_t AutoTaskQ = AutoTaskQList::Balanced;
+        bool EcoreUse = false;
         bool ProcessingInLoading = false;
         bool ProcessingInLoadingWithMainGPU = true;
         std::clock_t TaskQTickMS = 100;

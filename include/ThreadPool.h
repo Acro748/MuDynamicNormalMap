@@ -1,6 +1,57 @@
 #pragma once 
+#include <tbb/task_arena.h>
+#include <tbb/task_scheduler_observer.h>
 
 namespace Mus {
+    class TBB_CoreMasking : public tbb::task_scheduler_observer {
+        DWORD_PTR mask;
+
+    public:
+        TBB_CoreMasking(tbb::task_arena& arena, DWORD_PTR m)
+            : tbb::task_scheduler_observer(arena), mask(m) {
+            observe(true);
+        }
+
+        void on_scheduler_entry(bool worker) override {
+            if (worker) {
+                static thread_local bool pinned = false;
+                if (!pinned) {
+                    SetThreadAffinityMask(GetCurrentThread(), mask);
+                    pinned = true;
+                }
+            }
+        }
+    };
+
+    class TBB_ThreadPool
+    {
+    public:
+        TBB_ThreadPool() = delete;
+        TBB_ThreadPool(std::uint32_t a_threadSize, std::uint64_t a_coreMask)
+            : workers(std::make_unique<tbb::task_arena>(a_threadSize)) {
+            if (a_coreMask != 0)
+                observer = std::make_unique<TBB_CoreMasking>(*workers, a_coreMask);
+        }
+
+        template <typename F>
+        void Execute(F&& f) {
+            workers->execute(std::forward<F>(f));
+        }
+
+        template <typename F>
+        void Enqueue(F&& f) {
+            workers->enqueue(std::forward<F>(f));
+        }
+
+        std::int32_t GetThreadSize() const { return workers->max_concurrency(); }
+    private:
+        std::unique_ptr<tbb::task_arena> workers;
+        std::unique_ptr<TBB_CoreMasking> observer;
+    };
+    extern std::atomic<std::shared_ptr<TBB_ThreadPool>> currentProcessingThreads;
+    extern std::shared_ptr<TBB_ThreadPool> processingThreads;
+    extern std::shared_ptr<TBB_ThreadPool> processingThreadsFull;
+
     class ThreadPool_ParallelModule
     {
     public:
@@ -46,12 +97,7 @@ namespace Mus {
     extern std::shared_ptr<ThreadPool_ParallelModule> actorThreads;
     extern std::shared_ptr<ThreadPool_ParallelModule> actorThreadsFull;
 
-    extern std::atomic<std::shared_ptr<ThreadPool_ParallelModule>> currentProcessingThreads;
-    extern std::shared_ptr<ThreadPool_ParallelModule> processingThreads;
-    extern std::shared_ptr<ThreadPool_ParallelModule> processingThreadsFull;
-
-    extern std::unique_ptr<ThreadPool_ParallelModule> memoryManageThreads;
-    extern std::unique_ptr<ThreadPool_ParallelModule> backGroundHasherThreads;
+    extern std::unique_ptr<ThreadPool_ParallelModule> backGroundWorkerThreads;
 
     class ThreadPool_GPUTaskModule
         : public IEventListener<FrameEvent>

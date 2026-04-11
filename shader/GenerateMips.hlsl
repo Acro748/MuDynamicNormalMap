@@ -105,9 +105,9 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
 					continue;
 
                 [unroll]
-                for (uint i = 0; i < 4; i++)
+                for (uint j = 0; j < 4; j++)
                 {
-                    uint2 srcCoord = uint2(nearCoord) * 2 + sampleOffsets[i];
+                    uint2 srcCoord = uint2(nearCoord) * 2 + sampleOffsets[j];
                     if (srcCoord.x >= srcWidth || srcCoord.y >= srcHeight)
                         continue;
                     float4 srcPixel = src[srcCoord];

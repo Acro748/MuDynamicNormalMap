@@ -76,7 +76,7 @@ namespace Mus {
         std::uint32_t mainGeometryIndex = 0;
 
     private:
-        std::shared_ptr<ThreadPool_ParallelModule> tp;
+        std::shared_ptr<TBB_ThreadPool> tp;
 
         inline float SmoothStepRange(float x, float A, float B) const {
             if (x > A)
@@ -222,7 +222,7 @@ namespace Mus {
             DirectX::XMFLOAT3 normal;
         };
         std::vector<FaceNormal> faceNormals;
-        std::vector<concurrency::concurrent_vector<std::uint32_t>> vertexToFaceMap;
+        std::vector<tbb::concurrent_vector<std::uint32_t>> vertexToFaceMap;
 
         struct FaceTangent {
             std::uint32_t v0, v1, v2;
@@ -272,7 +272,8 @@ namespace Mus {
             std::sort(v.begin(), v.end());
             return;
         }
-        const std::size_t threads = tp->GetThreads() * std::min(4ull, std::max(1ull, max / 4096));
+
+        const std::size_t threads = tp->GetThreadSize() * std::min(4ull, std::max(1ull, max / 4096));
         const std::size_t sub = std::max(1ull, std::min(max, threads));
         const std::size_t unit = (max + sub - 1) / sub;
         {

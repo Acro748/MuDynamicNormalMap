@@ -131,7 +131,7 @@ namespace Mus {
             return it != isActiveActors.end() ? it->second : false;
         }
 
-        concurrency::concurrent_unordered_map<RE::FormID, bool> isUpdating;
+        tbb::concurrent_unordered_map<RE::FormID, bool> isUpdating;
         inline void SetIsUpdating(RE::FormID a_actorID, bool a_isUpdating) {
             isUpdating[a_actorID] = a_isUpdating;
         }

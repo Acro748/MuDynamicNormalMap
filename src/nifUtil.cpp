@@ -153,7 +153,7 @@ namespace Mus::nif {
     }
 
     const std::string NodePrefix = "MDTT";
-    concurrency::concurrent_unordered_map<std::string, std::string> VirtualNodeNameMap;
+    tbb::concurrent_unordered_map<std::string, std::string> VirtualNodeNameMap;
     RE::BSFixedString GetVirtualNodeName(RE::BSFixedString nodeName)
     {
         if (auto found = VirtualNodeNameMap.find(nodeName.c_str()); found != VirtualNodeNameMap.end())

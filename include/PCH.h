@@ -41,9 +41,6 @@
 #include <compare>
 #include <complex>
 #include <concepts>
-#include <concurrent_vector.h>
-#include <concurrent_unordered_map.h>
-#include <concurrent_unordered_set.h>
 #include <condition_variable>
 #include <cstring>
 #include <d3d11.h>
@@ -52,7 +49,6 @@
 #include <d3dcompiler.h>
 #pragma comment(lib, "d3dcompiler.lib")
 #include <DirectXMath.h>
-#include <DirectXTex.h>
 #include <dxcore_interface.h>
 #include <dxcore.h>
 #pragma comment(lib, "dxcore.lib")
@@ -76,9 +72,6 @@
 #include <latch>
 #include <limits>
 #include <locale>
-#define MAGIC_ENUM_RANGE_MIN -128
-#define MAGIC_ENUM_RANGE_MAX 2048
-#include <magic_enum.hpp>
 #include <map>
 #include <memory>
 #include <memory_resource>
@@ -88,7 +81,6 @@
 #include <numeric>
 #include <optional>
 #include <ostream>
-#include <ppl.h>
 #include <queue>
 #include <random>
 #include <ranges>
@@ -122,7 +114,6 @@
 #include <vector>
 #include <version>
 #include <wrl/client.h>
-#include <xxhash.h>
 
 #include <ShlObj_core.h>
 #include <Windows.h>
@@ -145,6 +136,19 @@ namespace util {
 }
 
 using EventResult = RE::BSEventNotifyControl;
+
+#include <DirectXTex.h>
+#define MAGIC_ENUM_RANGE_MIN -128
+#define MAGIC_ENUM_RANGE_MAX 2048
+#include <magic_enum/magic_enum.hpp>
+#include <xxhash.h>
+
+#include <tbb/parallel_for.h>
+#include <tbb/parallel_for_each.h>
+#include <tbb/concurrent_vector.h>
+#include <tbb/concurrent_unordered_map.h>
+#include <tbb/parallel_sort.h>
+#include <tbb/parallel_invoke.h>
 
 #include "bc7e_ispc_avx.h"
 #include "bc7e_ispc_avx2.h"

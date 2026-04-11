@@ -12,8 +12,8 @@ cbuffer ConstBuffer : register(b0)
 
     uint tangentZCorrection;
     float detailStrength;
+    uint vertexCount;
     uint padding1;
-    uint padding2;
 };
 
 StructuredBuffer<float3> vertices   : register(t0); // a_data->vertices
@@ -32,6 +32,30 @@ RWTexture2D<float4> dstTexture      : register(u0);
 
 SamplerState samplerState           : register(s0);
 
+float EdgeFunction(float2 a, float2 b, float2 c)
+{
+    return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
+}
+
+bool IsTopLeft(float2 a, float2 b)
+{
+    float2 e = b - a;
+    return (e.y > 0) || (e.y == 0 && e.x < 0);
+}
+
+bool InsideTriangle(float2 p, float2 p0, float2 p1, float2 p2)
+{
+    float w0 = EdgeFunction(p1, p2, p);
+    float w1 = EdgeFunction(p2, p0, p);
+    float w2 = EdgeFunction(p0, p1, p);
+
+    bool e0 = (w0 > 0) || (w0 == 0 && IsTopLeft(p1, p2));
+    bool e1 = (w1 > 0) || (w1 == 0 && IsTopLeft(p2, p0));
+    bool e2 = (w2 > 0) || (w2 == 0 && IsTopLeft(p0, p1));
+
+    return e0 && e1 && e2;
+}
+
 float3 SlerpVector(float3 a, float3 b, float t)
 {
     a = normalize(a);
@@ -40,33 +64,6 @@ float3 SlerpVector(float3 a, float3 b, float t)
     float theta = acos(dotAB) * t;
     float3 relVec = normalize(b - a * dotAB);
     return normalize(a * cos(theta) + relVec * sin(theta));
-}
-
-bool ComputeBarycentric(float2 p, float2 a, float2 b, float2 c, out float3 bary)
-{
-    float2 v0 = b - a;
-    float2 v1 = c - a;
-    float2 v2 = p - a;
-
-    float d00 = dot(v0, v0);
-    float d01 = dot(v0, v1);
-    float d11 = dot(v1, v1);
-    float d20 = dot(v2, v0);
-    float d21 = dot(v2, v1);
-    float denom = d00 * d11 - d01 * d01;
-
-    if (denom == 0.0f)
-        return false;
-
-    float v = (d11 * d20 - d01 * d21) / denom;
-    float w = (d00 * d21 - d01 * d20) / denom;
-    float u = 1.0f - v - w;
-
-    if (u < 0 || v < 0 || w < 0)
-        return false;
-
-    bary = float3(u, v, w);
-    return true;
 }
 
 [numthreads(64, 1, 1)]
@@ -80,10 +77,11 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
     uint i1 = indices[index + 1];
     uint i2 = indices[index + 2];
 
+    if (i0 >= vertexCount || i1 >= vertexCount || i2 >= vertexCount)
+        return;
     //float3 v0 = vertices[i0];
     //float3 v1 = vertices[i1];
     //float3 v2 = vertices[i2];
-
     float2 uv0 = uvs[i0];
     float2 uv1 = uvs[i1];
     float2 uv2 = uvs[i2];
@@ -112,14 +110,21 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
     int2 minP = clamp(int2(minX, minY), int2(0, 0), int2(texWidth - 1, texHeight - 1));
     int2 maxP = clamp(int2(maxX, maxY), int2(0, 0), int2(texWidth - 1, texHeight - 1));
 
-    for (int y = minP.y; y < maxP.y; y++)
+    for (int y = minP.y; y <= maxP.y; y++)
     {
-        for (int x = minP.x; x < maxP.x; x++)
+        for (int x = minP.x; x <= maxP.x; x++)
         {
             uint2 xy = uint2(x, y);
-            float3 bary;
-            if (!ComputeBarycentric(float2(xy) + float2(0.5f, 0.5f), p0, p1, p2, bary))
+            float2 p = float2(xy) + float2(0.5f, 0.5f);
+            if (!InsideTriangle(p, p0, p1, p2))
                 continue;
+            float area = EdgeFunction(p0, p1, p2);
+            if (abs(area) < 1e-6)
+                return;
+            float w0 = EdgeFunction(p1, p2, p);
+            float w1 = EdgeFunction(p2, p0, p);
+            float w2 = EdgeFunction(p0, p1, p);
+            float3 bary = float3(w0, w1, w2) / area;
 
             float2 uv = float2(xy) / float2(texWidth, texHeight);
 

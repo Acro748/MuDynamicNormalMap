@@ -81,13 +81,13 @@ namespace Mus {
 			Microsoft::WRL::ComPtr<ID3D11Device> secondDevice_;
 			bool isSearchSecondGPU = true;
 
-			concurrency::concurrent_unordered_map<std::string, ComputeShader> computeShaders;
-			concurrency::concurrent_unordered_map<std::string, VertexShader> vertexShaders;
-			concurrency::concurrent_unordered_map<std::string, PixelShader> pixelShaders;
+			tbb::concurrent_unordered_map<std::string, ComputeShader> computeShaders;
+			tbb::concurrent_unordered_map<std::string, VertexShader> vertexShaders;
+			tbb::concurrent_unordered_map<std::string, PixelShader> pixelShaders;
 
-			concurrency::concurrent_unordered_map<std::string, Blob> csBlobs;
-			concurrency::concurrent_unordered_map<std::string, Blob> vsBlobs;
-			concurrency::concurrent_unordered_map<std::string, Blob> psBlobs;
+			tbb::concurrent_unordered_map<std::string, Blob> csBlobs;
+			tbb::concurrent_unordered_map<std::string, Blob> vsBlobs;
+			tbb::concurrent_unordered_map<std::string, Blob> psBlobs;
 
 			std::unordered_set<std::string> failedList;
 		};
@@ -349,7 +349,7 @@ namespace Mus {
 			bool ConvertD3D11(ID3D11Device* device, DirectX::ScratchImage& image, bool cpuReadable, Microsoft::WRL::ComPtr<ID3D11Resource>& output);
             bool UpdateNiTexture(const std::string& filePath);
 
-			concurrency::concurrent_unordered_map<std::string, RE::NiPointer<RE::NiSourceTexture>> niTextures;
+			tbb::concurrent_unordered_map<std::string, RE::NiPointer<RE::NiSourceTexture>> niTextures;
 		};
 	}
 }

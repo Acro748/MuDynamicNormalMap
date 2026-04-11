@@ -18,10 +18,11 @@
         "xxhash",
         "directxtk",
         "directxtex",
-        "lz4"
+        "lz4",
+        "tbb"
       ]
     }
   },
   "default-features": [ "plugin" ],
-  "builtin-baseline": "53bef8994c541b6561884a8395ea35715ece75db"
+  "builtin-baseline": "4b77da7fed37817f124936239197833469f1b9a8"
 }

@@ -174,7 +174,7 @@ namespace Mus {
                 blockActors.clear();
             }
 
-			backGroundHasherThreads->submitAsync([&, actorHashFunc, funcName]() {
+			backGroundWorkerThreads->submitAsync([&, actorHashFunc, funcName]() {
 				isDetecting.store(true);
 				{
                     std::lock_guard lg(actorHashLock);
@@ -202,8 +202,8 @@ namespace Mus {
 				PerformanceLog(std::string(__func__), false, true);
 
             std::lock_guard lg(actorHashLock);
-            concurrency::concurrent_vector<RE::FormID> garbages;
-            concurrency::parallel_for_each(actorHash.begin(), actorHash.end(), [&](auto& map) {
+            tbb::concurrent_vector<RE::FormID> garbages;
+            tbb::parallel_for_each(actorHash, [&](auto& map) {
 				if (!actorHashFunc(map.first, map.second))
                     garbages.push_back(map.first);
 			});

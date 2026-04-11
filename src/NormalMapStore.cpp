@@ -8,7 +8,7 @@ namespace Mus {
 			return;
 		lastTickTime = currentTime;
 
-		memoryManageThreads->submitAsync([&] {
+		backGroundWorkerThreads->submitAsync([&] {
 			ClearMemory();
 		});
 	}
