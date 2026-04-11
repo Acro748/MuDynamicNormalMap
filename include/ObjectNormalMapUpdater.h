@@ -199,7 +199,7 @@ namespace Mus {
 
             UINT tangentZCorrection;
             float detailStrength;
-            UINT vertexCount;
+            UINT vertexEnd;
             UINT padding1;
         };
         static_assert(sizeof(UpdateNormalMapBufferData) % 16 == 0, "Constant buffer must be 16-byte aligned.");

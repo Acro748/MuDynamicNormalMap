@@ -12,7 +12,7 @@ cbuffer ConstBuffer : register(b0)
 
     uint tangentZCorrection;
     float detailStrength;
-    uint vertexCount;
+    uint vertexEnd;
     uint padding1;
 };
 
@@ -77,11 +77,12 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
     uint i1 = indices[index + 1];
     uint i2 = indices[index + 2];
 
-    if (i0 >= vertexCount || i1 >= vertexCount || i2 >= vertexCount)
+    if (i0 >= vertexEnd || i1 >= vertexEnd || i2 >= vertexEnd)
         return;
     //float3 v0 = vertices[i0];
     //float3 v1 = vertices[i1];
     //float3 v2 = vertices[i2];
+
     float2 uv0 = uvs[i0];
     float2 uv1 = uvs[i1];
     float2 uv2 = uvs[i2];
