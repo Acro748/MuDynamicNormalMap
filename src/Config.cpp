@@ -712,7 +712,7 @@ namespace Mus {
                 }
             }
             eCoreCount = std::popcount(coreMask);
-            if (coreMask == 0 || eCoreCount == 0)
+            if (coreMask == 0 || eCoreCount == 0 || eCoreCount == coreCount)
             {
                 coreMask = 0;
                 usePCores = true;
