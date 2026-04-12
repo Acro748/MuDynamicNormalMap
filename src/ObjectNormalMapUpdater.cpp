@@ -2599,17 +2599,15 @@ namespace Mus {
 			bc7Buffers[mipLevel].resize(static_cast<const std::size_t>(bc7Width) * bc7Height * 16);
             rowPitches[mipLevel] = bc7Width * 16;
 
-            std::vector<std::uint32_t> pixelBuffer(bc7Width * bc7Height * 16);
             std::uint8_t* srcData = mg.Get<std::uint8_t>();
             const UINT rowPitch = mg.GetRowPitch();
 
             tp->Execute([&] {
                 tbb::parallel_for(
-                    tbb::blocked_range<UINT>(0, bc7Width),
+                    tbb::blocked_range<UINT>(0, bc7Height),
                     [&](const tbb::blocked_range<UINT>& r) {
                         const std::uint32_t blockCount = (r.end() - r.begin()) * bc7Width;
-                        std::vector<std::uint32_t> pixelsLocal;
-                        pixelsLocal.resize(blockCount * 16);
+                        std::vector<std::uint32_t> pixelsLocal(blockCount * 16);
                         std::uint32_t* pixels = pixelsLocal.data();
                         std::size_t pixelIndex = 0;
                         std::uint64_t* dstBlocks = reinterpret_cast<std::uint64_t*>(bc7Buffers[mipLevel].data()) + (r.begin() * bc7Width * 2);
