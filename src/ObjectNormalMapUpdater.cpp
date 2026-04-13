@@ -586,7 +586,7 @@ namespace Mus {
                 PerformanceLog(std::string(_func_) + "::" + GetHexStr(a_actorID) + "::" + update.second.geometryName, true, false);
 
             const std::uint32_t totalTris = objInfo.indicesCount() / 3;
-            const std::uint32_t vertexEnd = objInfo.vertexEnd;
+            const std::uint32_t vertexEnd = a_data->vertices.size();
 
             const float WidthF = static_cast<const float>(width);
             const float HeightF = static_cast<const float>(height);
@@ -983,7 +983,7 @@ namespace Mus {
             cbData.hasMaskTexture = newResourceData->maskShaderResourceView ? 1 : 0;
             cbData.tangentZCorrection = tangentZCorrection ? 1 : 0;
             cbData.detailStrength = update.second.detailStrength;
-            cbData.vertexEnd = objInfo.vertexEnd;
+            cbData.vertexEnd = a_data->vertices.size();
             
             const std::uint32_t totalTris = objInfo.indicesCount() / 3;
             if (sl.IsSecondGPU() || isNoSplitGPU)
