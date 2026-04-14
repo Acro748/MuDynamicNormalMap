@@ -1145,7 +1145,7 @@ namespace Mus {
 
                             if (!stringStartsWith(texturePath, "Textures\\"))
                                 texturePath = GetRuntimeTexturesDirectory() + texturePath;
-                            else if (stringStartsWith(texturePath, "Data\\"))
+                            else if (!stringStartsWith(texturePath, "Data\\"))
                                 texturePath = GetRuntimeDataDirectory() + texturePath;
 
                             if (Shader::TextureLoadManager::GetSingleton().PrintTexture(texturePath, texture.Get()))

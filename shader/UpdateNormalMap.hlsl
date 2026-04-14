@@ -45,15 +45,32 @@ bool IsTopLeft(float2 a, float2 b)
 
 bool InsideTriangle(float2 p, float2 p0, float2 p1, float2 p2)
 {
-    float w0 = EdgeFunction(p1, p2, p);
-    float w1 = EdgeFunction(p2, p0, p);
-    float w2 = EdgeFunction(p0, p1, p);
+    float area = EdgeFunction(p0, p1, p2);
+    if (area > 0) // CCW
+    {
+        float w0 = EdgeFunction(p1, p2, p);
+        float w1 = EdgeFunction(p2, p0, p);
+        float w2 = EdgeFunction(p0, p1, p);
 
-    bool e0 = (w0 > 0) || (w0 == 0 && IsTopLeft(p1, p2));
-    bool e1 = (w1 > 0) || (w1 == 0 && IsTopLeft(p2, p0));
-    bool e2 = (w2 > 0) || (w2 == 0 && IsTopLeft(p0, p1));
+        bool e0 = (w0 > 0) || (w0 == 0 && IsTopLeft(p1, p2));
+        bool e1 = (w1 > 0) || (w1 == 0 && IsTopLeft(p2, p0));
+        bool e2 = (w2 > 0) || (w2 == 0 && IsTopLeft(p0, p1));
 
-    return e0 && e1 && e2;
+        return e0 && e1 && e2;
+    }
+    else if (area < 0) // CW
+    {
+        float w0 = EdgeFunction(p2, p1, p);
+        float w1 = EdgeFunction(p0, p2, p);
+        float w2 = EdgeFunction(p1, p0, p);
+
+        bool e0 = (w0 > 0) || (w0 == 0 && IsTopLeft(p2, p1));
+        bool e1 = (w1 > 0) || (w1 == 0 && IsTopLeft(p0, p2));
+        bool e2 = (w2 > 0) || (w2 == 0 && IsTopLeft(p1, p0));
+
+        return e0 && e1 && e2;
+    }
+    return false;
 }
 
 float3 SlerpVector(float3 a, float3 b, float t)
@@ -166,7 +183,8 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
                         float3 b = SlerpVector(b01, b2, bary.z);
 
                         float3 ft = normalize(t - n * dot(n, t));
-                        float3 fb = normalize(cross(n, ft));
+                        float handedness = dot(cross(n, t), b) < 0.0f ? -1.0f : 1.0f;
+                        float3 fb = normalize(cross(n, ft)) * handedness;
                         float3x3 tbn = float3x3(ft, fb, n);
 
                         float3 srcN = float3(detailColor.rgb * 2.0f - 1.0f);
