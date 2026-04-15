@@ -583,115 +583,48 @@ namespace Mus {
 
         isSecondGPUEnabled = Config::GetSingleton().GetGPUDeviceIndex() != 0 && Shader::ShaderManager::GetSingleton().IsValidSecondGPU();
 
-        const std::int32_t coreCount = std::thread::hardware_concurrency();
-        std::int32_t actorThreadCount = 1;
-        std::int32_t memoryManageThreadCount = 1;
-        std::int32_t processingThreadCount = coreCount / 2;
-        std::int32_t gpuTaskThreadCount = 1;
-        isNoSplitGPU = false;
-        isImmediately = false;
-        std::clock_t taskQTickMS = 1000.0f;
-        bool directTaskQ = false;
-        bool usePCores = false;
-        switch (Config::GetSingleton().GetAutoTaskQ())
-        {
-        case Config::AutoTaskQList::Immediately:
-            taskQTickMS = 0;
-            directTaskQ = true;
-            divideTaskQ = 0;
-
-            isNoSplitGPU = true;
-            isImmediately = true;
-
-            waitSleepTime = std::chrono::microseconds(100);
-
-            actorThreadCount = 4;
-            processingThreadCount = coreCount;
-            usePCores = true;
-            gpuTaskThreadCount = 4;
-            break;
-        case Config::AutoTaskQList::Fastest:
-            taskQTickMS = 0;
-            directTaskQ = true;
-            divideTaskQ = 0;
-
-            isNoSplitGPU = true;
-            isImmediately = false;
-
-            waitSleepTime = std::chrono::microseconds(100);
-
-            actorThreadCount = 1;
-            processingThreadCount = coreCount;
-            usePCores = true;
-            gpuTaskThreadCount = 1;
-            break;
-        case Config::AutoTaskQList::Faster:
-            taskQTickMS = 0;
-            directTaskQ = true;
-            divideTaskQ = 0;
-
-            isNoSplitGPU = true;
-            isImmediately = false;
-
-            waitSleepTime = std::chrono::microseconds(100);
-
-            actorThreadCount = 1;
-            processingThreadCount = std::max(4, coreCount / 2);
-            usePCores = !Config::GetSingleton().GetEcoreUse();
-            gpuTaskThreadCount = 1;
-            break;
-        default:
-        case Config::AutoTaskQList::Balanced:
-            taskQTickMS = Config::GetSingleton().GetTaskQTickMS();
-            directTaskQ = true;
-            divideTaskQ = 0;
-
-            isNoSplitGPU = false;
-            isImmediately = false;
-
-            waitSleepTime = std::chrono::microseconds(1000);
-
-            actorThreadCount = 1;
-            processingThreadCount = std::max(4, coreCount / 2);
-            usePCores = !Config::GetSingleton().GetEcoreUse();
-            gpuTaskThreadCount = 1;
-            break;
-        case Config::AutoTaskQList::BetterPerformance:
-            taskQTickMS = Config::GetSingleton().GetTaskQTickMS();
-            directTaskQ = false;
-            divideTaskQ = 0;
-
-            isNoSplitGPU = false;
-            isImmediately = false;
-
-            waitSleepTime = std::chrono::microseconds(1000);
-
-            actorThreadCount = 1;
-            processingThreadCount = std::max(2, std::min(4, coreCount / 2));
-            usePCores = !Config::GetSingleton().GetEcoreUse();
-            gpuTaskThreadCount = 1;
-            break;
-        case Config::AutoTaskQList::BestPerformance:
-            taskQTickMS = Config::GetSingleton().GetTaskQTickMS();
-            directTaskQ = false;
-            divideTaskQ = 1;
-
-            isNoSplitGPU = false;
-            isImmediately = false;
-
-            waitSleepTime = std::chrono::microseconds(1000);
-
-            actorThreadCount = 1;
-            processingThreadCount = 2;
-            usePCores = !Config::GetSingleton().GetEcoreUse();
-            gpuTaskThreadCount = 1;
-            break;
-        }
-
-        std::uint64_t coreMask = 0;
-        if (!usePCores)
-        {
-            std::int32_t eCoreCount = 0;
+        const std::uint32_t totalCoreCount = std::thread::hardware_concurrency();
+        auto getPCores = [](std::uint32_t& cores, std::uint64_t& coreMask) {
+            cores = 0;
+            coreMask = 0;
+            DWORD len = 0;
+            GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &len);
+            std::vector<BYTE> buffer(len);
+            if (GetLogicalProcessorInformationEx(RelationProcessorCore, reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buffer.data()), &len))
+            {
+                BYTE* ptr = buffer.data();
+                BYTE maxEfficiency = 0;
+                while (ptr < buffer.data() + len)
+                {
+                    auto info = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(ptr);
+                    if (info->Relationship == RelationProcessorCore)
+                    {
+                        if (info->Processor.EfficiencyClass > maxEfficiency)
+                        {
+                            maxEfficiency = info->Processor.EfficiencyClass;
+                        }
+                    }
+                    ptr += info->Size;
+                }
+                ptr = buffer.data();
+                while (ptr < buffer.data() + len)
+                {
+                    auto info = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(ptr);
+                    if (info->Relationship == RelationProcessorCore)
+                    {
+                        if (info->Processor.EfficiencyClass == maxEfficiency)
+                        {
+                            coreMask |= info->Processor.GroupMask[0].Mask;
+                        }
+                    }
+                    ptr += info->Size;
+                }
+            }
+            cores = std::popcount(coreMask);
+        };
+        auto getECores = [totalCoreCount](std::uint32_t& cores, std::uint64_t& coreMask) {
+            cores = 0;
+            coreMask = 0;
             DWORD len = 0;
             GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &len);
             std::vector<BYTE> buffer(len);
@@ -711,30 +644,183 @@ namespace Mus {
                     ptr += info->Size;
                 }
             }
-            eCoreCount = std::popcount(coreMask);
-            if (coreMask == 0 || eCoreCount == 0 || eCoreCount == coreCount)
+            cores = std::popcount(coreMask);
+            if (coreMask == 0 || cores == 0 || cores == totalCoreCount)
             {
                 coreMask = 0;
-                usePCores = true;
+                cores = 0;
             }
-            else
+        };
+
+        std::uint32_t actorThreadCount = 1;
+        std::uint32_t memoryManageThreadCount = 1;
+        std::uint32_t processingThreadCount = totalCoreCount / 2;
+        std::uint32_t gpuTaskThreadCount = 1;
+        std::uint32_t cores = 0;
+        std::uint64_t coreMask = 0;
+        isNoSplitGPU = false;
+        isImmediately = false;
+        std::clock_t taskQTickMS = 1000.0f;
+        bool directTaskQ = false;
+        bool usePCores = false;
+        bool useECores = false;
+        switch (Config::GetSingleton().GetAutoTaskQ())
+        {
+        case Config::AutoTaskQList::Immediately:
+            taskQTickMS = 0;
+            directTaskQ = true;
+            divideTaskQ = 0;
+
+            isNoSplitGPU = true;
+            isImmediately = true;
+
+            waitSleepTime = std::chrono::microseconds(100);
+
+            actorThreadCount = 4;
+            getPCores(cores, coreMask);
+            processingThreadCount = cores;
+            usePCores = true;
+            useECores = false;
+            gpuTaskThreadCount = 4;
+            break;
+        case Config::AutoTaskQList::Fastest:
+            taskQTickMS = 0;
+            directTaskQ = true;
+            divideTaskQ = 0;
+
+            isNoSplitGPU = true;
+            isImmediately = false;
+
+            waitSleepTime = std::chrono::microseconds(100);
+
+            actorThreadCount = 1;
+            usePCores = !Config::GetSingleton().GetEcoreUse();
+            useECores = Config::GetSingleton().GetEcoreUse();
+            if (useECores)
+                getECores(cores, coreMask);
+            if (cores == 0)
             {
-                actorThreadCount = std::min(actorThreadCount, eCoreCount);
-                memoryManageThreadCount = std::min(memoryManageThreadCount, eCoreCount);
-                processingThreadCount = eCoreCount;
+                getPCores(cores, coreMask);
+                usePCores = true;
+                useECores = false;
             }
+            processingThreadCount = cores;
+            gpuTaskThreadCount = 1;
+            break;
+        case Config::AutoTaskQList::Faster:
+            taskQTickMS = 0;
+            directTaskQ = true;
+            divideTaskQ = 0;
+
+            isNoSplitGPU = true;
+            isImmediately = false;
+
+            waitSleepTime = std::chrono::microseconds(100);
+
+            actorThreadCount = 1;
+            usePCores = !Config::GetSingleton().GetEcoreUse();
+            useECores = Config::GetSingleton().GetEcoreUse();
+            if (useECores)
+                getECores(cores, coreMask);
+            if (cores == 0)
+            {
+                getPCores(cores, coreMask);
+                usePCores = true;
+                useECores = false;
+            }
+            processingThreadCount = std::max(4u, cores / 2);
+            gpuTaskThreadCount = 1;
+            break;
+        default:
+        case Config::AutoTaskQList::Balanced:
+            taskQTickMS = Config::GetSingleton().GetTaskQTickMS();
+            directTaskQ = true;
+            divideTaskQ = 0;
+
+            isNoSplitGPU = false;
+            isImmediately = false;
+
+            waitSleepTime = std::chrono::microseconds(1000);
+
+            actorThreadCount = 1;
+            usePCores = !Config::GetSingleton().GetEcoreUse();
+            useECores = Config::GetSingleton().GetEcoreUse();
+            if (useECores)
+                getECores(cores, coreMask);
+            if (cores == 0)
+            {
+                getPCores(cores, coreMask);
+                usePCores = true;
+                useECores = false;
+            }
+            processingThreadCount = std::max(4u, cores / 2);
+            gpuTaskThreadCount = 1;
+            break;
+        case Config::AutoTaskQList::BetterPerformance:
+            taskQTickMS = Config::GetSingleton().GetTaskQTickMS();
+            directTaskQ = false;
+            divideTaskQ = 0;
+
+            isNoSplitGPU = false;
+            isImmediately = false;
+
+            waitSleepTime = std::chrono::microseconds(1000);
+
+            actorThreadCount = 1;
+            usePCores = !Config::GetSingleton().GetEcoreUse();
+            useECores = Config::GetSingleton().GetEcoreUse();
+            if (useECores)
+                getECores(cores, coreMask);
+            if (cores == 0)
+            {
+                getPCores(cores, coreMask);
+                usePCores = true;
+                useECores = false;
+            }
+            processingThreadCount = std::max(2u, std::min(4u, cores / 2));
+            gpuTaskThreadCount = 1;
+            break;
+        case Config::AutoTaskQList::BestPerformance:
+            taskQTickMS = Config::GetSingleton().GetTaskQTickMS();
+            directTaskQ = false;
+            divideTaskQ = 1;
+
+            isNoSplitGPU = false;
+            isImmediately = false;
+
+            waitSleepTime = std::chrono::microseconds(1000);
+
+            actorThreadCount = 1;
+            usePCores = !Config::GetSingleton().GetEcoreUse();
+            useECores = Config::GetSingleton().GetEcoreUse();
+            if (useECores)
+                getECores(cores, coreMask);
+            if (cores == 0)
+            {
+                getPCores(cores, coreMask);
+                usePCores = true;
+                useECores = false;
+            }
+            processingThreadCount = 2;
+            gpuTaskThreadCount = 1;
+            break;
         }
 
+        std::string whatCores = "all Cores";
+        if (usePCores)
+            whatCores = "all P-Cores";
+        else if (useECores)
+            whatCores = "all E-Cores";
         gpuTask = std::make_unique<ThreadPool_GPUTaskModule>(gpuTaskThreadCount, coreMask, taskQTickMS, directTaskQ);
 
         actorThreads = std::make_shared<ThreadPool_ParallelModule>(actorThreadCount, coreMask);
-        actorThreadsFull = std::make_shared<ThreadPool_ParallelModule>(4, 0);
-        logger::info("set actorThreads {} on {}", actorThreadCount, usePCores ? "all cores" : "all E-cores");
+        actorThreadsFull = std::make_shared<ThreadPool_ParallelModule>(4, coreMask);
+        logger::info("set actorThreads {} on {}", actorThreadCount, whatCores);
         currentActorThreads = actorThreads;
 
         processingThreads = std::make_shared<TBB_ThreadPool>(processingThreadCount, coreMask);
-        processingThreadsFull = std::make_shared<TBB_ThreadPool>(coreCount, 0);
-        logger::info("set processingThreads {} on {}", processingThreadCount, usePCores ? "all cores" : "all E-cores");
+        processingThreadsFull = std::make_shared<TBB_ThreadPool>(cores, coreMask);
+        logger::info("set processingThreads {} on {}", processingThreadCount, whatCores);
         currentProcessingThreads = processingThreads;
 
         backGroundWorkerThreads = std::make_unique<ThreadPool_ParallelModule>(1u, coreMask);
