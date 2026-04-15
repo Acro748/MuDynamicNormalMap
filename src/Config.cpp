@@ -637,7 +637,7 @@ namespace Mus {
 
             actorThreadCount = 1;
             processingThreadCount = std::max(4, coreCount / 2);
-            usePCores = false;
+            usePCores = !Config::GetSingleton().GetEcoreUse();
             gpuTaskThreadCount = 1;
             break;
         default:
@@ -653,7 +653,7 @@ namespace Mus {
 
             actorThreadCount = 1;
             processingThreadCount = std::max(4, coreCount / 2);
-            usePCores = false;
+            usePCores = !Config::GetSingleton().GetEcoreUse();
             gpuTaskThreadCount = 1;
             break;
         case Config::AutoTaskQList::BetterPerformance:
@@ -668,7 +668,7 @@ namespace Mus {
 
             actorThreadCount = 1;
             processingThreadCount = std::max(2, std::min(4, coreCount / 2));
-            usePCores = false;
+            usePCores = !Config::GetSingleton().GetEcoreUse();
             gpuTaskThreadCount = 1;
             break;
         case Config::AutoTaskQList::BestPerformance:
@@ -683,7 +683,7 @@ namespace Mus {
 
             actorThreadCount = 1;
             processingThreadCount = 2;
-            usePCores = false;
+            usePCores = !Config::GetSingleton().GetEcoreUse();
             gpuTaskThreadCount = 1;
             break;
         }
