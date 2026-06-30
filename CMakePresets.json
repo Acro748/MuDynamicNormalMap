@@ -1,20 +1,20 @@
 {
-    "version": 3,
-    "cmakeMinimumRequired": {
-        "major": 3,
-        "minor": 21,
-        "patch": 0
-    },
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
   "configurePresets": [
     {
-      "binaryDir": "${sourceDir}/build",
+      "name": "common",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "SKSE_SUPPORT_XBYAK": "ON",
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_CONFIGURATION_TYPES": "Release"
-      },
-      "hidden": true,
-      "name": "common"
+      }
     },
     {
       "name": "vcpkg",
@@ -36,7 +36,7 @@
       "hidden": true,
       "architecture": "x64",
       "cacheVariables": {
-        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
       }
     },
     {
@@ -54,122 +54,40 @@
         }
       }
     },
-
     {
-      "name": "runtimes-ng",
-      "hidden": true
-    },
-    {
-      "name": "runtimes-vr",
+      "name": "flat",
       "hidden": true,
       "cacheVariables": {
-        "ENABLE_SKYRIM_AE": "OFF",
-        "ENABLE_SKYRIM_SE": "OFF"
+        "ENABLE_SKYRIM_VR": "OFF",
+        "VCPKG_MANIFEST_DIR": "${sourceDir}/manifests/flatrim"
       }
     },
     {
-      "name": "runtimes-flatrim",
+      "name": "vr",
       "hidden": true,
       "cacheVariables": {
-        "ENABLE_SKYRIM_VR": "OFF"
+        "ENABLE_SKYRIM_VR": "ON",
+        "VCPKG_MANIFEST_DIR": "${sourceDir}/manifests/vr"
       }
     },
     {
-      "name": "runtimes-se",
-      "hidden": true,
-      "cacheVariables": {
-        "ENABLE_SKYRIM_AE": "OFF",
-        "ENABLE_SKYRIM_VR": "OFF"
-      }
-    },
-    {
-      "name": "runtimes-ae",
-      "hidden": true,
-      "cacheVariables": {
-        "ENABLE_SKYRIM_SE": "OFF",
-        "ENABLE_SKYRIM_VR": "OFF"
-      }
-    },
-    {
-      "name": "runtimes-pre-ae",
-      "hidden": true,
-      "cacheVariables": {
-        "ENABLE_SKYRIM_AE": "OFF"
-      }
-    },
-    {
-      "name": "AE",
-      "hidden": true,
+      "name": "Release-Flatrim",
       "inherits": [
         "common",
         "vcpkg",
         "x64",
         "msvc",
-        "runtimes-ae"
+        "flat"
       ]
     },
     {
-      "name": "SE",
-      "hidden": true,
+      "name": "Release-VR",
       "inherits": [
         "common",
         "vcpkg",
         "x64",
         "msvc",
-        "runtimes-se"
-      ]
-    },
-    {
-      "name": "VR",
-      "hidden": true,
-      "inherits": [
-        "common",
-        "vcpkg",
-        "x64",
-        "msvc",
-        "runtimes-vr"
-      ]
-    },
-    {
-      "name": "NG",
-      "hidden": true,
-      "inherits": [
-        "common",
-        "vcpkg",
-        "x64",
-        "msvc",
-        "runtimes-ng"
-      ]
-    },
-    {
-      "name": "PRE-AE",
-      "hidden": true,
-      "inherits": [
-        "common",
-        "vcpkg",
-        "x64",
-        "msvc",
-        "runtimes-pre-ae"
-      ]
-    },
-    {
-      "name": "FLATRIM",
-      "hidden": true,
-      "inherits": [
-        "common",
-        "vcpkg",
-        "x64",
-        "msvc",
-        "runtimes-flatrim"
-      ]
-    },
-    {
-      "name": "Release",
-      "inherits": [
-        "common",
-        "vcpkg",
-        "x64",
-        "msvc"
+        "vr"
       ]
     }
   ]

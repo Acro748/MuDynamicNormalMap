@@ -43,46 +43,6 @@ bool IsTopLeft(float2 a, float2 b)
     return (e.y > 0) || (e.y == 0 && e.x < 0);
 }
 
-bool InsideTriangle(float2 p, float2 p0, float2 p1, float2 p2)
-{
-    float area = EdgeFunction(p0, p1, p2);
-    if (area > 0) // CCW
-    {
-        float w0 = EdgeFunction(p1, p2, p);
-        float w1 = EdgeFunction(p2, p0, p);
-        float w2 = EdgeFunction(p0, p1, p);
-
-        bool e0 = (w0 > 0) || (w0 == 0 && IsTopLeft(p1, p2));
-        bool e1 = (w1 > 0) || (w1 == 0 && IsTopLeft(p2, p0));
-        bool e2 = (w2 > 0) || (w2 == 0 && IsTopLeft(p0, p1));
-
-        return e0 && e1 && e2;
-    }
-    else if (area < 0) // CW
-    {
-        float w0 = EdgeFunction(p2, p1, p);
-        float w1 = EdgeFunction(p0, p2, p);
-        float w2 = EdgeFunction(p1, p0, p);
-
-        bool e0 = (w0 > 0) || (w0 == 0 && IsTopLeft(p2, p1));
-        bool e1 = (w1 > 0) || (w1 == 0 && IsTopLeft(p0, p2));
-        bool e2 = (w2 > 0) || (w2 == 0 && IsTopLeft(p1, p0));
-
-        return e0 && e1 && e2;
-    }
-    return false;
-}
-
-float3 SlerpVector(float3 a, float3 b, float t)
-{
-    a = normalize(a);
-    b = normalize(b);
-    float dotAB = clamp(dot(a, b), -1.0f, 1.0f);
-    float theta = acos(dotAB) * t;
-    float3 relVec = normalize(b - a * dotAB);
-    return normalize(a * cos(theta) + relVec * sin(theta));
-}
-
 [numthreads(64, 1, 1)]
 void CSMain(uint3 threadID : SV_DispatchThreadID)
 {
@@ -120,41 +80,70 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
     float2 p1 = uv1 * float2(texWidth, texHeight);
     float2 p2 = uv2 * float2(texWidth, texHeight);
 
+    float area = EdgeFunction(p0, p1, p2);
+    if (abs(area) < 1e-6)
+        return;
+	float invArea = rcp(area);
+	bool isCCW = area > 0.0f;
+
     float minX = floor(min(min(p0.x, p1.x), p2.x));
     float minY = floor(min(min(p0.y, p1.y), p2.y));
     float maxX = ceil(max(max(p0.x, p1.x), p2.x));
     float maxY = ceil(max(max(p0.y, p1.y), p2.y));
 
-    int2 minP = clamp(int2(minX, minY), int2(0, 0), int2(texWidth - 1, texHeight - 1));
-    int2 maxP = clamp(int2(maxX, maxY), int2(0, 0), int2(texWidth - 1, texHeight - 1));
+    float2 minBB = min(p0, min(p1, p2));
+    float2 maxBB = max(p0, max(p1, p2));
+    int2 minP = (int2)floor(minBB);
+    int2 maxP = (int2)ceil(maxBB);
+    if (any((maxP - minP) >= int2(texWidth * 2, texHeight * 2)))
+        return;
+
+    float2 invTexSize = rcp(float2(texWidth, texHeight));
 
     for (int y = minP.y; y <= maxP.y; y++)
     {
         for (int x = minP.x; x <= maxP.x; x++)
         {
-            uint2 xy = uint2(x, y);
-            float2 p = float2(xy) + float2(0.5f, 0.5f);
-            if (!InsideTriangle(p, p0, p1, p2))
-                continue;
-            float area = EdgeFunction(p0, p1, p2);
-            if (abs(area) < 1e-6)
-                return;
+            float2 xy = float2((float)x, (float)y);
+            float2 p = xy + float2(0.5f, 0.5f);
+
             float w0 = EdgeFunction(p1, p2, p);
             float w1 = EdgeFunction(p2, p0, p);
             float w2 = EdgeFunction(p0, p1, p);
-            float3 bary = float3(w0, w1, w2) / area;
 
-            float2 uv = float2(xy) / float2(texWidth, texHeight);
+            if (isCCW)
+            {
+                if (!(w0 > 0 || (w0 == 0 && IsTopLeft(p1, p2)))) 
+                    continue;
+                if (!(w1 > 0 || (w1 == 0 && IsTopLeft(p2, p0)))) 
+                    continue;
+                if (!(w2 > 0 || (w2 == 0 && IsTopLeft(p0, p1)))) 
+                    continue;
+            }
+            else
+            {
+                float cw0 = -w0;
+                float cw1 = -w1;
+                float cw2 = -w2;
+                if (!(cw0 > 0 || (cw0 == 0 && IsTopLeft(p2, p1)))) 
+                    continue;
+                if (!(cw1 > 0 || (cw1 == 0 && IsTopLeft(p0, p2)))) 
+                    continue;
+                if (!(cw2 > 0 || (cw2 == 0 && IsTopLeft(p1, p0))))
+                    continue;
+			}
 
+            float3 bary = float3(w0, w1, w2) * invArea;
+            float2 uv = xy * invTexSize;
             float4 dstColor = float4(0.0f, 0.0f, 0.0f, 1.0f);
             float4 overlayColor = float4(1.0f, 1.0f, 1.0f, 0.0f);
             if (hasOverlayTexture > 0)
             {
                 overlayColor = overlayTexture.SampleLevel(samplerState, uv, 0);
             }
-
             if (overlayColor.a < 1.0f)
             {
+                float3 n = normalize(n0 * bary.x + n1 * bary.y + n2 * bary.z);
                 float4 maskColor = float4(0.5f, 0.5f, 0.5f, 0.0f);
                 if (hasMaskTexture > 0 && hasSrcTexture > 0)
                 {
@@ -162,10 +151,6 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
                 }
                 if (maskColor.a < 1.0f)
                 {
-                    float denormal = bary.x + bary.y + 1e-6f;
-                    float3 n01 = SlerpVector(n0, n1, bary.y / denormal);
-                    float3 n = SlerpVector(n01, n2, bary.z);
-
                     float4 detailColor = float4(0.5f, 0.5f, 1.0f, 0.5f);
                     if (hasDetailTexture > 0)
                     {
@@ -176,11 +161,8 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
                     float3 normalResult;
                     if (detailColor.a > 0.0f)
                     {
-                        float3 t01 = SlerpVector(t0, t1, bary.y / denormal);
-                        float3 t = SlerpVector(t01, t2, bary.z);
-
-                        float3 b01 = SlerpVector(b0, b1, bary.y / denormal);
-                        float3 b = SlerpVector(b01, b2, bary.z);
+                        float3 t = normalize(t0 * bary.x + t1 * bary.y + t2 * bary.z);
+                        float3 b = normalize(b0 * bary.x + b1 * bary.y + b2 * bary.z);
 
                         float3 ft = normalize(t - n * dot(n, t));
                         float handedness = dot(cross(n, t), b) < 0.0f ? -1.0f : 1.0f;
@@ -210,13 +192,15 @@ void CSMain(uint3 threadID : SV_DispatchThreadID)
 					dstColor.rgb = lerp(dstColor.rgb, srcColor.rgb, maskColor.a);
                 }
             }
-
             if (overlayColor.a > 0.0f)
             {
                 dstColor.rgb = lerp(dstColor.rgb, overlayColor.rgb, overlayColor.a);
             }
 
-            dstTexture[xy] = float4(dstColor.rgb, 1.0f);
+            uint wrapX = (uint)x & (texWidth - 1);
+            uint wrapY = (uint)y & (texHeight - 1);
+            uint2 wrapXY = uint2(wrapX, wrapY);
+            dstTexture[wrapXY] = float4(dstColor.rgb, 1.0f);
         }
     }
 }

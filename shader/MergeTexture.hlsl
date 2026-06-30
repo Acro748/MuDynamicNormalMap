@@ -13,7 +13,7 @@ RWTexture2D<float4> dstTexture : register(u0);
 void CSMain(uint3 threadID : SV_DispatchThreadID)
 {
     int2 coord = int2(threadID.xy) + int2(widthStart, heightStart);
-    if (coord.x >= (int)texWidth || coord.y >= (int)texHeight)
+    if (any(coord >= int2(texWidth, texHeight)))
         return;
     float4 orgColor = dstTexture[coord];
     if (orgColor.a == 1.0f)

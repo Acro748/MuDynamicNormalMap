@@ -107,6 +107,8 @@ namespace Mus {
                     continue;
                 if (mergeTexture[i] = Shader::ShaderManager::GetSingleton().GetComputeShader(device, MergeTextureShaderName.data()); !mergeTexture[i])
                     continue;
+                if (bleedTexture[i] = Shader::ShaderManager::GetSingleton().GetComputeShader(device, BleedTextureShaderName.data()); !bleedTexture[i])
+                    continue;
                 if (generateMips[i] = Shader::ShaderManager::GetSingleton().GetComputeShader(device, GenerateMipsShaderName.data()); !generateMips[i])
                     continue;
 
@@ -642,14 +644,15 @@ namespace Mus {
                             const DirectX::XMINT2 p1 = {static_cast<int>(u1.x * width), static_cast<int>(u1.y * height)};
                             const DirectX::XMINT2 p2 = {static_cast<int>(u2.x * width), static_cast<int>(u2.y * height)};
 
-                            const std::int32_t minX = std::max(0, std::min({p0.x, p1.x, p2.x}));
-                            const std::int32_t minY = std::max(0, std::min({p0.y, p1.y, p2.y}));
-                            const std::int32_t maxX = std::min((std::int32_t)width - 1, std::max({p0.x, p1.x, p2.x}) + 1);
-                            const std::int32_t maxY = std::min((std::int32_t)height - 1, std::max({p0.y, p1.y, p2.y}) + 1);
+                            const std::int32_t minX = std::min({p0.x, p1.x, p2.x});
+                            const std::int32_t minY = std::min({p0.y, p1.y, p2.y});
+                            const std::int32_t maxX = std::max({p0.x, p1.x, p2.x}) + 1;
+                            const std::int32_t maxY = std::max({p0.y, p1.y, p2.y}) + 1;
 
                             for (std::int32_t y = minY; y < maxY; y++)
                             {
-                                const float mY = static_cast<const float>(y) * invHeight;
+                                const std::uint32_t wrapY = static_cast<std::uint32_t>(y) & (height - 1);
+                                const float mY = static_cast<const float>(wrapY) * invHeight;
 
                                 std::uint8_t* srcRowData = nullptr;
                                 if (hasSrcData)
@@ -679,14 +682,15 @@ namespace Mus {
                                     maskRowData = maskData + static_cast<const UINT>(maskY) * maskmg.GetRowPitch();
                                 }
 
-                                std::uint8_t* rowData = dstData + y * dstmg.GetRowPitch();
+                                std::uint8_t* rowData = dstData + wrapY * dstmg.GetRowPitch();
                                 for (std::int32_t x = minX; x < maxX; x++)
                                 {
                                     DirectX::XMFLOAT3 bary;
                                     if (!ComputeBarycentric(static_cast<const float>(x) + 0.5f, static_cast<const float>(y) + 0.5f, p0, p1, p2, bary))
                                         continue;
 
-                                    const float mX = x * invWidth;
+                                    const std::uint32_t wrapX = static_cast<std::uint32_t>(x) & (width - 1);
+                                    const float mX = static_cast<const float>(wrapX) * invWidth;
 
                                     RGBA dstColor;
                                     RGBA overlayColor(1.0f, 1.0f, 1.0f, 0.0f);
@@ -772,7 +776,7 @@ namespace Mus {
                                         dstColor = RGBA::lerp(dstColor, overlayColor, overlayColor.a);
                                     }
 
-                                    std::uint32_t* dstPixel = reinterpret_cast<std::uint32_t*>(rowData + x * 4);
+                                    std::uint32_t* dstPixel = reinterpret_cast<std::uint32_t*>(rowData + wrapX * 4);
                                     *dstPixel = dstColor.GetReverse() | 0xFF000000;
                                 }
                             }
@@ -2157,7 +2161,9 @@ namespace Mus {
 		const UINT width = desc.Width;
 		const UINT height = desc.Height;
 
-		Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> srcUAV = nullptr;
+        resourceData->generateMipsData.srvs.reserve(desc.MipLevels);
+        resourceData->generateMipsData.uavs.reserve(desc.MipLevels);
+
 		for (UINT mipLevel = 0; mipLevel < desc.MipLevels; mipLevel++)
 		{
 			const UINT mipWidth = std::max(width >> mipLevel, 1u);
@@ -2173,7 +2179,10 @@ namespace Mus {
 
 				D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
 				srvInOut->GetDesc(&srvDesc);
-				hr = device->CreateShaderResourceView(resourceData->generateMipsData.texture2D.Get(), &srvDesc, &resourceData->generateMipsData.srv);
+                srvDesc.Texture2D.MostDetailedMip = 0;
+                srvDesc.Texture2D.MipLevels = 1;
+                resourceData->generateMipsData.srvs.push_back(nullptr);
+                hr = device->CreateShaderResourceView(resourceData->generateMipsData.texture2D.Get(), &srvDesc, &resourceData->generateMipsData.srvs[0]);
 				if (FAILED(hr)) {
 					logger::error("{} : Failed to create shader resource view ({})", __func__, hr);
 					return false;
@@ -2198,7 +2207,7 @@ namespace Mus {
 						if (Config::GetSingleton().GetGPUForceSync())
 							WaitForGPU(device, context).Wait();
 						srcTex = texInOut;
-						srcSRV = resourceData->generateMipsData.srv;
+						srcSRV = resourceData->generateMipsData.srvs[0];
 					}
 
 					Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> dstUAV = nullptr;
@@ -2234,7 +2243,7 @@ namespace Mus {
                                 }
                                 *mg.Get<GenerateMipsBufferData>() = cbData;
                             }
-                            context->CSSetShader(generateMips[isSecondGPUEnabled].Get(), nullptr, 0);
+                            context->CSSetShader(bleedTexture[isSecondGPUEnabled].Get(), nullptr, 0);
                             context->CSSetConstantBuffers(0, 1, generateMipsBuffer[isSecondGPUEnabled].GetAddressOf());
                             context->CSSetShaderResources(0, 1, srcSRV.GetAddressOf());
                             context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
@@ -2280,7 +2289,7 @@ namespace Mus {
                                         }
                                         *mg.Get<GenerateMipsBufferData>() = cbData_;
                                     }
-                                    context->CSSetShader(generateMips[isSecondGPUEnabled].Get(), nullptr, 0);
+                                    context->CSSetShader(bleedTexture[isSecondGPUEnabled].Get(), nullptr, 0);
                                     context->CSSetConstantBuffers(0, 1, generateMipsBuffer[isSecondGPUEnabled].GetAddressOf());
                                     context->CSSetShaderResources(0, 1, srcSRV.GetAddressOf());
                                     context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
@@ -2298,12 +2307,23 @@ namespace Mus {
 							task.get();
 						}
 					}
-					if (i > 0)
-						srcUAV = dstUAV;
 				}
 			}
 			else
 			{
+				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srcSRV = nullptr;
+				D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+				srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+				srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+                srvDesc.Texture2D.MostDetailedMip = mipLevel - 1;
+				srvDesc.Texture2D.MipLevels = 1;
+				hr = device->CreateShaderResourceView(texInOut, &srvDesc, &srcSRV);
+				if (FAILED(hr)) {
+					logger::error("{} : Failed to create shader resource view ({})", _func_, hr);
+					return false;
+				}
+				resourceData->generateMipsData.srvs.push_back(srcSRV);
+
 				Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> dstUAV = nullptr;
 				D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
 				uavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -2348,8 +2368,8 @@ namespace Mus {
                         }
                         context->CSSetShader(generateMips[isSecondGPUEnabled].Get(), nullptr, 0);
                         context->CSSetConstantBuffers(0, 1, generateMipsBuffer[isSecondGPUEnabled].GetAddressOf());
+                        context->CSSetShaderResources(0, 1, srcSRV.GetAddressOf());
                         context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
-                        context->CSSetUnorderedAccessViews(1, 1, srcUAV.GetAddressOf(), nullptr);
                         context->Dispatch(dispatch.x, dispatch.y, 1);
                     }
 
@@ -2373,7 +2393,7 @@ namespace Mus {
 						cbData_.widthStart = 0;
 						cbData_.heightStart = unitY * sy;
 
-						gpuTasks.push_back(gpuTask->submitAsync([&, cbData_, sy, mipWidth, mipHeight, dispatch, srcUAV, dstUAV]() {
+						gpuTasks.push_back(gpuTask->submitAsync([&, cbData_, sy, mipWidth, mipHeight, dispatch, srcSRV, dstUAV]() {
 							if (Config::GetSingleton().GetGenerateMipsTime())
 								GPUPerformanceLog(device, context, _func_ + "::" + resourceData->textureName + "::" + std::to_string(mipLevel)
 												  + "::" + std::to_string(mipWidth) + "|" + std::to_string(mipHeight) + "::" + std::to_string(sy)
@@ -2394,8 +2414,8 @@ namespace Mus {
                                 }
                                 context->CSSetShader(generateMips[isSecondGPUEnabled].Get(), nullptr, 0);
                                 context->CSSetConstantBuffers(0, 1, generateMipsBuffer[isSecondGPUEnabled].GetAddressOf());
+                                context->CSSetShaderResources(0, 1, srcSRV.GetAddressOf());
                                 context->CSSetUnorderedAccessViews(0, 1, dstUAV.GetAddressOf(), nullptr);
-                                context->CSSetUnorderedAccessViews(1, 1, srcUAV.GetAddressOf(), nullptr);
                                 context->Dispatch(dispatch.x, dispatch.y, 1);
                             }
 
@@ -2410,7 +2430,6 @@ namespace Mus {
 						task.get();
 					}
 				}
-				srcUAV = dstUAV;
 			}
 		}
 		logger::debug("{}::{} : Generate Mips done", _func_, resourceData->textureName);

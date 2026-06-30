@@ -4,10 +4,15 @@ message("Using toolchain file ${CMAKE_TOOLCHAIN_FILE}.")
 ########################################################################################################################
 ## Define project
 ########################################################################################################################
+if(NOT ENABLE_SKYRIM_VR)
+    set(TARGET_DESC "SE & AE")
+else()
+    set(TARGET_DESC "VR")
+endif()
 project(
         MuDynamicNormalMap
-        VERSION 2.1.11
-        DESCRIPTION "MuDynamicNormalMap by Acro."
+        VERSION 2.1.12
+        DESCRIPTION "MuDynamicNormalMap ${TARGET_DESC} by Acro."
         LANGUAGES CXX
 )
 set(CMAKE_CXX_STANDARD 23)
@@ -139,13 +144,17 @@ target_link_libraries(
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/vcpkg_installed/x64-windows-static-md/lib/DirectXTex.lib>
 )
 
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/build/bc7e_avx.obj DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/${BUILD_NAME})
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/build/bc7e_avx2.obj DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/${BUILD_NAME})
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/build/bc7e_sse2.obj DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/${BUILD_NAME})
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/build/bc7e_sse4.obj DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/${BUILD_NAME})
 target_sources(
     ${PROJECT_NAME}
     PRIVATE
-         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/bc7e_avx.obj>
-         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/bc7e_avx2.obj>
-         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/bc7e_sse2.obj>
-         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/bc7e_sse4.obj>
+         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/${BUILD_NAME}/bc7e_avx.obj>
+         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/${BUILD_NAME}/bc7e_avx2.obj>
+         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/${BUILD_NAME}/bc7e_sse2.obj>
+         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/${BUILD_NAME}/bc7e_sse4.obj>
 )
 
 target_precompile_headers(
@@ -165,6 +174,7 @@ install(TARGETS ${PROJECT_NAME}
 set(compute_shader_sources 
    ${CMAKE_CURRENT_SOURCE_DIR}/shader/UpdateNormalMap.hlsl
    ${CMAKE_CURRENT_SOURCE_DIR}/shader/MergeTexture.hlsl
+   ${CMAKE_CURRENT_SOURCE_DIR}/shader/BleedTexture.hlsl
    ${CMAKE_CURRENT_SOURCE_DIR}/shader/GenerateMips.hlsl
 )
 set(vertex_shader_sources 
@@ -217,12 +227,29 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
 else()
     set(BUILD_NAME "Release")
 endif()
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+if(NOT ENABLE_SKYRIM_VR)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_SOURCE_DIR}/contrib/Distribution/Plugin${BUILD_NAME}/")
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+else()
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_SOURCE_DIR}/contrib/Distribution/Plugin${BUILD_NAME}VR/")
+endif()
+
+if(NOT ENABLE_SKYRIM_VR)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${PROJECT_NAME}> "${CMAKE_CURRENT_SOURCE_DIR}/contrib/Distribution/Plugin${BUILD_NAME}/")
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+else()
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${PROJECT_NAME}> "${CMAKE_CURRENT_SOURCE_DIR}/contrib/Distribution/Plugin${BUILD_NAME}VR/")
+endif()
+
+if (NOT ENABLE_SKYRIM_VR)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_PDB_FILE:${PROJECT_NAME}> "${CMAKE_CURRENT_SOURCE_DIR}/contrib/Distribution/Plugin${BUILD_NAME}/")
+else()
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_PDB_FILE:${PROJECT_NAME}> "${CMAKE_CURRENT_SOURCE_DIR}/contrib/Distribution/Plugin${BUILD_NAME}VR/")
+endif()
 
 file(GLOB_RECURSE OUTPUT_DLLS "${CMAKE_CURRENT_SOURCE_DIR}/contrib/Distribution/**/*.dll")
 file(GLOB_RECURSE OUTPUT_PDBS "${CMAKE_CURRENT_SOURCE_DIR}/contrib/Distribution/**/*.pdb")

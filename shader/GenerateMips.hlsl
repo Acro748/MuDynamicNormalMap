@@ -11,9 +11,8 @@ cbuffer ConstBuffer : register(b0)
     uint srcHeight;
 }
 
-Texture2D<float4> src0       : register(t0);
+Texture2D<float4> src       : register(t0);
 RWTexture2D<float4> dst      : register(u0);
-RWTexture2D<float4> src      : register(u1);
 
 SamplerState samplerState : register(s0);
 
@@ -39,93 +38,55 @@ static const uint2 sampleOffsets[4] = {
 void CSMain(uint3 threadID : SV_DispatchThreadID)
 {
     uint2 coord = uint2(threadID.xy) + uint2(widthStart, heightStart);
-    if (coord.x >= width || coord.y >= height)
+    if (any(coord >= uint2(width, height)))
         return;
 
-	float4 resultColor = float4(0.0f, 0.0f, 0.0f, 0.0f);
-    if (mipLevel == 0)
-    {
-        float4 orgPixel = src0.Load(uint3(coord, mipLevel));
-        if (orgPixel.a == 1.0f)
-        {
-            dst[coord] = orgPixel;
-            return;
-        }
+    float4 resultColor = float4(0.0f, 0.0f, 0.0f, 0.0f);
+    float3 averageColor = float3(0.0f, 0.0f, 0.0f);
+    uint validCount = 0;
 
-        float3 averageColor = float3(0.0f, 0.0f, 0.0f);
-        uint validCount = 0;
+    [unroll]
+    for (uint i = 0; i < 4; i++)
+    {
+        uint2 srcCoord = coord * 2 + sampleOffsets[i];
+        if (any(srcCoord >= uint2(srcWidth, srcHeight)))
+            continue;
+        float4 srcPixel = src.Load(uint3(srcCoord, 0));
+        if (srcPixel.a == 1.0f)
+        {
+            averageColor += srcPixel.rgb;
+            validCount++;
+        }
+    }
+    if (validCount == 0)
+    {
+        uint2 baseSrcCoord = coord * 2;
 
         [unroll]
         for (uint i = 0; i < 8; i++)
         {
-            int2 nearCoord = int2(coord) + offsets[i];
-            if (nearCoord.x < 0 || nearCoord.y < 0 ||
-                nearCoord.x >= (int)(width) || nearCoord.y >= (int)(height))
-                continue;
-            float4 nearPixel = src0.Load(uint3(uint2(nearCoord), mipLevel));
-            if (nearPixel.a == 1.0f)
-            {
-                averageColor += nearPixel.rgb;
-                validCount++;
-            }
-        }
-        if (validCount == 0)
-        {
-            dst[coord] = orgPixel;
-            return;
-        }
-        resultColor = float4(averageColor / validCount, 1.0f);
-	}
-    else
-    {
-        float3 averageColor = float3(0.0f, 0.0f, 0.0f);
-        uint validCount = 0;
-
-        [unroll]
-        for (uint i = 0; i < 4; i++)
-        {
-            uint2 srcCoord = coord * 2 + sampleOffsets[i];
-            if (srcCoord.x >= srcWidth || srcCoord.y >= srcHeight)
-				continue;
-            float4 srcPixel = src[srcCoord];
-            if (srcPixel.a == 1.0f)
-            {
-                averageColor += srcPixel.rgb;
-                validCount++;
-            }
-		}
-        if (validCount == 0)
-        {
             [unroll]
-            for (uint i = 0; i < 8; i++)
+            for (uint j = 0; j < 4; j++)
             {
-				int2 nearCoord = int2(coord) + offsets[i];
-                if (nearCoord.x < 0 || nearCoord.y < 0 ||
-                    nearCoord.x >= (int)(width) || nearCoord.y >= (int)(height))
-					continue;
-
-                [unroll]
-                for (uint j = 0; j < 4; j++)
+                int2 localOffset = offsets[i] * 2 + (int2)sampleOffsets[j];
+                int2 srcCoord = (int2)baseSrcCoord + localOffset;
+                if (any((uint2)srcCoord >= uint2(srcWidth, srcHeight)))
+                    continue;
+                float4 srcPixel = src.Load(uint3(srcCoord, 0));
+                if (srcPixel.a == 1.0f)
                 {
-                    uint2 srcCoord = uint2(nearCoord) * 2 + sampleOffsets[j];
-                    if (srcCoord.x >= srcWidth || srcCoord.y >= srcHeight)
-                        continue;
-                    float4 srcPixel = src[srcCoord];
-                    if (srcPixel.a == 1.0f)
-                    {
-                        averageColor += srcPixel.rgb;
-                        validCount++;
-                    }
+                    averageColor += srcPixel.rgb;
+                    validCount++;
                 }
             }
         }
-        if (validCount == 0)
-        {
-            dst[coord] = float4(0.0f, 0.0f, 0.0f, 0.0f);
-            return;
-        }
-        resultColor = float4(averageColor / validCount, 1.0f);
     }
+    if (validCount == 0)
+    {
+        dst[coord] = float4(0.0f, 0.0f, 0.0f, 0.0f);
+        return;
+    }
+    resultColor = float4(averageColor * rcp((float)validCount), 1.0f);
 
     dst[coord] = resultColor;
     return;

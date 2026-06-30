@@ -163,9 +163,7 @@ namespace Mus {
 				if (geo.objInfo.info.hasUVs)
 				{
 					uvs[ui].x = DirectX::PackedVector::XMConvertHalfToFloat(*reinterpret_cast<std::uint16_t*>(block));
-                    uvs[ui].x -= floor(uvs[ui].x);
                     uvs[ui].y = DirectX::PackedVector::XMConvertHalfToFloat(*reinterpret_cast<std::uint16_t*>(block + 2));
-                    uvs[ui].y -= floor(uvs[ui].y);
 					block += 4;
 				}
 			}

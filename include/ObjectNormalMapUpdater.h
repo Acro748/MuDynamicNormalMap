@@ -105,10 +105,12 @@ namespace Mus {
 
         const std::string_view UpdateNormalMapShaderName = "UpdateNormalMap";
         const std::string_view MergeTextureShaderName = "MergeTexture";
+        const std::string_view BleedTextureShaderName = "BleedTexture";
         const std::string_view GenerateMipsShaderName = "GenerateMips";
 
 		Shader::ShaderManager::ComputeShader updateNormalMapShader[2] = {nullptr, nullptr};
         Shader::ShaderManager::ComputeShader mergeTexture[2] = {nullptr, nullptr};
+        Shader::ShaderManager::ComputeShader bleedTexture[2] = {nullptr, nullptr};
         Shader::ShaderManager::ComputeShader generateMips[2] = {nullptr, nullptr};
 
         Microsoft::WRL::ComPtr<ID3D11SamplerState> samplerState[2] = {nullptr, nullptr};
@@ -164,7 +166,7 @@ namespace Mus {
 
 			struct GenerateMipsData {
 				Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D = nullptr;
-				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv = nullptr;
+                std::vector<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>> srvs;
 				std::vector<Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView>> uavs;
 			};
 			GenerateMipsData generateMipsData;
