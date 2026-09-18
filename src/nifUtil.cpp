@@ -139,7 +139,7 @@ namespace Mus::nif {
     {
         if (!a_geometry)
             return true;
-        RE::NiProperty* effect = a_geometry->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect].get();
+        RE::NiProperty* effect = a_geometry->GetGeometryRuntimeData().shaderProperty.get();
         if (!effect)
             return false;
         RE::BSLightingShaderProperty* lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);

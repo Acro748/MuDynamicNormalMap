@@ -1223,9 +1223,6 @@ namespace Mus {
             {
                 Shader::ShaderLockGuard slg(sl);
                 auto skinInstance = geo.geometry->GetGeometryRuntimeData().skinInstance;
-#ifdef SKYRIM_CROSS_VR
-                EnterCriticalSection(&skinInstance->lock);
-#endif
 
                 auto rendererData = geo.geometry->GetGeometryRuntimeData().rendererData;
                 if (rendererData)
@@ -1254,7 +1251,7 @@ namespace Mus {
                         for (auto& partition : newSkinPartition->partitions)
                         {
                             auto oldVertexBuffer = reinterpret_cast<ID3D11Buffer*>(partition.buffData->vertexBuffer);
-                            partition.buffData->vertexBuffer = reinterpret_cast<RE::ID3D11Buffer*>(buffer.Get());
+                            partition.buffData->vertexBuffer = reinterpret_cast<REX::W32::ID3D11Buffer*>(buffer.Get());
                             buffer->AddRef();
                             oldVertexBuffer->Release();
                         }
@@ -1305,13 +1302,10 @@ namespace Mus {
                     }
                     memcpy(rendererData->rawVertexData, newVertexBlocks.data(), newVertexBlocks.size());
                 }
-#ifdef SKYRIM_CROSS_VR
-                LeaveCriticalSection(&skinInstance->lock);
-#endif
                 skinInstance->skinPartition = newSkinPartition;
             }
 
-            auto effect = geo.geometry->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect].get();
+            auto effect = geo.geometry->GetGeometryRuntimeData().shaderProperty.get();
             if (!effect)
                 continue;
             auto property = skyrim_cast<RE::BSLightingShaderProperty*>(effect);

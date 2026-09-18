@@ -629,8 +629,8 @@ namespace Mus {
 			{
 				auto oldTexture = output->rendererTexture->texture;
 				auto oldResource = output->rendererTexture->resourceView;
-				output->rendererTexture->texture = texture2d.Detach();
-				output->rendererTexture->resourceView = textureSRV.Detach();
+				output->rendererTexture->texture = reinterpret_cast<REX::W32::ID3D11Texture2D*>(texture2d.Detach());
+				output->rendererTexture->resourceView = reinterpret_cast<REX::W32::ID3D11ShaderResourceView*>(textureSRV.Detach());
 				if (oldTexture)
 					oldTexture->Release();
 				if (oldResource)
@@ -639,8 +639,8 @@ namespace Mus {
 			else if (result == 1)
 			{
 				RE::BSGraphics::Texture* newRendererTexture = new RE::BSGraphics::Texture();
-				newRendererTexture->texture = texture2d.Detach();
-				newRendererTexture->resourceView = textureSRV.Detach();
+				newRendererTexture->texture = reinterpret_cast<REX::W32::ID3D11Texture2D*>(texture2d.Detach());
+				newRendererTexture->resourceView = reinterpret_cast<REX::W32::ID3D11ShaderResourceView*>(textureSRV.Detach());
 				output->rendererTexture = newRendererTexture;
 			}
 			return output;
@@ -691,8 +691,8 @@ namespace Mus {
 			{
 				auto oldTexture = newTexture->rendererTexture->texture;
 				auto oldResource = newTexture->rendererTexture->resourceView;
-				newTexture->rendererTexture->texture = dstTex.Detach();
-				newTexture->rendererTexture->resourceView = dstSRV.Detach();
+				newTexture->rendererTexture->texture = reinterpret_cast<REX::W32::ID3D11Texture2D*>(dstTex.Detach());
+				newTexture->rendererTexture->resourceView = reinterpret_cast<REX::W32::ID3D11ShaderResourceView*>(dstSRV.Detach());
 				if (oldTexture)
 					oldTexture->Release();
 				if (oldResource)
@@ -701,8 +701,8 @@ namespace Mus {
 			else if (result == 1)
 			{
 				RE::BSGraphics::Texture* newRendererTexture = new RE::BSGraphics::Texture();
-				newRendererTexture->texture = dstTex.Detach();
-				newRendererTexture->resourceView = dstSRV.Detach();
+				newRendererTexture->texture = reinterpret_cast<REX::W32::ID3D11Texture2D*>(dstTex.Detach());
+				newRendererTexture->resourceView = reinterpret_cast<REX::W32::ID3D11ShaderResourceView*>(dstSRV.Detach());
 				newTexture->rendererTexture = newRendererTexture;
 			}
 			output = newTexture;
@@ -716,7 +716,7 @@ namespace Mus {
 			if (found != niTextures.end())
 			{
                 if (found->second && found->second->rendererTexture && found->second->rendererTexture->texture)
-                    found->second->rendererTexture->texture->QueryInterface(texture.GetAddressOf());
+                    reinterpret_cast<ID3D11Texture2D*>(found->second->rendererTexture->texture)->QueryInterface(texture.GetAddressOf());
 			}
             return texture;
 		}
@@ -791,8 +791,8 @@ namespace Mus {
 				return false;
 			}
 			Microsoft::WRL::ComPtr<ID3D11Resource> resource;
-			sourceTexture->rendererTexture->resourceView->GetDesc(&srvDesc);
-			sourceTexture->rendererTexture->resourceView->GetResource(&resource);
+			reinterpret_cast<ID3D11ShaderResourceView*>(sourceTexture->rendererTexture->resourceView)->GetDesc(&srvDesc);
+			reinterpret_cast<ID3D11ShaderResourceView*>(sourceTexture->rendererTexture->resourceView)->GetResource(&resource);
 			Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D;
 			HRESULT hr = resource.As(&texture2D);
 			if (FAILED(hr))
@@ -960,8 +960,8 @@ namespace Mus {
 
 			auto oldTexture = sourceTexture->rendererTexture->texture;
 			auto oldResource = sourceTexture->rendererTexture->resourceView;
-			sourceTexture->rendererTexture->texture = texture.Detach();
-			sourceTexture->rendererTexture->resourceView = srv.Detach();
+            sourceTexture->rendererTexture->texture = reinterpret_cast<REX::W32::ID3D11Resource*>(texture.Detach());
+			sourceTexture->rendererTexture->resourceView = reinterpret_cast<REX::W32::ID3D11ShaderResourceView*>(srv.Detach());
 			if (oldTexture)
 				oldTexture->Release();
 			if (oldResource)

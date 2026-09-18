@@ -55,9 +55,19 @@
       }
     },
     {
+      "name": "ng",
+      "hidden": true,
+      "cacheVariables": {
+        "ENABLE_SKYRIM_FLAT": "OFF",
+        "ENABLE_SKYRIM_VR": "OFF",
+        "VCPKG_MANIFEST_DIR": "${sourceDir}/manifests/ng"
+      }
+    },
+    {
       "name": "flat",
       "hidden": true,
       "cacheVariables": {
+        "ENABLE_SKYRIM_FLAT": "ON",
         "ENABLE_SKYRIM_VR": "OFF",
         "VCPKG_MANIFEST_DIR": "${sourceDir}/manifests/flatrim"
       }
@@ -66,9 +76,20 @@
       "name": "vr",
       "hidden": true,
       "cacheVariables": {
+        "ENABLE_SKYRIM_FLAT": "OFF",
         "ENABLE_SKYRIM_VR": "ON",
         "VCPKG_MANIFEST_DIR": "${sourceDir}/manifests/vr"
       }
+    },
+    {
+      "name": "Release-NG",
+      "inherits": [
+        "common",
+        "vcpkg",
+        "x64",
+        "msvc",
+        "ng"
+      ]
     },
     {
       "name": "Release-Flatrim",

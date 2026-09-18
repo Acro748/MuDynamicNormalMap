@@ -231,7 +231,6 @@ namespace Mus {
 		std::unordered_set<RE::BSGeometry*> existGeometries;
 		auto root = a_actor->loadedData->data3D;
 		RE::BSVisit::TraverseScenegraphGeometries(root.get(), [&](RE::BSGeometry* geo) -> RE::BSVisit::BSVisitControl {
-			using State = RE::BSGeometry::States;
 			using Feature = RE::BSShaderMaterial::Feature;
 			if (IsBlocked(a_actor->formID))
 				return RE::BSVisit::BSVisitControl::kStop;
@@ -307,9 +306,9 @@ namespace Mus {
         isMDNMTexture = false;
         if (!a_geo)
             return false;
-        if (!a_geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
+        if (!a_geo->GetGeometryRuntimeData().shaderProperty)
             return false;
-        auto effect = a_geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect].get();
+        auto effect = a_geo->GetGeometryRuntimeData().shaderProperty.get();
         auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
         if (!lightingShader || !lightingShader->material)
             return false;

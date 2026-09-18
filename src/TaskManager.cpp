@@ -256,25 +256,21 @@ namespace Mus {
 		if (!root)
             return geometries;
 		RE::BSVisit::TraverseScenegraphGeometries(root, [&](RE::BSGeometry* geometry) -> RE::BSVisit::BSVisitControl {
-			using State = RE::BSGeometry::States;
 			using Feature = RE::BSShaderMaterial::Feature;
 			if (!geometry || geometry->name.empty())
 				return RE::BSVisit::BSVisitControl::kContinue;
 			if (IsContainString(geometry->name.c_str(), "[Ovl") || IsContainString(geometry->name.c_str(), "[SOvl") || IsContainString(geometry->name.c_str(), "overlay")) //without overlay
 				return RE::BSVisit::BSVisitControl::kContinue;
-			if (!geometry->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
+			if (!geometry->GetGeometryRuntimeData().shaderProperty)
 				return RE::BSVisit::BSVisitControl::kContinue;
-			auto effect = geometry->GetGeometryRuntimeData().properties[State::kEffect].get();
+            auto effect = geometry->GetGeometryRuntimeData().shaderProperty.get();
 			if (!effect)
 				return RE::BSVisit::BSVisitControl::kContinue;
 			auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
 			if (!lightingShader || !lightingShader->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
 				return RE::BSVisit::BSVisitControl::kContinue;
-			if (auto property = geometry->GetGeometryRuntimeData().properties[State::kProperty].get(); property)
-			{
-				if (auto alphaProperty = netimmerse_cast<RE::NiAlphaProperty*>(property); alphaProperty)
-					return RE::BSVisit::BSVisitControl::kContinue;
-			}
+            if (auto alphaProperty = geometry->GetGeometryRuntimeData().alphaProperty.get(); alphaProperty)
+                return RE::BSVisit::BSVisitControl::kContinue;
             auto hash = ActorVertexHasher::Hash(geometry);
             geometries.insert(std::make_pair(hash.GetHash(), geometry));
 			return RE::BSVisit::BSVisitControl::kContinue;
@@ -333,23 +329,19 @@ namespace Mus {
 		for (auto& pair : a_srcGeometies)
         {
             auto geo = pair.second;
-			using State = RE::BSGeometry::States;
 			using Feature = RE::BSShaderMaterial::Feature;
 			if (!geo || geo->name.empty())
                 continue;
 			if (auto extraData = geo->GetExtraData<RE::NiIntegerExtraData>(NoDynamicNormalMapExtraDataName); extraData && extraData->value > 0)
 				continue;
-			if (!geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
+			if (!geo->GetGeometryRuntimeData().shaderProperty)
 				continue;
-			auto effect = geo->GetGeometryRuntimeData().properties[State::kEffect].get();
+            auto effect = geo->GetGeometryRuntimeData().shaderProperty.get();
 			auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
 			if (!lightingShader || !lightingShader->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
 				continue;
-			if (auto property = geo->GetGeometryRuntimeData().properties[State::kProperty].get(); property)
-			{
-				if (auto alphaProperty = netimmerse_cast<RE::NiAlphaProperty*>(property); alphaProperty)
-					continue;
-			}
+            if (auto alphaProperty = geo->GetGeometryRuntimeData().alphaProperty.get(); alphaProperty)
+                continue;
 			RE::BSLightingShaderMaterialBase* material = skyrim_cast<RE::BSLightingShaderMaterialBase*>(lightingShader->material);
 			if (!material || !material->normalTexture || material->normalTexture->name.empty())
 				continue;
@@ -462,7 +454,6 @@ namespace Mus {
                 auto root = actor->loadedData->data3D.get();
                 std::unordered_map<std::string, RE::NiSourceTexturePtr> createdTextures;
                 RE::BSVisit::TraverseScenegraphGeometries(root, [&](RE::BSGeometry* geo) -> RE::BSVisit::BSVisitControl {
-                    using State = RE::BSGeometry::States;
                     using Feature = RE::BSShaderMaterial::Feature;
                     if (!geo || geo->name.empty())
                         return RE::BSVisit::BSVisitControl::kContinue;
@@ -499,7 +490,7 @@ namespace Mus {
                         });
                     }
 
-                    auto effect = geo->GetGeometryRuntimeData().properties[State::kEffect].get();
+                    auto effect = geo->GetGeometryRuntimeData().shaderProperty.get();
                     if (!effect)
                         return RE::BSVisit::BSVisitControl::kContinue;
                     auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
@@ -839,21 +830,17 @@ namespace Mus {
         for (auto& pair : geometries)
         {
             auto geo = pair.second;
-            using State = RE::BSGeometry::States;
             using Feature = RE::BSShaderMaterial::Feature;
             if (!geo || geo->name.empty())
                 continue;
-            if (!geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
+            if (!geo->GetGeometryRuntimeData().shaderProperty)
                 continue;
-            auto effect = geo->GetGeometryRuntimeData().properties[State::kEffect].get();
+            auto effect = geo->GetGeometryRuntimeData().shaderProperty.get();
             auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
             if (!lightingShader || !lightingShader->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
                 continue;
-            if (auto property = geo->GetGeometryRuntimeData().properties[State::kProperty].get(); property)
-            {
-                if (auto alphaProperty = netimmerse_cast<RE::NiAlphaProperty*>(property); alphaProperty)
-                    continue;
-            }
+            if (auto alphaProperty = geo->GetGeometryRuntimeData().alphaProperty.get(); alphaProperty)
+                continue;
             RE::BSLightingShaderMaterialBase* material = skyrim_cast<RE::BSLightingShaderMaterialBase*>(lightingShader->material);
             if (!material || !material->normalTexture || !material->textureSet)
                 continue;
@@ -906,7 +893,7 @@ namespace Mus {
 
 				using namespace InputManager;
 				std::uint32_t keyCode = 0;
-				std::uint32_t keyMask = button->idCode;
+				std::uint32_t keyMask = button->GetIDCode();
 				if (button->device.all(RE::INPUT_DEVICE::kMouse))
 					keyCode = InputMap::kMacro_MouseButtonOffset + keyMask;
 				else if (REL::Module::IsVR() &&
@@ -965,7 +952,7 @@ namespace Mus {
 							std::string notification = "MDNM : Re-update ";
 							notification += target->GetName();
 							notification += " " + GetHexStr(target->formID);
-                            RE::DebugNotification(notification.c_str());
+                            RE::SendHUDMessage::ShowHUDMessage(notification.c_str());
 						}
 					}
                     else if (button->HeldDuration() >= 3.0f) // forced reset
@@ -974,7 +961,7 @@ namespace Mus {
                             return EventResult::kContinue;
                         if (ObjectNormalMapUpdater::GetSingleton().GetCount() > 0)
                         {
-                            RE::DebugNotification("MDNM : Some normalmaps are still being updated");
+                            RE::SendHUDMessage::ShowHUDMessage("MDNM : Some normalmaps are still being updated");
                             logger::warn("Some normalmaps are still being updated...");
                             return EventResult::kContinue;
                         }
@@ -985,7 +972,7 @@ namespace Mus {
                         static_cast<MultipleConfig*>(&Config::GetSingleton())->LoadConditionFile();
                         ConditionManager::GetSingleton().SortConditions();
                         ObjectNormalMapUpdater::GetSingleton().Init();
-                        RE::DebugNotification("MDNM : Reload done");
+                        RE::SendHUDMessage::ShowHUDMessage("MDNM : Reload done");
                         logger::info("Reload done");
                         isResetTasks = true;
                     }
@@ -1041,23 +1028,19 @@ namespace Mus {
                         for (auto& pair : geometries)
                         {
                             auto geo = pair.second;
-                            using State = RE::BSGeometry::States;
                             using Feature = RE::BSShaderMaterial::Feature;
                             if (!geo || geo->name.empty())
                                 continue;
                             if (auto extraData = geo->GetExtraData<RE::NiIntegerExtraData>(NoDynamicNormalMapExtraDataName); extraData && extraData->value > 0)
                                 continue;
-                            if (!geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect])
+                            if (!geo->GetGeometryRuntimeData().shaderProperty)
                                 continue;
-                            auto effect = geo->GetGeometryRuntimeData().properties[State::kEffect].get();
+                            auto effect = geo->GetGeometryRuntimeData().shaderProperty.get();
                             auto lightingShader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
                             if (!lightingShader || !lightingShader->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
                                 continue;
-                            if (auto property = geo->GetGeometryRuntimeData().properties[State::kProperty].get(); property)
-                            {
-                                if (auto alphaProperty = netimmerse_cast<RE::NiAlphaProperty*>(property); alphaProperty)
-                                    continue;
-                            }
+                            if (auto alphaProperty = geo->GetGeometryRuntimeData().alphaProperty.get(); alphaProperty)
+                                continue;
                             RE::BSLightingShaderMaterialBase* material = skyrim_cast<RE::BSLightingShaderMaterialBase*>(lightingShader->material);
                             if (!material || !material->normalTexture || material->normalTexture->name.empty())
                                 continue;
@@ -1083,12 +1066,12 @@ namespace Mus {
                         if (geoData.PrintGeometry(filePath))
                         {
                             logger::info("Print mesh done : {}", filePath);
-                            RE::DebugNotification("MDNM : Print mesh done");
+                            RE::SendHUDMessage::ShowHUDMessage("MDNM : Print mesh done");
                         }
 						else
                         {
                             logger::info("Failed to print the mesh : {}", filePath);
-                            RE::DebugNotification("MDNM : Failed to print the mesh ");
+                            RE::SendHUDMessage::ShowHUDMessage("MDNM : Failed to print the mesh ");
 						}
                     }
 				}
@@ -1155,11 +1138,11 @@ namespace Mus {
                             }
                         }
                         if (isPrinted)
-							RE::DebugNotification("MDNM : Print texture done");
+                            RE::SendHUDMessage::ShowHUDMessage("MDNM : Print texture done");
 						else
                         {
                             logger::info("Failed to print texture");
-                            RE::DebugNotification("MDNM : Failed to print texture");
+                            RE::SendHUDMessage::ShowHUDMessage("MDNM : Failed to print texture");
 						}
 					}
 				}

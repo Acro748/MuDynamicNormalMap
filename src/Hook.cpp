@@ -88,7 +88,7 @@ namespace Mus {
 		NullSubOrig();
 
 		auto main = RE::Main::GetSingleton();
-		if (main->quitGame)
+		if (main->GetRuntimeData().quitGame)
 		{
 			QuitGameEvent e;
 			g_quitGameEventDispatcher.dispatch(e);
@@ -115,7 +115,7 @@ namespace Mus {
 			}
 
 			FrameEvent e;
-			e.gamePaused = main ? main->freezeTime : false;
+            e.gamePaused = main ? main->GetRuntimeData().freezeTime : false;
 			const auto menu = RE::UI::GetSingleton();
 			IsGamePaused.store(((e.gamePaused || (menu && menu->numPausesGame > 0)) && !IsRaceSexMenu.load()) || IsMainMenu.load());
 			currentTime = std::clock();
