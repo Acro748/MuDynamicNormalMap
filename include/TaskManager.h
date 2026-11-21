@@ -1,5 +1,7 @@
 #pragma once
 
+#include "PlayerNormalMapHold.h"
+
 namespace Mus {
 	class TaskManager :
 		public IEventListener<FrameEvent>,
@@ -19,6 +21,8 @@ namespace Mus {
 		}
 
 		void Init();
+
+        PlayerNormalMapHold playerNormalMapHold;
 
 		enum BipedObjectSlot : std::uint32_t
 		{
@@ -133,9 +137,14 @@ namespace Mus {
 
         tbb::concurrent_unordered_map<RE::FormID, bool> isUpdating;
         inline void SetIsUpdating(RE::FormID a_actorID, bool a_isUpdating) {
+            if (IsPlayer(a_actorID)) {
+                playerNormalMapHold.SetUpdating(a_isUpdating);
+                return;
+            }
             isUpdating[a_actorID] = a_isUpdating;
         }
         inline bool GetIsUpdating(RE::FormID a_actorID) const {
+            if (IsPlayer(a_actorID)) return playerNormalMapHold.IsUpdating();
             auto it = isUpdating.find(a_actorID);
             return it != isUpdating.end() ? it->second : false;
         }

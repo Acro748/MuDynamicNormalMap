@@ -16,6 +16,10 @@ namespace Mus {
         if (IsSaveLoading.load() || IsInLoading.load())
 			return;
 
+        if (const auto slots = playerNormalMapHold.Expire()) {
+            logger::warn("Player normal-map hold expired");
+            if (*slots) QUpdateNormalMap(RE::PlayerCharacter::GetSingleton(), *slots);
+        }
 		RunDelayTask();
 		RunUpdateQueue();
 		RunManageResource(false);
@@ -171,6 +175,15 @@ namespace Mus {
                     return;
                 if (GetIsActiveActor(actor->formID))
                 {
+                    auto playerGate = playerNormalMapHold.Guard();
+                    if (IsPlayer(actor->formID)) {
+                        if (!playerGate.try_lock()) {
+                            std::lock_guard lg(updateSlotQueueLock);
+                            updateSlotQueue[actor->formID] |= map.second;
+                            return;
+                        }
+                        if (playerNormalMapHold.DeferLocked(map.second)) return;
+                    }
                     if (!GetIsUpdating(actor->formID))
                     {
                         QUpdateNormalMapImpl(actor, GetAllGeometries(actor), map.second);
@@ -968,6 +981,7 @@ namespace Mus {
                         Mus::Config::GetSingleton().LoadConfig();
                         InitialSetting();
                         isUpdating.clear();
+                        playerNormalMapHold.SetUpdating(false);
                         ConditionManager::GetSingleton().InitialConditionList();
                         static_cast<MultipleConfig*>(&Config::GetSingleton())->LoadConditionFile();
                         ConditionManager::GetSingleton().SortConditions();

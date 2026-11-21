@@ -127,6 +127,11 @@ namespace Mus {
 
 			if (IsBlocked(actor->formID))
 				return true;
+            auto& playerHold = TaskManager::GetSingleton().playerNormalMapHold;
+            auto playerGate = playerHold.Guard();
+            // Leave the player's baseline hash alone while transient morphs are active.
+            if (IsPlayer(id) && (!playerGate.try_lock() || playerHold.HeldLocked()))
+                return true;
 			if (!IsPlayer(actor->formID) && (Config::GetSingleton().GetDetectDistance() > floatPrecision && cameraPosition.GetSquaredDistance(actor->loadedData->data3D->world.translate) > Config::GetSingleton().GetDetectDistance()))
                 return true;
             if (!GetHash(actor.get(), data.hash))
