@@ -1,5 +1,22 @@
 
+#include "Interface/MuNormalMapHoldAPI.h"
+
 namespace {
+    const MuNormalMapHold::API normalMapHoldApi{
+        MuNormalMapHold::version,
+        [](std::uint32_t actor) -> std::uint64_t {
+            if (!Mus::IsPlayer(actor) || !Mus::Config::GetSingleton().GetPlayerEnable())
+                return MuNormalMapHold::notNeeded;
+            if (Mus::IsSaveLoading.load() || Mus::IsInLoading.load()) return 0;
+            return Mus::TaskManager::GetSingleton().playerNormalMapHold.TryHold();
+        },
+        [](std::uint64_t token, std::uint32_t refreshSlots) {
+            auto& manager = Mus::TaskManager::GetSingleton();
+            const auto slots = manager.playerNormalMapHold.Resume(token, refreshSlots);
+            if (!slots || Mus::IsSaveLoading.load() || Mus::IsInLoading.load()) return;
+            if (*slots) manager.QUpdateNormalMap(RE::PlayerCharacter::GetSingleton(), *slots);
+        },
+    };
     /**
      * Setup logging.
      *
@@ -142,6 +159,13 @@ namespace {
                     exchangeMessage->Interface = &MDNM::DNM;
                     break;
                 }
+                case MuNormalMapHold::message:
+                {
+                    if (!message->data || message->dataLen != sizeof(MuNormalMapHold::Exchange)) break;
+                    auto& exchange = *static_cast<MuNormalMapHold::Exchange*>(message->data);
+                    if (exchange.version == MuNormalMapHold::version) exchange.api = &normalMapHoldApi;
+                    break;
+                }
                 default:
                     break;
                 }
@@ -184,6 +208,7 @@ namespace {
 
     void kNewGameFunction()
     {
+        Mus::TaskManager::GetSingleton().playerNormalMapHold.Reset();
         logger::info("detected new game...");
     }
 
@@ -213,6 +238,7 @@ namespace {
                     break;
                 case SKSE::MessagingInterface::kPreLoadGame: // Player selected a game to load, but it hasn't loaded yet.
                     Mus::IsSaveLoading.store(true);
+                    Mus::TaskManager::GetSingleton().playerNormalMapHold.Reset();
                     // Data will be the name of the loaded save.
                     break;
                 case SKSE::MessagingInterface::kPostLoadGame: // Player's selected save game has finished loading.
